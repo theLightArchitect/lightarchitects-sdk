@@ -1,6 +1,19 @@
-//! Direct HTTP provider for the Vertex AI / Gemini API.
+//! Direct HTTP provider for the **Google AI Studio** Gemini API
+//! (`generativelanguage.googleapis.com`), NOT production Vertex AI.
 //!
-//! Implements [`LlmAgentProvider`] calling the Gemini `generateContent` endpoint.
+//! Implements [`LlmAgentProvider`] calling the Gemini `generateContent` endpoint
+//! against `generativelanguage.googleapis.com/v1beta`. Auth is API-key.
+//!
+//! # Naming note (2026-06-04 rename)
+//!
+//! This module was previously named `vertex.rs` / `GoogleAiStudioProvider`. The
+//! original name was a misnomer: production Vertex AI lives at
+//! `{region}-aiplatform.googleapis.com` and uses `OAuth2` service-account auth.
+//! Real Vertex AI contracts now live separately (see
+//! `provider.llm.vertex-ai-gemini` and `provider.llm.vertex-ai-claude`); a
+//! dedicated Rust impl for real Vertex is a follow-up build. Until then, this
+//! module honestly targets Google AI Studio under its true name.
+//!
 //! Handles `tool_use` multi-turn loops with G1 sanitization on every
 //! `functionResponse` block before re-submission.
 //!
@@ -22,13 +35,16 @@ use crate::agent::{
     SanitizedAgentRequest, SchemaMode, TokenUsage, sanitize_params,
 };
 
-use super::auth::resolve_vertex_key;
+use super::auth::resolve_google_ai_studio_key;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-/// Gemini generateContent endpoint template; `{model}` and `{key}` are substituted.
+/// Gemini generateContent endpoint template; `{model}` is substituted.
+///
+/// Auth is sent as `x-goog-api-key` header — never in the URL so the key
+/// cannot appear in server access logs, reverse-proxy logs, or error messages.
 const API_TEMPLATE: &str =
-    "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}";
+    "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent";
 
 /// Input cost per 1 000 tokens for `gemini-1.5-pro`.
 const COST_INPUT_PER_K: f64 = 0.00125;
@@ -38,7 +54,7 @@ const COST_OUTPUT_PER_K: f64 = 0.005;
 // ── Provider ──────────────────────────────────────────────────────────────────
 
 /// Direct HTTP provider for the Vertex AI / Gemini `generateContent` API.
-pub struct VertexHttpProvider {
+pub struct GoogleAiStudioProvider {
     http: Client,
     /// Gemini model identifier (e.g. `"gemini-1.5-pro"`).
     model: String,
@@ -46,7 +62,7 @@ pub struct VertexHttpProvider {
     max_tokens: u32,
 }
 
-impl VertexHttpProvider {
+impl GoogleAiStudioProvider {
     /// Create a provider targeting `model` with the given per-call token cap.
     ///
     /// # Errors
@@ -108,9 +124,7 @@ impl VertexHttpProvider {
         max_turns: u32,
         api_key: &str,
     ) -> Result<(String, u32, u32), ProviderError> {
-        let url = API_TEMPLATE
-            .replace("{model}", &self.model)
-            .replace("{key}", api_key);
+        let url = API_TEMPLATE.replace("{model}", &self.model);
 
         let mut total_in: u32 = 0;
         let mut total_out: u32 = 0;
@@ -135,23 +149,23 @@ impl VertexHttpProvider {
                 .http
                 .post(&url)
                 .header("content-type", "application/json")
+                .header("x-goog-api-key", api_key)
                 .json(&body)
                 .send()
                 .await
-                .map_err(|e| ProviderError::Internal(format!("http send: {e}")))?;
+                .map_err(|e| ProviderError::Internal(format!("http send: {}", e.without_url())))?;
 
             if !resp.status().is_success() {
                 let status = resp.status();
                 let text = resp.text().await.unwrap_or_default();
                 return Err(ProviderError::Internal(format!(
-                    "Vertex API {status}: {text}"
+                    "Google AI Studio API {status}: {text}"
                 )));
             }
 
-            let parsed: Value = resp
-                .json()
-                .await
-                .map_err(|e| ProviderError::Internal(format!("json decode: {e}")))?;
+            let parsed: Value = resp.json().await.map_err(|e| {
+                ProviderError::Internal(format!("json decode: {}", e.without_url()))
+            })?;
 
             if let Some(usage) = parsed.get("usageMetadata") {
                 total_in = total_in.saturating_add(
@@ -181,7 +195,7 @@ impl VertexHttpProvider {
                 gen_ai.usage.input_tokens = total_in,
                 gen_ai.usage.output_tokens = total_out,
                 turns = turns_used,
-                "Vertex API call"
+                "Google AI Studio API call"
             );
 
             let candidate = parsed
@@ -268,7 +282,7 @@ impl VertexHttpProvider {
 // ── LlmAgentProvider ──────────────────────────────────────────────────────────
 
 #[async_trait]
-impl LlmAgentProvider for VertexHttpProvider {
+impl LlmAgentProvider for GoogleAiStudioProvider {
     fn name(&self) -> &'static str {
         "vertex-http"
     }
@@ -282,7 +296,7 @@ impl LlmAgentProvider for VertexHttpProvider {
             });
         }
 
-        let api_key_secret = resolve_vertex_key()?;
+        let api_key_secret = resolve_google_ai_studio_key()?;
         let api_key = api_key_secret.expose_secret();
 
         let contents = vec![json!({
@@ -353,32 +367,32 @@ mod tests {
     #[test]
     fn sanitize_string_passes_clean() {
         let clean = Value::String("answer: 42".into());
-        let out = VertexHttpProvider::sanitize_function_response(&clean).unwrap();
+        let out = GoogleAiStudioProvider::sanitize_function_response(&clean).unwrap();
         assert_eq!(out, clean);
     }
 
     #[test]
     fn sanitize_nested_object_passes_clean() {
         let obj = json!({"result": {"value": "ok"}});
-        let out = VertexHttpProvider::sanitize_function_response(&obj).unwrap();
+        let out = GoogleAiStudioProvider::sanitize_function_response(&obj).unwrap();
         assert_eq!(out, obj);
     }
 
     #[test]
     fn sanitize_null_passes_through() {
-        let out = VertexHttpProvider::sanitize_function_response(&Value::Null).unwrap();
+        let out = GoogleAiStudioProvider::sanitize_function_response(&Value::Null).unwrap();
         assert_eq!(out, Value::Null);
     }
 
     #[test]
     fn estimate_cost_is_positive() {
-        let p = VertexHttpProvider::new("gemini-1.5-pro", 4096).unwrap();
+        let p = GoogleAiStudioProvider::new("gemini-1.5-pro", 4096).unwrap();
         assert!(p.estimate_cost(1000, 1000) > 0.0);
     }
 
     #[test]
     fn provider_name() {
-        let p = VertexHttpProvider::new("gemini-1.5-pro", 4096).unwrap();
+        let p = GoogleAiStudioProvider::new("gemini-1.5-pro", 4096).unwrap();
         assert_eq!(p.name(), "vertex-http");
     }
 }

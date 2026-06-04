@@ -1,0 +1,155 @@
+# AUTO-GENERATED v3 — quality tier: MULTI_SOURCE (prose=True, doc=True, req_struct=InjectRequest, resp_struct=InjectResponse)
+# Source: lightarchitects-webshell/src/server/mod.rs:1377
+# Handler: coordination::chat_inject
+
+schema_version: la-contracts/v1
+id: wire.http.api-coordination-chat-inject.post
+kind: wire.http
+version: 0.1.0
+status: draft
+northstar_pillars:
+- P1
+operator_intent: Inject a message into an agent chat session.
+observable_outputs:
+- Response status 201 (or one of the documented errors) within the duration budget
+- 'Response body conforms to the InjectResponse schema (key fields: injected, correlation_id)'
+- 'Operator-visible effect: Inject a message into an agent chat session.'
+- AYIN platform.http.request span emitted with {method, path, status, duration_ms}
+errors:
+- http_status: 401
+  condition: missing or invalid auth credential
+  code: E_UNAUTHORIZED
+  operator_sees: Sign in or refresh credential — webshell session expired
+  forbidden: silent retry that hides the 401 from the operator
+  severity: HIGH
+- http_status: 400
+  condition: malformed request payload
+  code: E_BAD_REQUEST
+  operator_sees: Request payload invalid — see error message for the failing field
+  forbidden: silently dropping invalid fields or coercing types
+  severity: MEDIUM
+- http_status: 502
+  condition: upstream subprocess or sibling unreachable
+  code: E_UPSTREAM_UNREACHABLE
+  operator_sees: Upstream unreachable — name which sibling/binary failed
+  forbidden: generic spinner that hides which upstream failed
+  severity: HIGH
+observability:
+  required_spans:
+  - name: webshell.http.request
+    required_metadata:
+    - method
+    - path
+    - status
+    - duration_ms
+    parent_relationship: root
+  trace_context_propagation: true
+  duration_budget_ms: 30000
+hitl_boundaries:
+- none
+conformance_test:
+  given: webshell running; auth=bearer_token; provider-independent for this layer
+  when: POST /api/coordination/chat/inject with body conforming to InjectRequest
+  then:
+  - assertion: response status is 2xx (or one of the documented errors)
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  - assertion: request without a valid credential returns 401 with the E_UNAUTHORIZED code
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  fixtures:
+  - InjectRequest.example.json
+  timeout_seconds: 30
+status_per_provider:
+  anthropic_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  openai_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  ollama_cloud:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  ollama_local:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  mistral_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  groq_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  openrouter_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+alpha_gate:
+  verdict: pass
+  reason: Provider-agnostic wire endpoint with intent, error specs, and observability fully declared. Conformance harness
+    wiring upgrades verdict from declared-pass to runtime-verified at Phase 4.
+wire_http:
+  path: /api/coordination/chat/inject
+  method: POST
+  auth_required: bearer_token
+  idempotency: non_idempotent
+  cors_class: same_origin
+  sse_streaming: false
+  request_schema:
+    type: object
+    properties:
+      session_id:
+        type: string
+      message:
+        type: string
+    required:
+    - session_id
+    - message
+  response_schemas:
+    '400':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '401':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '502':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '201':
+      type: object
+      properties:
+        injected:
+          type: boolean
+        correlation_id:
+          type: string
+      required:
+      - injected
+      - correlation_id
+canon_refs:
+- canon://webshell-api-surface-v1

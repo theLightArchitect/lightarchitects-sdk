@@ -1,0 +1,174 @@
+schema_version: la-contracts/v1
+id: provider.llm.anthropic-http
+kind: provider.llm
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P3]
+
+operator_intent: |
+  AnthropicHttpProvider sends requests directly to the Anthropic Messages API via
+  reqwest (no subprocess). Selected when LA_AGENT_PROVIDER=anthropic. Requires
+  LA_ANTHROPIC_API_KEY sourced from macOS Keychain — never a plaintext config value.
+
+  Distinct from ClaudeCliProvider (subprocess) and LiteLLM (proxy). Uses the
+  Anthropic Messages API wire format directly; span context propagated via
+  x-b3-traceid / traceparent headers.
+
+  OPERATOR WARNING: This provider bills per-token against the Anthropic API.
+  Kevin's constraint: ClaudeCliProvider must remain default when LA_AGENT_PROVIDER
+  is unset. AnthropicHttpProvider is opt-in only via explicit LA_AGENT_PROVIDER=anthropic.
+
+prior_art:
+  - name: lightarchitects/src/agent/http/anthropic.rs
+    url: file://lightarchitects/src/agent/http/anthropic.rs
+    what_we_adopt: "reqwest-based HTTP, ANTHROPIC_API_KEY from env, gen_ai.request.model span attributes"
+    what_we_extend: "EnvProviderFactory selects this provider only on explicit LA_AGENT_PROVIDER=anthropic"
+
+canon_refs:
+  - canon://builders-cookbook
+  - canon://security-guardrails
+
+memory_refs:
+  - feedback_ollama_v1_messages_anthropic_proxy.md
+
+inputs:
+  - { name: api_key, type: secret, description: "Anthropic API key (from LA_ANTHROPIC_API_KEY env var) — sourced from macOS Keychain. NEVER plaintext." }
+  - { name: model, type: string, default: "claude-sonnet-4-6", description: "Model identifier passed to Anthropic API (from LA_AGENT_MODEL env var)" }
+  - { name: safe_prompt, type: string, description: "G1-sanitized prompt (from SanitizedAgentRequest)" }
+
+observable_outputs:
+  - "AgentResponse.output with response text from Anthropic Messages API"
+  - "AYIN llm.call span with metadata.provider == anthropic_http, gen_ai.request.model, usage.{input,output}_tokens"
+  - "tokens.{input, output} populated from Anthropic API usage object (exact counts)"
+
+errors:
+  - condition: LA_ANTHROPIC_API_KEY missing or invalid
+    code: E_PROVIDER_AUTH
+    http_status: 401
+    operator_sees: "Anthropic API key invalid or missing — verify LA_ANTHROPIC_API_KEY in keychain"
+    forbidden: "Logging the API key value anywhere"
+    severity: BLOCKING
+    owasp_class: LLM06
+  - condition: Anthropic API rate limit hit
+    code: E_PROVIDER_RATE_LIMITED
+    http_status: 429
+    operator_sees: "Anthropic API rate limit hit — backoff and retry or switch to claude-code-cli"
+    forbidden: "Tight retry loop without backoff"
+    severity: HIGH
+  - condition: Anthropic API returns non-2xx
+    code: E_PROVIDER_SPAWN_FAILED
+    operator_sees: "Anthropic API error {status}: {detail}"
+    forbidden: "Swallowing the error and returning empty output"
+    severity: HIGH
+  - condition: context window exceeded
+    code: E_PROVIDER_CONTEXT_OVERFLOW
+    http_status: 422
+    operator_sees: "Request exceeds model context window — reduce prompt length"
+    forbidden: "Silently truncating the prompt"
+    severity: HIGH
+
+observability:
+  required_spans:
+    - name: llm.call
+      required_metadata: [model, provider, stop_reason, parent_id, duration_ms, tokens_input, tokens_output]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 300000
+  first_token_budget_ms: 8000
+  trace_context_propagation: true
+
+persistence: []
+
+hitl_boundaries:
+  - none
+
+forbidden_behaviors:
+  - "Storing LA_ANTHROPIC_API_KEY in any file on disk (Keychain or env var only)"
+  - "Selecting this provider when LA_AGENT_PROVIDER is unset (ClaudeCliProvider is mandatory default)"
+  - "Logging x-api-key header value or credential in AYIN spans"
+  - "Calling scope_governor or gate strategy tools in the LLM tool allowlist (OWASP LLM07 / SERAPH VETO)"
+  - "Buffering entire streaming response before forwarding (Cookbook §78.3)"
+
+conformance_test:
+  given: "LA_ANTHROPIC_API_KEY set via keychain; LA_AGENT_PROVIDER=anthropic"
+  when: "AnthropicHttpProvider::new('claude-sonnet-4-6', 1024).spawn(req{safe_prompt: 'Reply with PROOF_<hex>.'}) is called"
+  then:
+    - assertion: "Returns Ok(AgentResponse) with output containing 'PROOF_<hex>'"
+      span_witness: llm.call
+      evidence_tier_required: VERIFIED
+    - assertion: "tokens.input > 0 and tokens.output > 0 (Anthropic returns exact usage)"
+      span_witness: llm.call
+      evidence_tier_required: VERIFIED
+    - assertion: "LA_ANTHROPIC_API_KEY is not present in AYIN span attributes"
+      evidence_tier_required: VERIFIED
+  fixtures: [proof_hex_seed.txt]
+  timeout_seconds: 60
+
+status_per_provider:
+  anthropic_http:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  anthropic_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "This contract IS the anthropic_http provider (direct API; no intermediary)" }
+  openai_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  openai_compat_generic: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  litellm_proxy: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  claude_code_cli: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  ollama_cloud: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  ollama_local: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  mistral_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  groq_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  openrouter_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  vertex_ai: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract (deprecated alias)" }
+  vertex_ai_gemini: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  vertex_ai_claude: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  azure_openai: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+
+alpha_gate:
+  verdict: deferred
+  reason: "Provider contract drafted; live PROOF_<hex> round-trip must pass and token count must be non-zero before promotion. Also requires LA_ANTHROPIC_API_KEY-absent-from-spans verification."
+
+provider_llm:
+  provider_id: anthropic_http
+  category: managed_cloud_api
+  wire_protocol: anthropic_v1
+  base_url_pattern: "https://api.anthropic.com/v1/messages"
+  base_url_validation:
+    scheme_allowlist: [https]
+    host_denylist:
+      - 169.254.169.254
+      - metadata.google.internal
+      - 0.0.0.0
+      - localhost
+      - 127.0.0.1
+    private_ranges_blocked: true
+    dns_rebinding_check: true
+  auth_scheme: api_key_header
+  streaming_contract:
+    frame_format: anthropic_event_blocks
+    first_token_max_ms: 8000
+    on_disconnect: abort
+    on_lag: drop_and_warn
+    supports_token_count_in_stream: true
+  tool_protocol: anthropic_tool_use
+  supported_capabilities:
+    - tool_use
+    - json_mode
+    - vision
+  context_window_tokens: 200000
+  max_output_tokens: 32000
+  error_mapping:
+    - { provider_status_or_code: '401', contract_error_code: E_PROVIDER_AUTH, retriable: false }
+    - { provider_status_or_code: '422', contract_error_code: E_PROVIDER_CONTEXT_OVERFLOW, retriable: false }
+    - { provider_status_or_code: '429', contract_error_code: E_PROVIDER_RATE_LIMITED, retriable: true }
+    - { provider_status_or_code: '500', contract_error_code: E_INTERNAL, retriable: true }
+    - { provider_status_or_code: '529', contract_error_code: E_UNAVAILABLE, retriable: true }
+    - { provider_status_or_code: 'connection_refused', contract_error_code: E_PROVIDER_UNREACHABLE, retriable: false }
+  timeout_ms: 300000
+  retry_policy:
+    max_attempts: 3
+    backoff: exponential_jittered
+    initial_delay_ms: 1000
+    retriable_status_codes: [429, 500, 529]
+  cost_model:
+    currency: USD
+    free_tier: false

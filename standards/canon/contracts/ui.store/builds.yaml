@@ -1,0 +1,122 @@
+schema_version: la-contracts/v1
+id: ui.store.builds
+kind: ui.store
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P1]
+
+operator_intent: |
+  builds is the canonical Svelte writable store holding the live snapshot of all builds the operator can see.
+  All cockpit cards, the BuildsRail, and per-build detail panels subscribe to it. Source-of-truth for the
+  webshell UI build state.
+
+prior_art:
+  - name: Svelte stores
+    url: https://svelte.dev/docs/svelte/stores
+    what_we_adopt: writable/derived/readable interface with subscribe/set/update
+    what_we_extend: Map<id, Build> shape per feedback_svelte_map_store_concurrent_state.md (concurrent SSE keyed writes)
+
+canon_refs: []
+
+memory_refs:
+  - feedback_svelte_map_store_concurrent_state.md
+  - feedback_shared_sse_build_id_type_mismatch.md
+
+inputs: []
+
+observable_outputs:
+  - "Subscribers receive the full Map<id, Build> on subscribe"
+  - "Set/update emits to all subscribers synchronously"
+  - "SSE arrival on /api/events for build_id=X triggers a Map clone + entry-set in <16ms"
+  - "Concurrent SSE writes for different build_ids do not overwrite each other"
+
+errors:
+  - condition: subscriber mutates the Map without cloning first
+    code: E_STORE_DIRECT_MUTATE
+    operator_sees: "subsequent set() finds no diff and skips notification (Svelte 5 reactivity)"
+    forbidden: "in-place push/set on the Map; must `set(new Map(currentValue))` per memory:svelte_map_store"
+    severity: HIGH
+  - condition: SSE handler receives event with build_id of wrong type (Uuid vs String mismatch)
+    code: E_STORE_TYPE_MISMATCH
+    operator_sees: "Map.get returns undefined despite event having the right uuid"
+    forbidden: "comparing Uuid and String without explicit .to_string() conversion"
+    severity: HIGH
+    cwe_class: CWE-704
+
+observability:
+  required_spans: []
+  observability_via_upstream: ui.component
+
+persistence:
+  - path: none
+    contains_one_line: "in-memory only"
+    ttl: session
+
+hitl_boundaries:
+  - none
+
+forbidden_behaviors:
+  - "Direct map.set() / map.delete() without first cloning the Map (Svelte 5 reactivity breaks per memory:svelte_map_store)"
+  - "Storing the build under multiple keys (id as string + id as uuid) — must canonicalise to one key type"
+  - "Subscribers writing back into builds without going through SSE (creates stale local state)"
+  - "Persisting to localStorage — builds are server-authoritative; UI cache is session-scoped"
+
+conformance_test:
+  given: "webshell up; SSE stream connected to /api/events"
+  when: "two distinct build_update SSE events arrive within 5ms of each other (different build_ids)"
+  then:
+    - assertion: "both builds appear in the store after the events drain"
+      filesystem_witness: lightarchitects-webshell-ui/src/__tests__/stores.builds.test.ts
+      evidence_tier_required: VERIFIED
+    - assertion: "subscriber notification fires exactly twice (once per event)"
+      filesystem_witness: lightarchitects-webshell-ui/src/__tests__/stores.builds.test.ts
+      evidence_tier_required: VERIFIED
+  fixtures: [builds_concurrent_sse.example.jsonl]
+  timeout_seconds: 5
+
+status_per_provider:
+  anthropic_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI store is provider-agnostic; the backing SSE stream's content varies but the store contract is identical." }
+  openai_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI store is provider-agnostic." }
+  ollama_cloud: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI store is provider-agnostic." }
+  ollama_local: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI store is provider-agnostic." }
+  mistral_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI store is provider-agnostic." }
+  groq_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI store is provider-agnostic." }
+  openrouter_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI store is provider-agnostic." }
+
+alpha_gate:
+  verdict: pass
+  reason: "Provider-agnostic UI store with documented concurrent-write semantics and test coverage."
+
+ui_store:
+  store_path: lightarchitects-webshell-ui/src/lib/stores.ts#builds
+  store_kind: writable
+  value_schema:
+    type: object
+    description: "Map<string, Build> — keyed by build id (string)"
+    additionalProperties:
+      type: object
+      required: [id, codename, status]
+      properties:
+        id: { type: string, format: uuid }
+        codename: { type: string }
+        status: { type: string }
+        phase: { type: string }
+        northstar_pillar: { type: ['string', 'null'] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+  initial_value: {}
+  writers:
+    - "src/lib/sse.ts — on WebEvent::BuildUpdate"
+    - "src/lib/api/builds.ts — on POST /api/builds (optimistic)"
+  subscribers_observable:
+    - "Cockpit.svelte (via $builds)"
+    - "BuildsRail.svelte"
+    - "BuildDetail.svelte"
+    - "ProjectDetail.svelte (filtered)"
+  persistence_mirror:
+    storage: none
+  update_rules:
+    - "Always clone the Map before mutation: builds.update(m => { const next = new Map(m); next.set(id, build); return next; })"
+    - "build_id keys are always String (not Uuid) — canonicalise via .to_string() at the SSE boundary"
+    - "Never delete on partial info; preserve last-known good if SSE payload missing fields"

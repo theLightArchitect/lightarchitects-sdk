@@ -1,0 +1,172 @@
+schema_version: la-contracts/v1
+id: wire.ws.api-terminal-ws
+kind: wire.ws
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P1]
+
+operator_intent: |
+  Bi-directional PTY WebSocket — the operator gets a terminal in the webshell tab, and what they type
+  flows to a real PTY process; what the PTY emits flows back. Backpressure and resize messages are
+  in-band.
+
+prior_art:
+  - name: xterm.js + node-pty pattern
+    url: https://xtermjs.org/
+    what_we_adopt: in-band resize messages + raw byte channel for stdout/stdin
+    what_we_extend: SecretString-wrapped auth + Cookbook §63.P5 path canonicalization for cwd
+
+canon_refs:
+  - canon://webshell-api-surface-v1
+  - canon://builders-cookbook
+  - canon://security-guardrails
+
+memory_refs: []
+
+inputs: []
+
+observable_outputs:
+  - "Client receives terminal_ready frame within 1000ms of upgrade"
+  - "Each client `stdin` frame produces zero or more `stdout` frames as the PTY emits bytes"
+  - "Client `resize` frame produces no echo (silent PTY ioctl)"
+  - "Server keepalive ping fires every 30s; client pong within 5s or socket closes 1011"
+  - "On PTY exit, server sends `exit` frame with exit_code then closes 1000"
+  - "AYIN webshell.terminal.session span emitted with {session_id, exit_code, duration_ms}"
+
+errors:
+  - condition: auth header missing or invalid
+    code: E_WS_UNAUTH
+    operator_sees: "WebSocket upgrade rejected (HTTP 401 before upgrade)"
+    forbidden: "accepting the upgrade then closing with 4001 (operator cannot distinguish)"
+    severity: HIGH
+  - condition: shell binary not found on PATH
+    code: E_WS_NO_SHELL
+    operator_sees: "Terminal exit_code=127 immediately with stderr 'shell not found'"
+    forbidden: "swallowing the spawn failure silently"
+    severity: HIGH
+  - condition: client sends frame > 64KB
+    code: E_WS_PAYLOAD_TOO_LARGE
+    operator_sees: "Close 1009 (message too big)"
+    forbidden: "fragmenting and accepting without policy"
+    severity: MEDIUM
+  - condition: PTY crash
+    code: E_WS_PTY_CRASH
+    operator_sees: "Close 1011 with reason 'pty died'"
+    forbidden: "reconnecting to a stale PTY pid"
+    severity: HIGH
+
+observability:
+  required_spans:
+    - name: webshell.terminal.session
+      required_metadata: [session_id, exit_code, duration_ms, total_stdin_bytes, total_stdout_bytes]
+      parent_relationship: root
+  duration_budget_ms: 86400000
+  trace_context_propagation: true
+
+persistence:
+  - path: none
+    contains_one_line: "ephemeral; no on-disk PTY log by default"
+    ttl: session
+
+hitl_boundaries:
+  - "Authenticated WebSocket upgrade is the consent — once upgraded, operator types flow without per-frame HITL"
+
+forbidden_behaviors:
+  - "Reading the auth token from query string (leaks to access logs); MUST be in Authorization header"
+  - "Spawning the shell with cwd derived from client input without ancestor-walk canonicalization (CWE-22)"
+  - "Echoing client stdin frames as stdout frames (PTY does this; webshell must not double-echo)"
+  - "Forwarding the bearer token into the spawned shell's env (operator could read it via printenv)"
+
+conformance_test:
+  given: "webshell up; valid bearer token in keychain"
+  when: |
+    Client upgrades GET /api/terminal/ws with Authorization header, sends stdin frame "echo hello\n"
+  then:
+    - assertion: "terminal_ready frame arrives within 1000ms"
+      span_witness: webshell.terminal.session
+      evidence_tier_required: VERIFIED
+    - assertion: "stdout frame containing 'hello' arrives within 500ms"
+      span_witness: webshell.terminal.session
+      evidence_tier_required: VERIFIED
+    - assertion: "close 1000 with exit_code=0 after client sends 'exit\\n'"
+      span_witness: webshell.terminal.session
+      evidence_tier_required: VERIFIED
+  fixtures: []
+  timeout_seconds: 30
+
+status_per_provider:
+  anthropic_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "PTY is provider-agnostic — does not invoke an LLM." }
+  openai_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "PTY is provider-agnostic." }
+  ollama_cloud: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "PTY is provider-agnostic." }
+  ollama_local: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "PTY is provider-agnostic." }
+  mistral_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "PTY is provider-agnostic." }
+  groq_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "PTY is provider-agnostic." }
+  openrouter_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "PTY is provider-agnostic." }
+
+alpha_gate:
+  verdict: pass
+  reason: "WebSocket PTY contract fully declared; provider-agnostic."
+
+wire_ws:
+  path: /api/terminal/ws
+  subprotocols: [la-terminal.v1]
+  auth_required: bearer_token
+  binary_framing: false
+  client_to_server_schema:
+    oneOf:
+      - type: object
+        required: [kind, data]
+        properties:
+          kind: { type: string, const: stdin }
+          data: { type: string, description: "UTF-8 text to write to PTY stdin" }
+        additionalProperties: false
+      - type: object
+        required: [kind, rows, cols]
+        properties:
+          kind: { type: string, const: resize }
+          rows: { type: integer, minimum: 1, maximum: 1000 }
+          cols: { type: integer, minimum: 1, maximum: 1000 }
+        additionalProperties: false
+      - type: object
+        required: [kind]
+        properties:
+          kind: { type: string, const: ping }
+        additionalProperties: false
+  server_to_client_schema:
+    oneOf:
+      - type: object
+        required: [kind]
+        properties:
+          kind: { type: string, const: terminal_ready }
+          shell_path: { type: string }
+          rows: { type: integer }
+          cols: { type: integer }
+        additionalProperties: false
+      - type: object
+        required: [kind, data]
+        properties:
+          kind: { type: string, const: stdout }
+          data: { type: string }
+        additionalProperties: false
+      - type: object
+        required: [kind, exit_code]
+        properties:
+          kind: { type: string, const: exit }
+          exit_code: { type: integer }
+        additionalProperties: false
+      - type: object
+        required: [kind]
+        properties:
+          kind: { type: string, const: pong }
+        additionalProperties: false
+  close_codes:
+    '1000': normal close (client or PTY exit)
+    '1009': message too big (frame > max_message_bytes)
+    '1011': server error (PTY crash, internal panic)
+    '4001': auth failure (rare; usually 401 pre-upgrade)
+    '4029': rate limited
+  keepalive:
+    ping_interval_seconds: 30
+    pong_timeout_seconds: 5
+  max_message_bytes: 65536

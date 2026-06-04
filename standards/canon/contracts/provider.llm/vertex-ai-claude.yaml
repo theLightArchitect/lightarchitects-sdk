@@ -1,0 +1,177 @@
+schema_version: la-contracts/v1
+id: provider.llm.vertex-ai-claude
+kind: provider.llm
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P3]
+
+operator_intent: |
+  Anthropic Claude family hosted on Google Vertex AI. Distinct from vertex_ai_gemini because the wire
+  protocol is Anthropic Messages (not Google native), the body carries anthropic_version: "vertex-2023-10-16",
+  and the AnthropicVertex client requires both project_id + region. Inherits Anthropic non-determinism
+  semantics per LÆX §7.1 Q1 ratification.
+
+prior_art:
+  - name: Anthropic Claude on Vertex AI
+    url: https://docs.anthropic.com/en/api/claude-on-vertex-ai
+    version: "2026-06-03 (accessed via QUANTUM research)"
+    what_we_adopt: anthropic_version vertex-2023-10-16 body field; AnthropicVertex SDK semantics
+    what_we_extend: provider-id split (vertex_ai_claude) so per-provider conformance matrix routes correctly
+
+inherits_from: [provider.llm.anthropic-http]
+
+canon_refs:
+  - canon://platform-canon
+  - canon://la-contracts-canon#§3.1
+  - canon://la-contracts-canon#§7.1
+
+memory_refs: []
+
+inputs:
+  - { name: project, type: string, pattern: "^[a-z][a-z0-9-]{4,29}$", description: "GCP project id" }
+  - { name: region, type: string, description: "Vertex AI region (Claude-on-Vertex availability is region-restricted)" }
+  - { name: model, type: string, description: "e.g., claude-sonnet-4-6@vertex" }
+  - { name: messages, type: array, description: "Anthropic Messages API content[] schema" }
+  - { name: anthropic_version, type: string, default: "vertex-2023-10-16", description: "Required body field for Claude-on-Vertex" }
+
+observable_outputs:
+  - "POST to {region}-aiplatform.googleapis.com/v1/projects/{project}/locations/{region}/publishers/anthropic/models/{model}:rawPredict (or :streamRawPredict for SSE) returns Anthropic Messages response"
+  - "Body carries anthropic_version: 'vertex-2023-10-16'"
+  - "Streaming variant uses :streamRawPredict with Anthropic event blocks (message_start, content_block_delta, content_block_stop, message_stop)"
+  - "AYIN llm.call span with metadata.provider=vertex_ai_claude, metadata.region, metadata.model"
+
+errors:
+  - condition: GCP ADC credential missing or expired
+    code: E_PROVIDER_AUTH
+    http_status: 401
+    operator_sees: "Vertex AI rejected credential — run `gcloud auth application-default login`"
+    forbidden: "silent retry"
+    severity: HIGH
+    owasp_class: LLM06
+  - condition: Claude model not available in this region
+    code: E_PROVIDER_MODEL_UNAVAILABLE
+    http_status: 404
+    operator_sees: "Claude model {model} not available in region {region} — Claude-on-Vertex region availability is restricted"
+    forbidden: "silently re-routing to a different region"
+    severity: HIGH
+  - condition: missing anthropic_version field in body
+    code: E_VERTEX_ANTHROPIC_VERSION_MISSING
+    http_status: 400
+    operator_sees: "Vertex AI Claude requires 'anthropic_version: vertex-2023-10-16' in request body"
+    forbidden: "omitting the version field to save bytes"
+    severity: MEDIUM
+
+observability:
+  required_spans:
+    - name: llm.call
+      required_metadata: [model, provider, stop_reason, parent_id, duration_ms, tokens_input, tokens_output, region, anthropic_version]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 300000
+  first_token_budget_ms: 10000
+  trace_context_propagation: true
+
+persistence:
+  - path: ~/lightarchitects/cli/turnlog/active/<session>.ndjson
+    schema_ref: state.store.turnlog-ndjson
+    ttl: forever
+    hmac_chained: true
+    redaction_policy: HelixSessionMemory::SECRET_PATTERNS
+
+hitl_boundaries: [none]
+
+forbidden_behaviors:
+  - "Routing Claude-on-Vertex requests through the vertex_ai_gemini provider id (different wire protocol; different cost model)"
+  - "Omitting the anthropic_version body field (Vertex rejects with 400)"
+  - "Logging the OAuth2 Bearer or service-account private key"
+  - "Treating Claude-on-Vertex as guaranteed-deterministic (inherits Anthropic non-determinism per LÆX §7.1 Q1)"
+
+conformance_test:
+  given: "GCP project + service account configured; region us-east5 (where Claude-on-Vertex is available); model claude-sonnet-4-6"
+  when: |
+    POST /v1/projects/<project>/locations/us-east5/publishers/anthropic/models/claude-sonnet-4-6:streamRawPredict with body {anthropic_version: 'vertex-2023-10-16', messages: [{role: user, content: 'Reply PROOF_<hex>.'}], max_tokens: 200}
+  then:
+    - assertion: "first event block (message_start) arrives within first_token_budget_ms (10000)"
+      span_witness: llm.call
+      evidence_tier_required: VERIFIED
+    - assertion: "accumulated content contains 'PROOF_<the_exact_hex>'"
+      span_witness: llm.call
+      evidence_tier_required: VERIFIED
+    - assertion: "AYIN llm.call span has metadata.provider == vertex_ai_claude and metadata.anthropic_version == 'vertex-2023-10-16'"
+      span_witness: llm.call
+      evidence_tier_required: VERIFIED
+  fixtures: [proof_hex_seed.txt, vertex_service_account.example.json]
+  timeout_seconds: 60
+
+status_per_provider:
+  vertex_ai_claude: { result: UNTESTED, evidence_tier: INFERRED }
+  vertex_ai_gemini: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Google Gemini path; different wire protocol; different contract." }
+  anthropic_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Direct Anthropic API; different transport." }
+  anthropic_http: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Direct Anthropic API; different transport." }
+  claude_code_cli: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Claude Code subprocess; different transport." }
+  openai_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  openai_compat_generic: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  ollama_cloud: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  ollama_local: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  litellm_proxy: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  mistral_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  groq_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  openrouter_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  azure_openai: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+
+alpha_gate:
+  verdict: deferred
+  reason: "Provider contract drafted from QUANTUM matrix 2026-06-03; awaits live PROOF_<hex> round-trip via AnthropicVertex client + region availability map verification in Phase 4 conformance harness."
+
+provider_llm:
+  provider_id: vertex_ai_claude
+  category: managed_cloud_api
+  wire_protocol: anthropic_messages_api
+  base_url_pattern: "https://us-east5-aiplatform.googleapis.com"
+  base_url_validation:
+    scheme_allowlist: [https]
+    host_denylist:
+      - 169.254.169.254
+      - metadata.google.internal
+      - 0.0.0.0
+      - localhost
+      - 127.0.0.1
+    private_ranges_blocked: true
+    dns_rebinding_check: true
+  auth_scheme: oauth2
+  streaming_contract:
+    frame_format: anthropic_event_blocks
+    first_token_max_ms: 10000
+    on_disconnect: abort
+    on_lag: drop_and_warn
+    supports_token_count_in_stream: true
+  tool_protocol: anthropic_tool_use
+  supported_capabilities:
+    - tool_use
+    - vision
+    - json_mode
+    - streaming
+    - multi_turn
+    - prompt_caching
+    - extended_thinking
+    - batch_api
+    - system_prompt
+  context_window_tokens: 200000
+  max_output_tokens: 8192
+  error_mapping:
+    - { provider_status_or_code: '400', contract_error_code: E_VERTEX_ANTHROPIC_VERSION_MISSING, retriable: false }
+    - { provider_status_or_code: '401', contract_error_code: E_PROVIDER_AUTH, retriable: false }
+    - { provider_status_or_code: '404', contract_error_code: E_PROVIDER_MODEL_UNAVAILABLE, retriable: false }
+    - { provider_status_or_code: '429', contract_error_code: E_PROVIDER_RATE_LIMITED, retriable: true }
+    - { provider_status_or_code: '500', contract_error_code: E_INTERNAL, retriable: true }
+    - { provider_status_or_code: '503', contract_error_code: E_UNAVAILABLE, retriable: true }
+  timeout_ms: 300000
+  retry_policy:
+    max_attempts: 3
+    backoff: exponential_jittered
+    initial_delay_ms: 500
+    retriable_status_codes: [429, 500, 502, 503, 504]
+  cost_model:
+    currency: USD
+    free_tier: false
+    billing_mechanism: per_token

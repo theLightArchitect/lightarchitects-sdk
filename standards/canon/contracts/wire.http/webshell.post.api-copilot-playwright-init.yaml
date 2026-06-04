@@ -1,0 +1,112 @@
+# AUTO-GENERATED v3 — quality tier: SINGLE_SOURCE (prose=False, doc=True, req_struct=-, resp_struct=InitResponse)
+# Source: lightarchitects-webshell/src/server/mod.rs:1316
+# Handler: crate::copilot::playwright::handle_init
+
+schema_version: la-contracts/v1
+id: wire.http.api-copilot-playwright-init.post
+kind: wire.http
+version: 0.1.0
+status: draft
+northstar_pillars:
+- P1
+- P3
+operator_intent: 'POST /api/copilot/playwright/init
+
+
+  Initializes a `PlaywrightBridge` (if none exists) and returns the auth token.'
+observable_outputs:
+- Response status 201 (or one of the documented errors) within the duration budget
+- 'Response body conforms to the InitResponse schema (key fields: token, session_id)'
+- 'Operator-visible effect: POST /api/copilot/playwright/init.'
+- AYIN platform.http.request span emitted with {method, path, status, duration_ms}
+errors:
+- http_status: 401
+  condition: missing or invalid auth credential
+  code: E_UNAUTHORIZED
+  operator_sees: Sign in or refresh credential — webshell session expired
+  forbidden: silent retry that hides the 401 from the operator
+  severity: HIGH
+- http_status: 403
+  condition: caller authenticated but not authorised for this resource
+  code: E_FORBIDDEN
+  operator_sees: You do not have access to this resource
+  forbidden: leaking the resource id in a generic 404 response
+  severity: HIGH
+observability:
+  required_spans:
+  - name: webshell.http.request
+    required_metadata:
+    - method
+    - path
+    - status
+    - duration_ms
+    parent_relationship: root
+  trace_context_propagation: true
+  duration_budget_ms: 30000
+hitl_boundaries:
+- none
+conformance_test:
+  given: webshell running; auth=bearer_token; provider-independent for this layer
+  when: POST /api/copilot/playwright/init
+  then:
+  - assertion: response status is 2xx (or one of the documented errors)
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  - assertion: request without a valid credential returns 401 with the E_UNAUTHORIZED code
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  fixtures: []
+  timeout_seconds: 30
+status_per_provider:
+  anthropic_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  openai_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  ollama_cloud:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  ollama_local:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  mistral_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  groq_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  openrouter_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+alpha_gate:
+  verdict: deferred
+  reason: Provider-dependent endpoint; alpha gate awaits conformance harness exercising each of seven providers in scope.
+wire_http:
+  path: /api/copilot/playwright/init
+  method: POST
+  auth_required: bearer_token
+  idempotency: non_idempotent
+  cors_class: same_origin
+  sse_streaming: false
+  response_schemas:
+    '200':
+      type: object
+      properties:
+        token:
+          type: string
+        session_id:
+          type: string
+      required:
+      - token
+      - session_id
+    '403':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string

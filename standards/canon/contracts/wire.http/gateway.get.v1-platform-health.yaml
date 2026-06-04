@@ -1,0 +1,90 @@
+# AUTO-GENERATED v3 — quality tier: SINGLE_SOURCE (prose=False, doc=True, req_struct=-, resp_struct=-)
+# Source: lightarchitects-gateway/src/http/routes/platform.rs:40
+# Handler: health
+
+schema_version: la-contracts/v1
+id: wire.http.v1-platform-health.get
+kind: wire.http
+version: 0.1.0
+status: draft
+northstar_pillars:
+- P3
+- P4
+operator_intent: Unauthenticated liveness probe.
+observable_outputs:
+- Response status 200 (or one of the documented errors) within the duration budget
+- 'Operator-visible effect: Unauthenticated liveness probe.'
+- AYIN platform.http.request span emitted with {method, path, status, duration_ms}
+errors:
+- http_status: 400
+  condition: malformed request payload
+  code: E_BAD_REQUEST
+  operator_sees: Request payload invalid — see error message for the failing field
+  forbidden: silently dropping invalid fields or coercing types
+  severity: MEDIUM
+observability:
+  required_spans:
+  - name: platform.http.request
+    required_metadata:
+    - method
+    - path
+    - status
+    - duration_ms
+    parent_relationship: root
+  trace_context_propagation: true
+  duration_budget_ms: 30000
+hitl_boundaries:
+- none
+conformance_test:
+  given: webshell running; auth=none; provider-independent for this layer
+  when: GET /v1/platform/health
+  then:
+  - assertion: response status is 2xx (or one of the documented errors)
+    span_witness: platform.http.request
+    evidence_tier_required: VERIFIED
+  fixtures: []
+  timeout_seconds: 30
+status_per_provider:
+  anthropic_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  openai_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  ollama_cloud:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  ollama_local:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  mistral_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  groq_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  openrouter_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+alpha_gate:
+  verdict: pass
+  reason: Provider-agnostic wire endpoint with intent, error specs, and observability fully declared. Conformance harness
+    wiring upgrades verdict from declared-pass to runtime-verified at Phase 4.
+wire_http:
+  path: /v1/platform/health
+  method: GET
+  auth_required: none
+  idempotency: idempotent
+  cors_class: same_origin
+  sse_streaming: false
+  response_schemas:
+    '200':
+      type: object
+      description: shape not yet inferred — _audit pending_ until handler returns a typed Json<T>

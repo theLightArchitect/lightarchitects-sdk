@@ -1373,6 +1373,58 @@ Systems that cannot yet satisfy all rows in §MT-1.1 MUST operate as single-tena
 - §MT-1 feeds LASDLC Guardrail 6.4 (alpha-public-readiness-program §6.4): plan-level enforcement that BUILD phases declaring multi-tenancy satisfy all rows before claiming the invariant.
 - §SG-CRYPTO composition: cryptographic isolation (key derivation per-tenant, HKDF with tenant-scoped salts) is one mechanism satisfying the auth-tokens row.
 
+## §SG-HTTP-AUTH — HTTP Provider API Key Placement — RATIFIED 2026-06-04, LÆX #65, Kevin Francis Tan
+
+### Rule SG-HTTP-AUTH.1 — Keys in headers, never in URL query parameters
+
+API keys and bearer tokens belong in **request headers only** (`x-goog-api-key`, `Authorization: Bearer <token>`, etc.). They must **never** appear in URL query parameters.
+
+URL query strings are logged by:
+- HTTP server access logs (nginx, Caddy, cloud load balancers)
+- Reverse-proxy and CDN logs (Cloudflare, AWS ALB)
+- HTTP `Referer` headers on 3xx redirects (key leaks to the redirect target)
+- `reqwest::Error`'s `Display` impl, which embeds the request URL
+
+Migrating a key from a query parameter to a header requires one line change and closes all four vectors simultaneously.
+
+**Canonical Rust implementation** (reqwest):
+
+```rust
+// ✗ WRONG — key visible in all logs
+const API_TEMPLATE: &str = "https://api.example.com/v1/generate?key={key}";
+let url = API_TEMPLATE.replace("{key}", api_key);
+self.http.post(&url).json(&body).send().await?;
+
+// ✓ CORRECT — key in header, URL is safe to log
+const API_TEMPLATE: &str = "https://api.example.com/v1/generate";
+self.http
+    .post(API_TEMPLATE)
+    .header("x-api-key", api_key)   // or Authorization: Bearer
+    .json(&body)
+    .send()
+    .await?;
+```
+
+### Rule SG-HTTP-AUTH.2 — Scrub URLs from reqwest errors in provider code
+
+Use `reqwest::Error::without_url()` on all error paths in HTTP provider code. reqwest embeds the full request URL in `Error`'s `Display` impl. While the URL is safe when the key is in a header, stripping it is mandatory defense-in-depth: it ensures that any future regression where a key drifts back into the URL does not silently exfiltrate it through error logging.
+
+```rust
+// ✗ URL appears in logs — key leaks if it ever migrates back to URL
+.map_err(|e| ProviderError::Internal(format!("http send: {e}")))?
+
+// ✓ URL stripped — safe regardless of future URL construction
+.map_err(|e| ProviderError::Internal(format!("http send: {}", e.without_url())))?
+```
+
+Apply `without_url()` to every `.map_err` on a reqwest send or json-decode call inside provider implementations. This applies to both successful-status error paths and decode errors.
+
+### Rule SG-HTTP-AUTH.3 — Scope
+
+Both rules apply to all HTTP provider implementations in the `lightarchitects` crate and any downstream crate that constructs reqwest requests with auth credentials. They compose with §3.3 (Cryptography Standards — key storage in OS keychain) and §2.8 (Credential Store Access Policy).
+
+**Witness:** N=1 production. `google_ai_studio.rs` (2026-06-04): `generativelanguage.googleapis.com` API key was in URL as `?key={key}` — visible in server logs, error messages. Fix: moved to `x-goog-api-key` header + `without_url()` on both error paths. Security review: SERAPH HIGH finding. **LÆX Queue**: #65, contradiction-check PASS 2026-06-04.
+
 ---
 
 ## Amendment history

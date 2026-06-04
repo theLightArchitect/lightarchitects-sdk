@@ -1,0 +1,180 @@
+schema_version: la-contracts/v1
+id: provider.llm.ollama-local
+kind: provider.llm
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P3]
+
+operator_intent: |
+  OllamaCliProvider targets a locally-running Ollama instance (default: http://localhost:11434/api/chat).
+  Selected when LA_AGENT_PROVIDER=ollama. No auth token required for localhost; API key optional for
+  authenticated local setups. Model pulled via `ollama pull <model>` before use.
+
+  Distinct from ollama-cloud (api.ollama.com with Bearer auth and :cloud/-cloud suffix models).
+  This contract covers local-only models (e.g. llama3.2:3b, qwen2.5-coder:14b, nomic-embed-text).
+  No per-token billing — runs entirely on operator hardware.
+
+  SSRF note: LA_OLLAMA_BASE_URL is validated only for localhost by default (local-only policy).
+  OLLAMA_NO_CLOUD=1 or server.json disable_ollama_cloud prevents cloud model proxying.
+
+prior_art:
+  - name: lightarchitects/src/agent/ollama.rs
+    url: file://lightarchitects/src/agent/ollama.rs
+    what_we_adopt: "/api/chat NDJSON streaming, model availability check, NDJSON done:true detection"
+    what_we_extend: "EnvProviderFactory selects this provider on LA_AGENT_PROVIDER=ollama"
+  - name: Ollama local API docs
+    url: https://github.com/ollama/ollama/blob/main/docs/api.md
+    what_we_adopt: "POST /api/chat NDJSON; done:true final chunk; tool_calls in message envelope"
+    what_we_extend: "cloud-model suffix guard (models with :cloud/-cloud suffix reject if base_url is localhost)"
+
+canon_refs:
+  - canon://builders-cookbook
+  - canon://security-guardrails
+
+memory_refs:
+  - feedback_ollama_cloud_suffix_variants.md
+  - feedback_ollama_v1_messages_anthropic_proxy.md
+  - feedback_ollama_no_cloud_disable.md
+  - reference_macbook_hardware.md
+
+inputs:
+  - { name: base_url, type: url, default: "http://localhost:11434", description: "Ollama server base URL (from LA_OLLAMA_BASE_URL env var); must resolve to localhost by default policy" }
+  - { name: model, type: string, default: "llama3.2:3b", description: "Model to use (from LA_AGENT_MODEL env var); must be pulled locally. Cloud-suffix models rejected for localhost base_url." }
+  - { name: safe_prompt, type: string, description: "G1-sanitized prompt (from SanitizedAgentRequest)" }
+
+observable_outputs:
+  - "NDJSON streaming from POST <base_url>/api/chat; each line has {message, done}"
+  - "Tool calls in message.tool_calls[] per Ollama tool protocol"
+  - "Final chunk has done:true with eval_count, prompt_eval_count, total_duration"
+  - "AYIN llm.call span with metadata.provider == ollama_local and metadata.model"
+  - "first_token within first_token_max_ms budget (local hardware — typically <2s for 3B models)"
+
+errors:
+  - condition: Ollama daemon not running
+    code: E_PROVIDER_UNREACHABLE
+    operator_sees: "Ollama unreachable at {base_url} — ensure 'ollama serve' is running"
+    forbidden: "Falling back to cloud without explicit operator config"
+    severity: HIGH
+  - condition: Model not pulled locally
+    code: E_PROVIDER_SPAWN_FAILED
+    operator_sees: "Model {model} not found — run 'ollama pull {model}'"
+    forbidden: "Auto-pulling without operator consent"
+    severity: HIGH
+  - condition: Cloud-suffix model (:cloud/-cloud) requested for localhost base_url
+    code: E_PROVIDER_LOCAL_FOR_CLOUD_MODEL
+    operator_sees: "Model {model} has cloud suffix but base_url is localhost — use LA_AGENT_PROVIDER=ollama-cloud"
+    forbidden: "Silently attempting local run of a cloud-suffix model"
+    severity: HIGH
+  - condition: "/v1/messages fallback — Anthropic proxy returns 429/403 (OLLAMA_NO_CLOUD issue)"
+    code: E_PROVIDER_RATE_LIMITED
+    http_status: 429
+    operator_sees: "Ollama /v1/messages hit Anthropic quota — fall back to /api/chat; set OLLAMA_NO_CLOUD=1"
+    forbidden: "Treating Anthropic 429 as local unavailability"
+    severity: MEDIUM
+  - condition: streaming connection dropped before done:true
+    code: E_PROVIDER_DISCONNECT
+    operator_sees: "Ollama stream dropped before completion"
+    forbidden: "Marking call successful when done:true was never received"
+    severity: MEDIUM
+
+observability:
+  required_spans:
+    - name: llm.call
+      required_metadata: [model, provider, stop_reason, parent_id, duration_ms, tokens_input, tokens_output]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 120000
+  first_token_budget_ms: 5000
+  trace_context_propagation: true
+
+persistence: []
+
+hitl_boundaries:
+  - none
+
+forbidden_behaviors:
+  - "Auto-pulling models from Ollama registry without operator consent"
+  - "Routing cloud-suffix models (:cloud/-cloud) to localhost Ollama (use ollama-cloud contract)"
+  - "Relying on /v1/messages for local models (Anthropic proxy semantics — use /api/chat)"
+  - "Setting OLLAMA_NO_CLOUD=0 in production config (breaks cloud-model isolation)"
+  - "Buffering entire NDJSON response before forwarding (Cookbook §78.3)"
+
+conformance_test:
+  given: "Ollama running at localhost:11434 with llama3.2:3b pulled locally"
+  when: "OllamaCliProvider targeting localhost.spawn(req{safe_prompt: 'Reply with PROOF_<hex>.'}) is called"
+  then:
+    - assertion: "Returns Ok(AgentResponse) with output containing 'PROOF_<hex>'"
+      span_witness: llm.call
+      evidence_tier_required: VERIFIED
+    - assertion: "First NDJSON chunk arrives within first_token_budget_ms (5000)"
+      span_witness: llm.call
+      evidence_tier_required: VERIFIED
+    - assertion: "Final chunk has done:true with non-zero eval_count"
+      span_witness: llm.call
+      evidence_tier_required: VERIFIED
+  fixtures: [proof_hex_seed.txt]
+  timeout_seconds: 60
+
+status_per_provider:
+  ollama_local:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  anthropic_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  anthropic_http: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  openai_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  openai_compat_generic: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  litellm_proxy: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  claude_code_cli: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  ollama_cloud: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract (cloud variant)" }
+  mistral_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  groq_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  openrouter_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  vertex_ai: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract (deprecated alias)" }
+  vertex_ai_gemini: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  vertex_ai_claude: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  azure_openai: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+
+alpha_gate:
+  verdict: deferred
+  reason: "Provider contract drafted; live PROOF_<hex> round-trip with llama3.2:3b must pass before promotion. Requires local Ollama at :11434."
+
+provider_llm:
+  provider_id: ollama_local
+  category: local_runtime
+  wire_protocol: ollama_native
+  base_url_pattern: "http://localhost:11434 (default; operator-configurable via LA_OLLAMA_BASE_URL)"
+  base_url_validation:
+    scheme_allowlist: [http, https]
+    host_denylist:
+      - 169.254.169.254
+      - metadata.google.internal
+      - 0.0.0.0
+    private_ranges_blocked: false
+    dns_rebinding_check: false
+  auth_scheme: none
+  streaming_contract:
+    frame_format: ollama_native_stream
+    first_token_max_ms: 5000
+    on_disconnect: abort
+    on_lag: drop_and_warn
+    supports_token_count_in_stream: true
+  tool_protocol: openai_function_calling
+  supported_capabilities:
+    - tool_use
+    - json_mode
+  context_window_tokens: 131072
+  max_output_tokens: 8192
+  error_mapping:
+    - { provider_status_or_code: 'connection_refused', contract_error_code: E_PROVIDER_UNREACHABLE, retriable: false }
+    - { provider_status_or_code: 'model_not_found', contract_error_code: E_PROVIDER_SPAWN_FAILED, retriable: false }
+    - { provider_status_or_code: '429', contract_error_code: E_PROVIDER_RATE_LIMITED, retriable: true }
+    - { provider_status_or_code: '500', contract_error_code: E_INTERNAL, retriable: true }
+  timeout_ms: 120000
+  retry_policy:
+    max_attempts: 2
+    backoff: linear
+    initial_delay_ms: 1000
+    retriable_status_codes: [500, 503]
+  cost_model:
+    currency: USD
+    free_tier: true

@@ -1,0 +1,149 @@
+# AUTO-GENERATED v3 — quality tier: MULTI_SOURCE (prose=True, doc=True, req_struct=SaveRequest, resp_struct=SaveResponse)
+# Source: lightarchitects-webshell/src/server/mod.rs:1337
+# Handler: setup::setup_save
+
+schema_version: la-contracts/v1
+id: wire.http.api-setup-save.post
+kind: wire.http
+version: 0.1.0
+status: draft
+northstar_pillars:
+- P1
+operator_intent: Save backend configuration.
+observable_outputs:
+- Response status 201 (or one of the documented errors) within the duration budget
+- 'Response body conforms to the SaveResponse schema (key fields: ok)'
+- 'Operator-visible effect: Save backend configuration.'
+- AYIN platform.http.request span emitted with {method, path, status, duration_ms}
+errors:
+- http_status: 401
+  condition: missing or invalid auth credential
+  code: E_UNAUTHORIZED
+  operator_sees: Sign in or refresh credential — webshell session expired
+  forbidden: silent retry that hides the 401 from the operator
+  severity: HIGH
+- http_status: 400
+  condition: malformed request payload
+  code: E_BAD_REQUEST
+  operator_sees: Request payload invalid — see error message for the failing field
+  forbidden: silently dropping invalid fields or coercing types
+  severity: MEDIUM
+- http_status: 500
+  condition: internal server error
+  code: E_INTERNAL
+  operator_sees: Internal error — message references the request id
+  forbidden: returning a stack trace or stderr in the response body
+  severity: HIGH
+observability:
+  required_spans:
+  - name: webshell.http.request
+    required_metadata:
+    - method
+    - path
+    - status
+    - duration_ms
+    parent_relationship: root
+  trace_context_propagation: true
+  duration_budget_ms: 30000
+hitl_boundaries:
+- none
+conformance_test:
+  given: webshell running; auth=bearer_token; provider-independent for this layer
+  when: POST /api/setup/save with body conforming to SaveRequest
+  then:
+  - assertion: response status is 2xx (or one of the documented errors)
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  - assertion: request without a valid credential returns 401 with the E_UNAUTHORIZED code
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  fixtures:
+  - SaveRequest.example.json
+  timeout_seconds: 30
+status_per_provider:
+  anthropic_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  openai_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  ollama_cloud:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  ollama_local:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  mistral_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  groq_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  openrouter_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+alpha_gate:
+  verdict: pass
+  reason: Provider-agnostic wire endpoint with intent, error specs, and observability fully declared. Conformance harness
+    wiring upgrades verdict from declared-pass to runtime-verified at Phase 4.
+wire_http:
+  path: /api/setup/save
+  method: POST
+  auth_required: bearer_token
+  idempotency: non_idempotent
+  cors_class: same_origin
+  sse_streaming: false
+  request_schema:
+    type: object
+    properties:
+      agent:
+        type: object
+        description: 'Rust type: AgentKind'
+      backend:
+        type: string
+      model:
+        type: string
+      ollama_base_url:
+        type: string
+      api_key:
+        type: string
+    required:
+    - agent
+    - backend
+  response_schemas:
+    '400':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '500':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '201':
+      type: object
+      properties:
+        ok:
+          type: boolean
+      required:
+      - ok
+canon_refs:
+- canon://webshell-api-surface-v1

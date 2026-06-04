@@ -1,0 +1,186 @@
+schema_version: la-contracts/v1
+id: provider.llm.litellm-proxy
+kind: provider.llm
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P3]
+
+operator_intent: |
+  LiteLLM proxy provider — OpenAICompatProvider::for_litellm() targets a locally-running
+  LiteLLM proxy (default: http://localhost:4000/v1). LiteLLM translates OpenAI-compat
+  wire to 100+ upstream providers, enabling model-agnostic routing without changing
+  caller code.
+
+  Selected when LA_AGENT_PROVIDER=litellm. Requires LA_LITELLM_BASE_URL and
+  LA_LITELLM_API_KEY (or LA_LITELLM_MASTER_KEY). Endpoint must pass
+  endpoint_policy::is_allowed() — SSRF guard runs before any HTTP call.
+
+  SSRF risk: LA_LITELLM_BASE_URL is operator-controlled; a misconfigured or
+  attacker-influenced value could target IMDS or private networks. The
+  endpoint_policy::is_allowed() call in EnvProviderFactory::build() is the
+  load-bearing guard.
+
+prior_art:
+  - name: lightarchitects/src/agent/openai_compat.rs
+    url: file://lightarchitects/src/agent/openai_compat.rs
+    what_we_adopt: "for_litellm() constructor, streaming parse via messages_stream_parser, SSRF guard"
+    what_we_extend: "EnvProviderFactory wires LA_LITELLM_BASE_URL + endpoint_policy check"
+  - name: LiteLLM docs — /chat/completions
+    url: https://docs.litellm.ai/docs/completion/input
+    what_we_adopt: "OpenAI-compat POST /chat/completions with stream:true"
+    what_we_extend: "SSRF guard on base_url, HelixSessionMemory secret redaction on persist"
+
+canon_refs:
+  - canon://builders-cookbook
+  - canon://security-guardrails
+
+memory_refs:
+  - feedback_litellm_keychain_provider_deployment.md
+  - feedback_litellm_provider_unifier.md
+  - feedback_streaming_tx_forwarding.md
+  - feedback_three_provider_shared_parser_pattern.md
+
+inputs:
+  - { name: base_url, type: url, default: "http://localhost:4000/v1", description: "LiteLLM proxy base URL (from LA_LITELLM_BASE_URL env var); validated by endpoint_policy::is_allowed()" }
+  - { name: api_key, type: secret, description: "API key / master_key for LiteLLM (from LA_LITELLM_API_KEY env var); sourced from macOS Keychain. Never in config files." }
+  - { name: model, type: string, default: "claude-sonnet-4-6", description: "Model name forwarded to LiteLLM (from LA_AGENT_MODEL env var)" }
+
+observable_outputs:
+  - "Streaming SSE from POST <base_url>/chat/completions; parsed via messages_stream_parser"
+  - "AYIN llm.call span with metadata.provider == litellm_proxy and metadata.model"
+  - "LiteLLM /health probe passes in Phase 6 smoke test (G2 post-build guarantee)"
+  - "first_token within first_token_max_ms budget"
+
+errors:
+  - condition: LA_LITELLM_BASE_URL resolves to private network or IMDS
+    code: E_PROVIDER_SSRF_BLOCKED
+    operator_sees: "LiteLLM base_url rejected by endpoint_policy — private/metadata addresses blocked"
+    forbidden: "Issuing any HTTP request before endpoint_policy check passes"
+    severity: BLOCKING
+    cwe_class: CWE-918
+  - condition: LiteLLM proxy is not running or connection refused
+    code: E_PROVIDER_UNREACHABLE
+    operator_sees: "LiteLLM proxy unreachable at {base_url} — ensure proxy is running"
+    forbidden: "Silent failure or fallback to ClaudeCliProvider without explicit operator config"
+    severity: HIGH
+  - condition: API key / master_key rejected by LiteLLM
+    code: E_PROVIDER_AUTH
+    http_status: 401
+    operator_sees: "LiteLLM rejected credential — verify LA_LITELLM_API_KEY in keychain"
+    forbidden: "Logging the API key value"
+    severity: HIGH
+    owasp_class: LLM06
+  - condition: Upstream provider rate limit propagated through LiteLLM
+    code: E_PROVIDER_RATE_LIMITED
+    http_status: 429
+    operator_sees: "LiteLLM upstream rate limit hit — backoff and retry"
+    forbidden: "Tight retry loop without backoff"
+    severity: MEDIUM
+  - condition: database_url configured in LiteLLM (triggers Prisma failure)
+    code: E_PROVIDER_SPAWN_FAILED
+    operator_sees: "LiteLLM database_url config triggers Prisma failure — remove from litellm_config.yaml"
+    forbidden: "Configuring database_url in LiteLLM config (breaks /health)"
+    severity: HIGH
+
+observability:
+  required_spans:
+    - name: llm.call
+      required_metadata: [model, provider, stop_reason, parent_id, duration_ms, tokens_input, tokens_output]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 300000
+  first_token_budget_ms: 10000
+  trace_context_propagation: true
+
+persistence: []
+
+hitl_boundaries:
+  - none
+
+forbidden_behaviors:
+  - "Issuing HTTP request to LA_LITELLM_BASE_URL before endpoint_policy::is_allowed() passes (SSRF)"
+  - "Storing LA_LITELLM_API_KEY in config files — must use env var referencing macOS Keychain or Portkey virtual key"
+  - "Configuring database_url in litellm_config.yaml (causes Prisma failure breaking /health probe)"
+  - "Falling back to ClaudeCliProvider silently when litellm is configured but unreachable"
+  - "Buffering entire streaming response before forwarding (Cookbook §78.3)"
+
+conformance_test:
+  given: "LiteLLM proxy running at localhost:4000 with a valid model configured; LA_LITELLM_API_KEY set"
+  when: "OpenAICompatProvider::for_litellm(None, api_key, model).spawn(req{safe_prompt: 'Reply with PROOF_<hex>.'}) is called"
+  then:
+    - assertion: "Returns Ok(AgentResponse) with output containing 'PROOF_<hex>'"
+      span_witness: llm.call
+      evidence_tier_required: VERIFIED
+    - assertion: "GET {base_url}/../health returns 200 (LiteLLM /health probe)"
+      evidence_tier_required: VERIFIED
+    - assertion: "endpoint_policy::is_allowed(base_url) passes before HTTP call"
+      evidence_tier_required: VERIFIED
+  fixtures: [proof_hex_seed.txt]
+  timeout_seconds: 60
+
+status_per_provider:
+  litellm_proxy:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  anthropic_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  anthropic_http: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  openai_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  openai_compat_generic: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  claude_code_cli: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  ollama_cloud: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  ollama_local: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  mistral_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  groq_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  openrouter_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  vertex_ai: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract (deprecated alias)" }
+  vertex_ai_gemini: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  vertex_ai_claude: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  azure_openai: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+
+alpha_gate:
+  verdict: deferred
+  reason: "Provider contract drafted; live PROOF_<hex> round-trip through running LiteLLM proxy must pass, and /health probe must return 200, before promotion."
+
+provider_llm:
+  provider_id: litellm_proxy
+  category: local_runtime
+  wire_protocol: openai_v1_chat_completions
+  base_url_pattern: "http://localhost:4000/v1 (default; operator-configurable via LA_LITELLM_BASE_URL)"
+  base_url_validation:
+    scheme_allowlist: [http, https]
+    host_denylist:
+      - 169.254.169.254
+      - metadata.google.internal
+      - 0.0.0.0
+    private_ranges_blocked: true
+    dns_rebinding_check: true
+  auth_scheme: bearer
+  streaming_contract:
+    frame_format: openai_chat_stream
+    first_token_max_ms: 10000
+    on_disconnect: abort
+    on_lag: drop_and_warn
+    supports_token_count_in_stream: true
+  tool_protocol: openai_function_calling
+  supported_capabilities:
+    - tool_use
+    - json_mode
+  context_window_tokens: 200000
+  max_output_tokens: 32000
+  error_mapping:
+    - { provider_status_or_code: '401', contract_error_code: E_PROVIDER_AUTH, retriable: false }
+    - { provider_status_or_code: '429', contract_error_code: E_PROVIDER_RATE_LIMITED, retriable: true }
+    - { provider_status_or_code: '500', contract_error_code: E_INTERNAL, retriable: true }
+    - { provider_status_or_code: '502', contract_error_code: E_UPSTREAM_UNREACHABLE, retriable: true }
+    - { provider_status_or_code: '503', contract_error_code: E_UNAVAILABLE, retriable: true }
+    - { provider_status_or_code: 'connection_refused', contract_error_code: E_PROVIDER_UNREACHABLE, retriable: false }
+    - { provider_status_or_code: 'ssrf_blocked', contract_error_code: E_PROVIDER_SSRF_BLOCKED, retriable: false }
+  timeout_ms: 300000
+  retry_policy:
+    max_attempts: 3
+    backoff: exponential_jittered
+    initial_delay_ms: 500
+    retriable_status_codes: [429, 500, 502, 503, 504]
+  cost_model:
+    currency: USD
+    free_tier: true

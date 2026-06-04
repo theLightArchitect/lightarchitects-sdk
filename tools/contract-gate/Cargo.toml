@@ -1,0 +1,28 @@
+[package]
+name = "contract-gate"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Rust port of standards/canon/contracts/validate.sh — JSON Schema 2020-12 + symmetric-edge sweep for the LA contract canon"
+
+[[bin]]
+name = "contract-gate"
+path = "src/main.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+walkdir = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+jsonschema = "0.30"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

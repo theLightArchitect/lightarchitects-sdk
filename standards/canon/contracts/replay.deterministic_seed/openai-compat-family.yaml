@@ -1,0 +1,196 @@
+schema_version: la-contracts/v1
+id: replay.deterministic_seed.openai-compat-family
+kind: replay.deterministic_seed
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P3, P4]
+
+operator_intent: |
+  Cryptographically pin every agentic decision routed through an OpenAI-compatible provider (openai_api,
+  openai_compat_generic, mistral_api, groq_api, openrouter_api) using BOTH the provider's native seed
+  parameter AND HMAC-pinning of the input envelope. Per QUANTUM verification 2026-06-03 (la-contracts §7.1
+  Q1), OpenAI's seed parameter is best-effort ("subject to backend changes"); the HMAC chain therefore
+  remains the canonical reproducibility anchor, with seed providing a second-axis verification when
+  byte-exact output replay is needed.
+
+prior_art:
+  - name: OpenAI Chat Completions seed parameter
+    url: https://platform.openai.com/docs/api-reference/chat/create
+    version: "2026-06-03 (accessed)"
+    what_we_adopt: "seed integer + system_fingerprint response field — when fingerprint matches across runs, output is best-effort byte-exact"
+    what_we_extend: "HMAC-input-pinning still required because seed-based replay is documented as best-effort"
+  - name: Mistral API seed parameter
+    url: https://docs.mistral.ai/api/
+    version: "2026-06-03 (accessed)"
+    what_we_adopt: "OpenAI-compatible seed semantics"
+  - name: Groq API seed parameter
+    url: https://console.groq.com/docs/api-reference
+    version: "2026-06-03 (accessed)"
+    what_we_adopt: "OpenAI-compatible seed semantics"
+
+canon_refs:
+  - canon://platform-canon
+  - canon://security-guardrails
+  - canon://la-contracts-canon#§7.1
+
+memory_refs: []
+
+inputs:
+  - name: input_envelope
+    type: object
+    description: "canonical(messages + system + tools + tool_choice + temperature + max_tokens + seed + model)"
+  - name: session_pepper
+    type: secret
+    description: "HKDF-derived per-session HMAC pepper (never on disk in plaintext)"
+  - name: turnlog_seq
+    type: integer
+    description: "monotonic sequence inside the session's turnlog NDJSON"
+    min: 0
+  - name: native_seed
+    type: integer
+    description: "Provider-supplied seed; pinned into the input envelope and round-tripped"
+    min: 0
+
+observable_outputs:
+  - "turnlog NDJSON entry carries hmac_self computed over the envelope including the native_seed value"
+  - "replay attempt sends the same native_seed; provider response includes system_fingerprint"
+  - "When system_fingerprint matches across runs AND native_seed matches AND input_envelope matches, output is best-effort byte-exact"
+  - "When system_fingerprint differs (provider backend rotation), output may diverge but replay still detects via HMAC chain"
+  - "AYIN replay.seed.pin span carries {provider_id, model, native_seed, system_fingerprint, input_envelope_hmac_preview, turnlog_seq}"
+
+errors:
+  - condition: provider rotated backend mid-replay (system_fingerprint differs)
+    code: E_REPLAY_BACKEND_ROTATED
+    operator_sees: "Provider backend rotated between original and replay (system_fingerprint differs). Input-side replay succeeded; output-side byte-exactness lost to provider control."
+    forbidden: "claiming output_replays=true when system_fingerprint mismatches"
+    severity: LOW
+  - condition: provider ignored the seed parameter entirely
+    code: E_REPLAY_SEED_IGNORED
+    operator_sees: "Provider did not honor the seed parameter (response missing system_fingerprint or fingerprint changes per request) — provider degraded to PASS_INPUT_ONLY-equivalent behavior"
+    forbidden: "treating this as fatal — provider may support seed inconsistently"
+    severity: MEDIUM
+  - condition: HMAC chain verification fails
+    code: E_REPLAY_HMAC_MISMATCH
+    operator_sees: "Replay aborted at seq=<N>: HMAC chain tamper detected"
+    forbidden: "continuing replay past a tamper-detected entry"
+    severity: BLOCKING
+
+observability:
+  required_spans:
+    - name: replay.seed.pin
+      required_metadata: [provider_id, model, native_seed, system_fingerprint, input_envelope_hmac_preview, turnlog_seq]
+      parent_relationship: child_of_caller
+    - name: replay.seed.verify
+      required_metadata: [from_seq, to_seq, input_replays, output_replays, system_fingerprint_matches, divergence_summary]
+      parent_relationship: root
+  duration_budget_ms: 1000
+  trace_context_propagation: true
+
+persistence:
+  - path: ~/lightarchitects/cli/turnlog/active/<session>.ndjson
+    schema_ref: state.store.turnlog-ndjson
+    ttl: forever
+    hmac_chained: true
+    redaction_policy: HelixSessionMemory::SECRET_PATTERNS
+
+hitl_boundaries:
+  - "Tamper detection halts session; operator decides resume vs investigate"
+
+forbidden_behaviors:
+  - "Claiming PASS (byte-exact output replay) when system_fingerprint differs between original and replay"
+  - "Failing to pin the native_seed value into the HMAC envelope (allows seed swap on replay)"
+  - "Treating provider seed support as a guarantee — even OpenAI documents it as 'subject to backend changes'"
+  - "Storing the session pepper in plain text outside the keychain"
+
+conformance_test:
+  given: "OpenAI-compat provider configured with seed support; valid keychain pepper; turnlog session running"
+  when: |
+    Operator runs the same prompt twice through the contract; first run pins (records native_seed + system_fingerprint), second run replays
+  then:
+    - assertion: replay.seed.pin span fires on the first run with non-empty system_fingerprint
+      span_witness: replay.seed.pin
+      evidence_tier_required: VERIFIED
+    - assertion: replay.seed.verify on second run reports input_replays=true
+      span_witness: replay.seed.verify
+      evidence_tier_required: VERIFIED
+    - assertion: when system_fingerprint matches, output_replays=true with output_hash equal
+      span_witness: replay.seed.verify
+      evidence_tier_required: MULTI_SOURCE
+    - assertion: when system_fingerprint differs, output_replays=false_backend_rotated (not fatal)
+      span_witness: replay.seed.verify
+      evidence_tier_required: VERIFIED
+  fixtures: [proof_replay_envelope_with_seed.example.json]
+  timeout_seconds: 60
+
+status_per_provider:
+  openai_api:
+    result: PASS_INPUT_ONLY
+    evidence_tier: VERIFIED
+    evidence_path: "helix:quantum-research-2026-06-03-openai-seed-best-effort"
+    output_side_unguaranteed_reason: "OpenAI Chat Completions exposes a seed parameter but documents it as best-effort, not guaranteed. Per platform.openai.com/docs/api-reference/chat/create (accessed 2026-06-03): 'Can be used in conjunction with the seed request parameter to understand when backend changes have been made that might impact determinism.' system_fingerprint is the documented mechanism to detect backend rotation. Replay is PASS_INPUT_ONLY: HMAC-pinned envelope (including seed) guarantees input-side reproducibility; output-side byte-exactness depends on backend stability the provider does not promise."
+    output_side_unguaranteed_acceptable_at_alpha: false
+  openai_compat_generic:
+    result: PASS_INPUT_ONLY
+    evidence_tier: SINGLE_SOURCE
+    evidence_path: "helix:quantum-research-2026-06-03-openai-seed-best-effort"
+    output_side_unguaranteed_reason: "Generic OpenAI-compatible endpoints inherit OpenAI's seed semantics: best-effort, not guaranteed. Per platform.openai.com/docs/api-reference/chat/create (accessed 2026-06-03): 'Can be used in conjunction with the seed request parameter to understand when backend changes have been made that might impact determinism.' Replay is PASS_INPUT_ONLY: HMAC-pinned envelope guarantees input-side reproducibility; output-side byte-exactness depends on the specific compat-target's backend behaviour and may degrade per-endpoint."
+    output_side_unguaranteed_acceptable_at_alpha: false
+  mistral_api:
+    result: PASS_INPUT_ONLY
+    evidence_tier: SINGLE_SOURCE
+    evidence_path: "helix:quantum-research-2026-06-03-mistral-seed"
+    output_side_unguaranteed_reason: "Mistral exposes random_seed (or seed in OpenAI-compat path); not documented as strict-deterministic. By symmetry with OpenAI's 'subject to backend changes' framing, treated as best-effort. Replay is PASS_INPUT_ONLY: HMAC-pinned envelope guarantees input-side reproducibility; output-side byte-exactness is provider-best-effort."
+    output_side_unguaranteed_acceptable_at_alpha: false
+  groq_api:
+    result: PASS_INPUT_ONLY
+    evidence_tier: SINGLE_SOURCE
+    evidence_path: "helix:quantum-research-2026-06-03-groq-seed"
+    output_side_unguaranteed_reason: "Groq exposes seed via OpenAI-compatible API; inherits OpenAI's best-effort determinism framing. Per platform.openai.com/docs/api-reference/chat/create (accessed 2026-06-03): 'Can be used in conjunction with the seed request parameter to understand when backend changes have been made that might impact determinism.' Replay is PASS_INPUT_ONLY: HMAC-pinned envelope guarantees input-side reproducibility; output-side byte-exactness is best-effort."
+    output_side_unguaranteed_acceptable_at_alpha: false
+  openrouter_api:
+    result: PASS_INPUT_ONLY
+    evidence_tier: SINGLE_SOURCE
+    evidence_path: "helix:quantum-research-2026-06-03-openrouter-seed"
+    output_side_unguaranteed_reason: "OpenRouter normalises to OpenAI's seed semantics and inherits the same best-effort framing. Per platform.openai.com/docs/api-reference/chat/create (accessed 2026-06-03): 'Can be used in conjunction with the seed request parameter to understand when backend changes have been made that might impact determinism.' Additionally, OpenRouter routes through upstream models whose backend rotation it cannot detect. Replay is PASS_INPUT_ONLY: HMAC-pinned envelope guarantees input-side reproducibility; output-side byte-exactness is doubly indirect."
+    output_side_unguaranteed_acceptable_at_alpha: false
+  anthropic_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "Anthropic does not expose seed; covered by replay.deterministic_seed.anthropic-family contract (PASS_INPUT_ONLY tier)." }
+  anthropic_http: { result: N/A, evidence_tier: VERIFIED, na_reason: "Covered by replay.deterministic_seed.anthropic-family contract." }
+  claude_code_cli: { result: N/A, evidence_tier: VERIFIED, na_reason: "Covered by replay.deterministic_seed.anthropic-family contract." }
+  ollama_cloud: { result: N/A, evidence_tier: VERIFIED, na_reason: "Covered by replay.deterministic_seed.ollama-family contract (planned)." }
+  ollama_local: { result: N/A, evidence_tier: VERIFIED, na_reason: "Covered by replay.deterministic_seed.ollama-family contract (planned)." }
+  litellm_proxy: { result: N/A, evidence_tier: VERIFIED, na_reason: "LiteLLM transports — per-provider replay handled by the per-provider contract sibling." }
+
+alpha_gate:
+  verdict: deferred
+  reason: "Per QUANTUM verification 2026-06-03: ALL OpenAI-compatible providers (including OpenAI proper) document seed as best-effort, not strict-deterministic. Per LÆX ratification 2026-06-03 §7.1 Q1 PASS_INPUT_ONLY tier applies universally to LLM providers in 2026 — strict PASS does not exist for any production provider. The moat narrative is honest-truthed: HMAC-input-pinning is universal; output-side byte-exactness is universally best-effort. Awaits live system_fingerprint round-trip verification in Phase 4 conformance harness."
+
+replay_deterministic_seed:
+  seed_components:
+    - component: llm_provider_seed
+      source: "caller-supplied native seed integer"
+      encoding: uint64
+    - component: time_pinned_context_hash
+      source: "turnlog NDJSON timestamp + envelope"
+      encoding: hex_sha256
+    - component: tool_arg_hash
+      source: "canonical(tools[] + tool_choice)"
+      encoding: hex_sha256
+    - component: system_prompt_hash
+      source: "canonical(system + messages[0].content)"
+      encoding: hex_sha256
+    - component: operator_input_hash
+      source: "canonical(messages[N].content) for the operator turn"
+      encoding: hex_sha256
+  replay_target: single_turn
+  hmac_pinning:
+    hmac_algorithm: hmac_sha256
+    chains_to_prior: true
+    key_derivation: "HKDF-SHA256 from session_pepper (KJV verse-keyed master, never on disk in plaintext)"
+  provider_seed_supported:
+    openai_api: { native_seed_param: true, fallback_method: n_a }
+    openai_compat_generic: { native_seed_param: true, fallback_method: n_a }
+    mistral_api: { native_seed_param: true, fallback_method: n_a }
+    groq_api: { native_seed_param: true, fallback_method: n_a }
+    openrouter_api: { native_seed_param: true, fallback_method: n_a }
+  replay_verification_method: byte_exact_output

@@ -89,13 +89,35 @@ make rollback          # cp lightarchitects.prev → lightarchitects + codesign
 
 ### Gateway Build Workaround
 
-`lightarchitects-gateway` is excluded from the workspace (`Cargo.toml` `exclude` list) due to
-worktree lockfile collisions. `make deploy` always fails with:
+`lightarchitects-gateway` is excluded from the workspace (`Cargo.toml` `exclude` list) because
+it has its own `[workspace]` declaration — adding it to `members` **always fails** with
+"multiple workspace roots found in the same workspace". `make deploy` always fails with:
 > "package ID specification `lightarchitects-gateway` did not match any packages"
 
-**Fix**: temporarily add `"lightarchitects-gateway"` to `members` and remove from `exclude`,
-run `cargo build --release -p lightarchitects-gateway`, copy binary, then **revert** `Cargo.toml`.
-Do NOT commit the temporary workspace change.
+**Fix**: build from the gateway's own workspace directory, then complete the deploy steps manually:
+
+```bash
+# 1. Build from the gateway's own workspace
+cd lightarchitects-gateway && cargo build --release
+# Binary lands at: lightarchitects-gateway/target/release/lightarchitects
+
+# 2. Complete deploy (adjust GATEWAY_BIN path as needed)
+GATEWAY_BIN="$HOME/.lightarchitects/bin/lightarchitects"
+[ -f "$GATEWAY_BIN" ] && cp "$GATEWAY_BIN" "${GATEWAY_BIN}.prev" || true
+cp lightarchitects-gateway/target/release/lightarchitects "$GATEWAY_BIN"
+cp -r lightarchitects-gateway/migrations/platform/. "$HOME/.lightarchitects/migrations/platform/"
+codesign --force --sign - "$GATEWAY_BIN"
+sha=$(git rev-parse HEAD 2>/dev/null || echo unknown)
+printf '{"version":"0.3.0","sha":"%s","deployed_at":"%s"}\n' \
+    "$sha" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+    > "$HOME/.lightarchitects/deploy-manifest.json"
+printf '{\n  "mcpServers": {\n    "lightarchitects": {\n      "command": "%s"\n    }\n  }\n}\n' \
+    "$GATEWAY_BIN" > "$HOME/.lightarchitects/lightarchitects.mcp.json"
+```
+
+**Do NOT** attempt to add `lightarchitects-gateway` to workspace `members` — the gateway declares
+its own `[workspace]`, making it a workspace root that cannot be nested into the SDK workspace.
+Do NOT commit any Cargo.toml changes for this workaround.
 
 **`cargo test --workspace` does NOT cover the gateway.** Because the crate is excluded, G3/Q3
 pre-flight and pre-merge gates pass green without testing it. When gateway code is touched, run

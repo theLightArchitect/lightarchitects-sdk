@@ -1,0 +1,174 @@
+schema_version: la-contracts/v1
+id: wire.mcp.launch-webshell
+kind: wire.mcp
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P1, P3]
+
+operator_intent: |
+  Launch or reuse the Light Architects webshell GUI bound to the operator's Claude Code session.
+  When session_id is supplied, probes :8733-:8742 for an existing webshell with the same session
+  binding and reuses it (status='reused') instead of spawning a duplicate. Returns the URL the
+  operator can click + nonce auth.
+
+prior_art:
+  - name: MCP 2025-11-25 tools/call
+    url: https://modelcontextprotocol.io/specification/2025-11-25/server/tools
+    what_we_adopt: tools/call wire shape with action + params dispatcher pattern
+    what_we_extend: operator-wins invariant + session-aware reuse + nonce-bearing URL response
+
+canon_refs:
+  - canon://platform-canon
+  - canon://operators-manual
+  - canon://la-contracts-canon#§3.1
+
+memory_refs:
+  - feedback_gateway_codesign_required.md
+
+inputs:
+  - name: session_id
+    type: uuid
+    description: "Claude Code session UUID this webshell should resume; enables session-aware reuse"
+    required: false
+  - name: port
+    type: integer
+    description: "Preferred port (default 8733); auto-scans 8733-8742 if held"
+    required: false
+    min: 1024
+    max: 65535
+  - name: cwd
+    type: path
+    description: "Working directory the webshell binary starts in"
+    required: false
+  - name: host_cmd
+    type: string
+    description: "Override the host command (default: claude)"
+    required: false
+  - name: dev_mode
+    type: boolean
+    description: "Use Vite dev server instead of embedded dist"
+    required: false
+    default: false
+  - name: kill_existing
+    type: boolean
+    description: "SIGTERM a foreign webshell holding the port"
+    required: false
+    default: false
+
+observable_outputs:
+  - "tools/call returns {url, status, resumed_session, session_mismatch?, kill_hint?, killed_predecessor} JSON"
+  - "status is one of: started | running | reclaimed | reused"
+  - "When session_id matches an existing webshell: status='reused', url carries fresh nonce, NO new process spawned"
+  - "When session_id does not match: status='session_mismatch' with kill_hint guidance (only if kill_existing=false)"
+  - "url is a clickable http://localhost:<port>/#nonce=<uuid> that authorizes the next browser request"
+  - "AYIN gateway.tool.dispatch span with tool='launch_webshell'"
+
+errors:
+  - condition: webshell binary missing at ~/.lightarchitects/bin/lightarchitects-webshell
+    code: E_WEBSHELL_BINARY_MISSING
+    operator_sees: "Webshell binary not found; run `make deploy` in lightarchitects-sdk to build"
+    forbidden: "silently returning a fake URL that points nowhere"
+    severity: HIGH
+  - condition: foreign webshell holds the port with a different session_id
+    code: E_WEBSHELL_SESSION_MISMATCH
+    operator_sees: "Webshell on :{port} holds a different session; kill_hint: `lsof -ti:{port} | xargs kill -9`"
+    forbidden: "silently overwriting the predecessor without operator consent"
+    severity: HIGH
+  - condition: port range exhausted
+    code: E_WEBSHELL_PORT_EXHAUSTED
+    operator_sees: "All ports in 8733-8742 held; pass explicit port or kill_existing:true"
+    forbidden: "auto-killing a foreign process to free a port without operator consent"
+    severity: MEDIUM
+
+observability:
+  required_spans:
+    - name: gateway.tool.dispatch
+      required_metadata: [tool, actor, duration_ms, mcp_session_id, mcp_protocol_version]
+      parent_relationship: child_of_caller
+    - name: webshell.spawn
+      required_metadata: [port, status, resumed_session, killed_predecessor]
+      parent_relationship: child_of_named
+      parent_span_name: gateway.tool.dispatch
+  duration_budget_ms: 3000
+  trace_context_propagation: true
+
+persistence:
+  - path: ~/lightarchitects/webshell/.token
+    contains_one_line: "Static webshell auth token (UUID); created on first launch and reused"
+    ttl: forever
+
+hitl_boundaries:
+  - "kill_existing=true is the operator consent to SIGTERM a foreign predecessor"
+
+forbidden_behaviors:
+  - "Returning a URL without the nonce fragment (operator could not authenticate)"
+  - "Killing a foreign webshell when kill_existing=false (forces silent eviction)"
+  - "Reusing a webshell whose session_id does not match the caller's (cross-session leak)"
+  - "Forwarding the bearer auth token via the URL query string (leaks to access logs)"
+  - "Spawning duplicate webshells when an existing one matches the session_id"
+
+conformance_test:
+  given: "Gateway running in MCP server mode; no webshell currently listening"
+  when: |
+    Client sends {jsonrpc: '2.0', method: 'tools/call', params: {name: 'launch_webshell', arguments: {session_id: '<uuid>'}}}
+  then:
+    - assertion: "response contains {url, status: 'started', resumed_session: true}"
+      span_witness: gateway.tool.dispatch
+      evidence_tier_required: VERIFIED
+    - assertion: "url matches `^http://localhost:[0-9]+/#nonce=[0-9a-f-]+$`"
+      span_witness: webshell.spawn
+      evidence_tier_required: VERIFIED
+    - assertion: "second tools/call with the same session_id returns status='reused' (idempotent)"
+      span_witness: gateway.tool.dispatch
+      evidence_tier_required: VERIFIED
+  fixtures: [launch_webshell.example.json]
+  timeout_seconds: 10
+
+status_per_provider:
+  anthropic_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "MCP action is provider-independent at the tool dispatch layer" }
+  anthropic_http: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  openai_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  openai_compat_generic: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  ollama_cloud: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  ollama_local: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  litellm_proxy: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  claude_code_cli: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  mistral_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  groq_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  openrouter_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  vertex_ai_gemini: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  vertex_ai_claude: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  azure_openai: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+
+alpha_gate:
+  verdict: pass
+  reason: "Action dispatcher contract fully declared; matches lightarchitects-gateway/src/core_tools/webshell_launch.rs:94 handler signature. Provider-independent at the wire.mcp layer."
+
+wire_mcp:
+  action: launch_webshell
+  params_schema:
+    type: object
+    properties:
+      session_id: { type: string, format: uuid }
+      port: { type: integer, minimum: 1024, maximum: 65535 }
+      cwd: { type: string }
+      host_cmd: { type: string }
+      dev_mode: { type: boolean, default: false }
+      kill_existing: { type: boolean, default: false }
+    additionalProperties: false
+  result_schema:
+    type: object
+    required: [url, status]
+    properties:
+      url: { type: string, format: uri, pattern: "^http://localhost:[0-9]+/#nonce=" }
+      status: { type: string, enum: [started, running, reclaimed, reused] }
+      resumed_session: { type: boolean }
+      session_mismatch: { type: boolean }
+      kill_hint: { type: string }
+      killed_predecessor: { type: boolean }
+    additionalProperties: false
+  abort_semantics: non_abortable
+  operator_wins: true
+  sibling_routing: none
+  hosted_by_mcp_capability_contract_id: mcp.capability.gateway-server

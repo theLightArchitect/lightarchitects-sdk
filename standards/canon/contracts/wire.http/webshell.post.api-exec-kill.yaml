@@ -1,0 +1,112 @@
+# AUTO-GENERATED v3 — quality tier: MULTI_SOURCE (prose=True, doc=True, req_struct=KillRequest, resp_struct=-)
+# Source: lightarchitects-webshell/src/server/mod.rs:1397
+# Handler: exec_routes::kill_handler
+
+schema_version: la-contracts/v1
+id: wire.http.api-exec-kill.post
+kind: wire.http
+version: 0.1.0
+status: draft
+northstar_pillars:
+- P1
+operator_intent: Kill a process by handle.
+observable_outputs:
+- Response status 201 (or one of the documented errors) within the duration budget
+- 'Operator-visible effect: Kill a process by handle.'
+- AYIN platform.http.request span emitted with {method, path, status, duration_ms}
+errors:
+- http_status: 404
+  condition: requested resource not found
+  code: E_NOT_FOUND
+  operator_sees: Requested resource not found
+  forbidden: returning 200 with an empty body in place of 404
+  severity: MEDIUM
+observability:
+  required_spans:
+  - name: webshell.http.request
+    required_metadata:
+    - method
+    - path
+    - status
+    - duration_ms
+    parent_relationship: root
+  trace_context_propagation: true
+  duration_budget_ms: 30000
+hitl_boundaries:
+- none
+conformance_test:
+  given: webshell running; auth=none; provider-independent for this layer
+  when: POST /api/exec/kill with body conforming to KillRequest
+  then:
+  - assertion: response status is 2xx (or one of the documented errors)
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  fixtures:
+  - KillRequest.example.json
+  timeout_seconds: 30
+status_per_provider:
+  anthropic_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  openai_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  ollama_cloud:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  ollama_local:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  mistral_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  groq_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  openrouter_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+alpha_gate:
+  verdict: pass
+  reason: Provider-agnostic wire endpoint with intent, error specs, and observability fully declared. Conformance harness
+    wiring upgrades verdict from declared-pass to runtime-verified at Phase 4.
+wire_http:
+  path: /api/exec/kill
+  method: POST
+  auth_required: none
+  idempotency: non_idempotent
+  cors_class: same_origin
+  sse_streaming: false
+  response_schemas:
+    '200':
+      type: object
+      description: shape not yet inferred — _audit pending_ until handler returns a typed Json<T>
+    '401':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '404':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+canon_refs:
+- canon://webshell-api-surface-v1

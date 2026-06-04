@@ -1,0 +1,172 @@
+schema_version: la-contracts/v1
+id: provider.llm.claude-code-cli
+kind: provider.llm
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P1, P2]
+
+operator_intent: |
+  ClaudeCliProvider spawns `claude -p` as a subprocess — the default provider when
+  LA_AGENT_PROVIDER is unset or "auto". Uses the operator's Claude Code subscription;
+  no API key required and no per-token billing. ANTHROPIC_API_KEY is explicitly
+  removed from the subprocess environment to prevent stale overrides. Subprocess
+  stdin/stdout carries the conversation; TRACEPARENT env var propagates span context.
+
+  This is the MANDATORY default: operators who do not set LA_AGENT_PROVIDER must
+  always get ClaudeCliProvider. No code path may default to a paid API key provider.
+
+prior_art:
+  - name: lightarchitects/src/agent/claude.rs
+    url: file://lightarchitects/src/agent/claude.rs
+    what_we_adopt: "subprocess spawn pattern, G1 sanitization via SanitizedAgentRequest, cost_gate pre-flight, kill_on_drop(true) (G10)"
+    what_we_extend: "EnvProviderFactory selects this provider when LA_AGENT_PROVIDER=auto|claude-code"
+
+canon_refs:
+  - canon://builders-cookbook
+  - canon://security-guardrails
+  - canon://agents-playbook
+
+memory_refs:
+  - feedback_claude_cli_stream_json_with_verbose.md
+
+inputs:
+  - { name: safe_prompt, type: string, description: "G1-sanitized prompt injected as stdin (from SanitizedAgentRequest)" }
+  - { name: allowed_tools, type: array, description: "Tools allowlist passed via --tools flag; fail-closed (empty = none)" }
+  - { name: budget_usd, type: number, description: "Cost gate ceiling; spawn rejected before process start if estimate exceeds" }
+  - { name: parent_span_id, type: string, description: "W3C traceparent injected as TRACEPARENT env var (optional)" }
+  - { name: model, type: string, description: "Model override; defaults to claude-sonnet-4-6" }
+
+observable_outputs:
+  - "AgentResponse.output contains the full response text from claude -p stdout"
+  - "Subprocess exits 0 on success; any non-zero exit becomes ProviderError::SpawnFailed"
+  - "AYIN llm.call span with metadata.provider == claude_code_cli and metadata.model"
+  - "Tokens estimated from output length (subprocess does not report exact counts)"
+
+errors:
+  - condition: claude binary not found on PATH
+    code: E_PROVIDER_UNREACHABLE
+    operator_sees: "claude binary not found — ensure Claude Code CLI is installed"
+    forbidden: "Silent failure or empty response without error"
+    severity: BLOCKING
+  - condition: budget gate pre-check rejects before spawn
+    code: E_PROVIDER_BUDGET_EXCEEDED
+    operator_sees: "Estimated cost ${estimate} exceeds budget ${max} — spawn rejected"
+    forbidden: "Spawning when cost gate rejects"
+    severity: HIGH
+  - condition: subprocess stdout produces invalid UTF-8
+    code: E_PROVIDER_SPAWN_FAILED
+    operator_sees: "Provider claude-cli produced non-UTF-8 output"
+    forbidden: "Logging raw bytes without sanitization"
+    severity: HIGH
+    cwe_class: CWE-116
+  - condition: ANTHROPIC_API_KEY is present in gateway environment
+    code: N/A
+    operator_sees: "N/A — ANTHROPIC_API_KEY is explicitly removed before spawn (design invariant)"
+    forbidden: "Forwarding ANTHROPIC_API_KEY to subprocess environment"
+    severity: BLOCKING
+    owasp_class: LLM06
+
+observability:
+  required_spans:
+    - name: llm.call
+      required_metadata: [model, provider, stop_reason, parent_id, duration_ms, tokens_input, tokens_output]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 300000
+  first_token_budget_ms: 15000
+  trace_context_propagation: true
+
+persistence:
+  - path: ~/lightarchitects/cli/turnlog/active/<session>.ndjson
+    schema_ref: state.store.turnlog-ndjson
+    ttl: forever
+    hmac_chained: true
+    redaction_policy: HelixSessionMemory::SECRET_PATTERNS
+
+hitl_boundaries:
+  - none
+
+forbidden_behaviors:
+  - "Setting ANTHROPIC_API_KEY in the subprocess environment (use Claude Code subscription only)"
+  - "Spawning without SanitizedAgentRequest (G1 bypass)"
+  - "Not setting kill_on_drop(true) on the child process (G10 compliance)"
+  - "Calling scope_governor or gate strategies in the default LLM tool allowlist (OWASP LLM07 / SERAPH VETO)"
+  - "Passing raw user input as --system-prompt without G1 sanitization"
+  - "Accepting a base_url parameter (subprocess protocol has no configurable endpoint)"
+
+conformance_test:
+  given: "claude binary on PATH with valid Claude Code subscription"
+  when: "ClaudeCliProvider::default().spawn(SanitizedAgentRequest{safe_prompt: 'Reply with PROOF_<hex>.', ..}) is called"
+  then:
+    - assertion: "Returns Ok(AgentResponse) with output containing 'PROOF_<hex>'"
+      span_witness: llm.call
+      evidence_tier_required: VERIFIED
+    - assertion: "AYIN llm.call span has metadata.provider == 'claude_code_cli'"
+      span_witness: llm.call
+      evidence_tier_required: VERIFIED
+    - assertion: "ANTHROPIC_API_KEY is absent from subprocess environment"
+      evidence_tier_required: VERIFIED
+  fixtures: [proof_hex_seed.txt]
+  timeout_seconds: 120
+
+status_per_provider:
+  claude_code_cli:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  anthropic_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "This contract IS the claude_code_cli provider" }
+  anthropic_http: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  openai_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  openai_compat_generic: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  litellm_proxy: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  ollama_cloud: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  ollama_local: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  mistral_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  groq_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  openrouter_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  vertex_ai: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract (deprecated alias)" }
+  vertex_ai_gemini: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  vertex_ai_claude: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  azure_openai: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+
+alpha_gate:
+  verdict: deferred
+  reason: "Provider contract drafted; live PROOF_<hex> round-trip against claude binary must pass before promotion. Conformance also requires ANTHROPIC_API_KEY-absent subprocess env verification."
+
+provider_llm:
+  provider_id: claude_code_cli
+  category: local_runtime
+  wire_protocol: subprocess_stdio
+  base_url_validation:
+    scheme_allowlist: []
+    host_denylist:
+      - 169.254.169.254
+      - metadata.google.internal
+      - 0.0.0.0
+    private_ranges_blocked: true
+    dns_rebinding_check: false
+  auth_scheme: none
+  streaming_contract:
+    frame_format: subprocess_stream_json
+    first_token_max_ms: 15000
+    on_disconnect: abort
+    on_lag: buffer
+    supports_token_count_in_stream: false
+  tool_protocol: anthropic_tool_use
+  supported_capabilities:
+    - tool_use
+    - multi_turn
+  context_window_tokens: 200000
+  max_output_tokens: 32000
+  error_mapping:
+    - { provider_status_or_code: 'exit_nonzero', contract_error_code: E_PROVIDER_SPAWN_FAILED, retriable: false }
+    - { provider_status_or_code: 'not_found_on_path', contract_error_code: E_PROVIDER_UNREACHABLE, retriable: false }
+    - { provider_status_or_code: 'budget_exceeded', contract_error_code: E_PROVIDER_BUDGET_EXCEEDED, retriable: false }
+  timeout_ms: 300000
+  retry_policy:
+    max_attempts: 1
+    backoff: constant
+    initial_delay_ms: 0
+    retriable_status_codes: []
+  cost_model:
+    currency: USD
+    free_tier: true

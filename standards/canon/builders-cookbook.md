@@ -7636,9 +7636,55 @@ Missing any of the following generates a WARN (not FAIL) if a deviation note exp
 
 ---
 
+## §81 — Float Sentinel Assertion Pattern — RATIFIED 2026-06-04, LÆX #64, Kevin Francis Tan
+
+### §81.1 The Problem
+
+`clippy::pedantic` includes `clippy::float_cmp`, which fires on any `assert_eq!` comparing a float against an exact constant — including `0.0`. Under `-D warnings` this is a compile error in test code.
+
+For **sentinel constants** — values that are by design exactly representable as IEEE 754 doubles — epsilon-based comparisons are semantically wrong. Testing `stub.estimate_cost(1000, 1000) ≈ 0.0` accepts any small positive cost; the correct invariant is exact zero. The same applies to `f64::MAX` (the "unbounded" sentinel), named rate constants, or exact pricing floors.
+
+### §81.2 The Pattern
+
+```rust
+#[test]
+#[allow(clippy::float_cmp)]
+fn estimate_cost_is_zero_for_stub() {
+    assert_eq!(provider.estimate_cost(1000, 1000), 0.0);
+}
+```
+
+Add `#[allow(clippy::float_cmp)]` to the **test function** (not the module) so the allow is scoped as tightly as possible.
+
+### §81.3 Sentinel Constant Taxonomy
+
+| Sentinel | Meaning | Correct test |
+|----------|---------|-------------|
+| `0.0` | Stub / not-yet-priced / free tier | `assert_eq!(x, 0.0)` + allow |
+| `f64::MAX` | Unbounded / no cap | `assert_eq!(x, f64::MAX)` + allow |
+| Named rate constant (e.g. `COST_INPUT_PER_K`) | Exact price point | `assert_eq!(x, COST_INPUT_PER_K * n)` + allow |
+| Any value from *computation* | Not a sentinel | Use `(x - expected).abs() < 1e-9` or similar |
+
+The distinction: if the *identity* of the constant is the invariant (not its approximate magnitude), use `assert_eq!` + allow. If the value emerges from floating-point arithmetic, use an epsilon comparison.
+
+### §81.4 Anti-patterns
+
+- **DO NOT** use `assert!(x.is_finite() && x < f64::EPSILON)` for a zero-sentinel — admits negative costs and any subnormal value.
+- **DO NOT** add `#[allow(clippy::float_cmp)]` at module level — hides legitimate precision bugs elsewhere in the test module.
+- **DO NOT** introduce a wrapping `approx_eq!` macro just to silence the lint on a constant — obscures the intent.
+
+### §81.5 Cross-references
+
+- Memory: `feedback_f64_max_test_comparison.md` — originating gotcha (f64::MAX sentinel, 2026-06-02); §81 generalizes it.
+- Cookbook §8 — lint configuration baseline (`clippy::pedantic`).
+
+**Witness:** N=2 production. (1) `feedback_f64_max_test_comparison` 2026-06-02: `assert_eq!(budget_cap, f64::MAX)` on an unbounded budget sentinel. (2) `vertex_ai.rs::estimate_cost_is_zero_for_stub` 2026-06-04: `assert_eq!(stub.estimate_cost(...), 0.0)` on a not-yet-priced stub provider. Same fix class. **LÆX Queue**: #64, contradiction-check PASS 2026-06-04.
+
+---
+
 **Rule** (per separation-of-concerns refactor, 2026-05-18): no tail-amendment blocks or scattered per-section version-history entries in this file. Section content lives here; amendment narrative lives in the CHANGELOG companion.
 
-**Current version**: see CHANGELOG for latest. As of 2026-06-01: **v3.12.0** (§79 Skill Interleaving Protocol + §80 Structural Completeness Rubric; LASDLC v2.8.0 binding; LÆX0-pattern + Kevin Francis Tan ratified 2026-06-01).
+**Current version**: see CHANGELOG for latest. As of 2026-06-04: **v3.13.0** (§81 Float Sentinel Assertion Pattern; LÆX #64 + Kevin Francis Tan ratified 2026-06-04).
 
 *Builders Cookbook · Light Architects · `canon://builders-cookbook`*
 

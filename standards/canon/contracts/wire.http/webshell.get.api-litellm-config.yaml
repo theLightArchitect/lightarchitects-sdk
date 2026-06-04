@@ -1,0 +1,98 @@
+# AUTO-GENERATED v3 — quality tier: SINGLE_SOURCE (prose=False, doc=True, req_struct=-, resp_struct=ConfigStatusResponse)
+# Source: lightarchitects-webshell/src/server/mod.rs:1032
+# Handler: litellm_state::get_config
+
+schema_version: la-contracts/v1
+id: wire.http.api-litellm-config.get
+kind: wire.http
+version: 0.1.0
+status: draft
+northstar_pillars:
+- P1
+operator_intent: Return current config (key redacted).
+observable_outputs:
+- Response status 200 (or one of the documented errors) within the duration budget
+- 'Response body conforms to the ConfigStatusResponse schema (key fields: base_url, model, has_key, updated_at)'
+- 'Operator-visible effect: Return current config (key redacted).'
+- AYIN platform.http.request span emitted with {method, path, status, duration_ms}
+errors:
+- http_status: 401
+  condition: missing or invalid auth credential
+  code: E_UNAUTHORIZED
+  operator_sees: Sign in or refresh credential — webshell session expired
+  forbidden: silent retry that hides the 401 from the operator
+  severity: HIGH
+observability:
+  required_spans:
+  - name: webshell.http.request
+    required_metadata:
+    - method
+    - path
+    - status
+    - duration_ms
+    parent_relationship: root
+  trace_context_propagation: true
+  duration_budget_ms: 30000
+hitl_boundaries:
+- none
+conformance_test:
+  given: webshell running; auth=bearer_token; provider-independent for this layer
+  when: GET /api/litellm/config
+  then:
+  - assertion: response status is 2xx (or one of the documented errors)
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  - assertion: request without a valid credential returns 401 with the E_UNAUTHORIZED code
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  fixtures: []
+  timeout_seconds: 30
+status_per_provider:
+  anthropic_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  openai_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  ollama_cloud:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  ollama_local:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  mistral_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  groq_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  openrouter_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+alpha_gate:
+  verdict: deferred
+  reason: Provider-dependent endpoint; alpha gate awaits conformance harness exercising each of seven providers in scope.
+wire_http:
+  path: /api/litellm/config
+  method: GET
+  auth_required: bearer_token
+  idempotency: idempotent
+  cors_class: same_origin
+  sse_streaming: false
+  response_schemas:
+    '200':
+      type: object
+      properties:
+        base_url:
+          type: string
+        model:
+          type: string
+        has_key:
+          type: boolean
+        updated_at:
+          type: string
+      required:
+      - base_url
+      - model
+      - has_key
+      - updated_at

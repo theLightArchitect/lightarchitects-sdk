@@ -1,0 +1,207 @@
+# AUTO-GENERATED v3 — quality tier: SINGLE_SOURCE (prose=False, doc=True, req_struct=PlanProgramRequest, resp_struct=PlanProgramResponse)
+# Source: lightarchitects-webshell/src/server/mod.rs:1442
+# Handler: program_routes::plan_program_handler
+
+schema_version: la-contracts/v1
+id: wire.http.api-program-plan.post
+kind: wire.http
+version: 0.1.0
+status: draft
+northstar_pillars:
+- P2
+operator_intent: Parse LASDLC plan files and emit a wave/task matrix.
+observable_outputs:
+- Response status 201 (or one of the documented errors) within the duration budget
+- 'Response body conforms to the PlanProgramResponse schema (key fields: builds, warnings)'
+- 'Operator-visible effect: Parse LASDLC plan files and emit a wave/task matrix.'
+- AYIN platform.http.request span emitted with {method, path, status, duration_ms}
+errors:
+- http_status: 401
+  condition: missing or invalid auth credential
+  code: E_UNAUTHORIZED
+  operator_sees: Sign in or refresh credential — webshell session expired
+  forbidden: silent retry that hides the 401 from the operator
+  severity: HIGH
+- http_status: 400
+  condition: malformed request payload
+  code: E_BAD_REQUEST
+  operator_sees: Request payload invalid — see error message for the failing field
+  forbidden: silently dropping invalid fields or coercing types
+  severity: MEDIUM
+- http_status: 404
+  condition: requested resource not found
+  code: E_NOT_FOUND
+  operator_sees: Requested resource not found
+  forbidden: returning 200 with an empty body in place of 404
+  severity: MEDIUM
+- http_status: 422
+  condition: request well-formed but semantically invalid
+  code: E_UNPROCESSABLE
+  operator_sees: Request semantically invalid — see field-level error
+  forbidden: returning 400 for semantic errors
+  severity: MEDIUM
+- http_status: 500
+  condition: internal server error
+  code: E_INTERNAL
+  operator_sees: Internal error — message references the request id
+  forbidden: returning a stack trace or stderr in the response body
+  severity: HIGH
+- http_status: 502
+  condition: upstream subprocess or sibling unreachable
+  code: E_UPSTREAM_UNREACHABLE
+  operator_sees: Upstream unreachable — name which sibling/binary failed
+  forbidden: generic spinner that hides which upstream failed
+  severity: HIGH
+observability:
+  required_spans:
+  - name: webshell.http.request
+    required_metadata:
+    - method
+    - path
+    - status
+    - duration_ms
+    parent_relationship: root
+  trace_context_propagation: true
+  duration_budget_ms: 30000
+hitl_boundaries:
+- none
+conformance_test:
+  given: webshell running; auth=bearer_token; provider-independent for this layer
+  when: POST /api/program/plan with body conforming to PlanProgramRequest
+  then:
+  - assertion: response status is 2xx (or one of the documented errors)
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  - assertion: request without a valid credential returns 401 with the E_UNAUTHORIZED code
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  fixtures:
+  - PlanProgramRequest.example.json
+  timeout_seconds: 30
+status_per_provider:
+  anthropic_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  openai_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  ollama_cloud:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  ollama_local:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  mistral_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  groq_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  openrouter_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+alpha_gate:
+  verdict: pass
+  reason: Provider-agnostic wire endpoint with intent, error specs, and observability fully declared. Conformance harness
+    wiring upgrades verdict from declared-pass to runtime-verified at Phase 4.
+wire_http:
+  path: /api/program/plan
+  method: POST
+  auth_required: bearer_token
+  idempotency: non_idempotent
+  cors_class: same_origin
+  sse_streaming: false
+  request_schema:
+    type: object
+    properties:
+      codenames:
+        type: array
+        items:
+          type: string
+    required:
+    - codenames
+  response_schemas:
+    '400':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '404':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '422':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '500':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '502':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '201':
+      type: object
+      properties:
+        builds:
+          type: array
+          items:
+            type: object
+            properties:
+              codename:
+                type: string
+              waves:
+                type: array
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ProgramTaskSpec'
+                    description: 'Rust type: ProgramTaskSpec'
+            required:
+            - codename
+            - waves
+        warnings:
+          type: array
+          items:
+            type: string
+      required:
+      - builds
+      - warnings

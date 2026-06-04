@@ -1,0 +1,112 @@
+schema_version: la-contracts/v1
+id: mcp.capability.gateway-server
+kind: mcp.capability
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P3]
+
+operator_intent: |
+  The lightarchitects gateway, when running in MCP server mode (stdio JSON-RPC), advertises its capabilities at
+  initialization per MCP 2025-11-25 spec — tools (the unified `tools` meta-tool dispatcher), prompts (skill
+  prompts), and roots ($PROJECT_ROOT + helix paths). Sampling is NOT advertised (the gateway is a server, not a
+  host). Negotiation failures degrade rather than reject the session.
+
+prior_art:
+  - name: MCP 2025-11-25 lifecycle + capability negotiation
+    url: https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle
+    version: "2025-11-25"
+    what_we_adopt: capability declaration at initialization + per-capability sub-features
+    what_we_extend: degrade-on-mismatch posture (most servers reject; we warn-continue)
+
+canon_refs:
+  - canon://platform-canon
+  - canon://operators-manual
+
+memory_refs:
+  - feedback_gateway_is_sibling_access_layer.md
+
+inputs:
+  - { name: client_init_request, type: object, description: MCP initialize request payload }
+
+observable_outputs:
+  - "Gateway responds to initialize with full capabilities object within 200ms"
+  - "Server-side capabilities advertised: tools, prompts, roots, completion (NO sampling — gateway is a server, not a host)"
+  - "Tool advertisements include MCP 2025-11-25 ToolAnnotations (readOnlyHint, destructiveHint, idempotentHint, openWorldHint)"
+  - "Roots advertised: $PROJECT_ROOT and $HELIX paths with permissions (read/write per path)"
+  - "On unknown client capability request, gateway logs and continues (degrade) — does NOT reject"
+
+errors:
+  - condition: client requests protocol_version outside supported range
+    code: E_MCP_VERSION_UNSUPPORTED
+    operator_sees: "MCP client speaks version <X>; gateway supports 2025-11-25 only — upgrade client"
+    forbidden: "silently downgrading to a different protocol version without telling the client"
+    severity: HIGH
+  - condition: malformed initialize request
+    code: E_MCP_INIT_MALFORMED
+    operator_sees: "Initialize request rejected as malformed (see JSON-RPC error response)"
+    forbidden: "responding with partial capabilities to a malformed init"
+    severity: MEDIUM
+
+observability:
+  required_spans:
+    - name: mcp.capability.negotiate
+      required_metadata: [role, protocol_version, advertised_capabilities, client_id]
+      parent_relationship: root
+  duration_budget_ms: 200
+  trace_context_propagation: true
+
+persistence:
+  - path: none
+    contains_one_line: "Capability negotiation is per-session, not persisted"
+    ttl: session
+
+hitl_boundaries: [none]
+
+forbidden_behaviors:
+  - "Advertising a capability the gateway does not actually implement"
+  - "Sending tool definitions without the MCP 2025-11-25 ToolAnnotations hint fields"
+  - "Accepting an init that requires sampling (we are a server, not a host)"
+
+conformance_test:
+  given: "Gateway running in MCP server mode; client sends an initialize request"
+  when: "client sends {method: initialize, params: {protocolVersion: '2025-11-25', capabilities: {sampling: {}}}}"
+  then:
+    - assertion: response includes capabilities.tools, capabilities.prompts, capabilities.roots
+      span_witness: mcp.capability.negotiate
+      evidence_tier_required: VERIFIED
+    - assertion: response does NOT advertise capabilities.sampling
+      span_witness: mcp.capability.negotiate
+      evidence_tier_required: VERIFIED
+  fixtures: [mcp_initialize_request.example.json]
+  timeout_seconds: 5
+
+status_per_provider:
+  anthropic_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "MCP capability negotiation is wire-protocol level; provider-independent." }
+  openai_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  ollama_cloud: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  ollama_local: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  mistral_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  groq_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  openrouter_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+
+alpha_gate:
+  verdict: pass
+  reason: "MCP 2025-11-25 capability negotiation contract fully declared; provider-independent; matches gateway/src/server.rs MCP initialize handler."
+
+mcp_capability:
+  role: server
+  protocol_version: "2025-11-25"
+  advertised_capabilities:
+    tools: {}
+    prompts: {}
+    resources: {}
+    roots:
+      listChanged: true
+    logging: {}
+    completion: {}
+  transport: stdio
+  negotiation_failure_behavior: degrade
+  exposed_wire_mcp_contract_ids:
+    - wire.mcp.launch-webshell
+    - wire.mcp.file-read

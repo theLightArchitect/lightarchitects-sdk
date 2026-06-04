@@ -1,0 +1,137 @@
+# AUTO-GENERATED v3 — quality tier: MULTI_SOURCE (prose=True, doc=True, req_struct=NonceExchange, resp_struct=-)
+# Source: lightarchitects-webshell/src/server/mod.rs:993
+# Handler: auth_nonce_exchange
+
+schema_version: la-contracts/v1
+id: wire.http.api-auth-nonce-exchange.post
+kind: wire.http
+version: 0.1.0
+status: draft
+northstar_pillars:
+- P1
+operator_intent: Exchange nonce → session token.
+observable_outputs:
+- Response status 201 (or one of the documented errors) within the duration budget
+- 'Operator-visible effect: Exchange nonce → session token.'
+- AYIN platform.http.request span emitted with {method, path, status, duration_ms}
+errors:
+- http_status: 401
+  condition: missing or invalid auth credential
+  code: E_UNAUTHORIZED
+  operator_sees: Sign in or refresh credential — webshell session expired
+  forbidden: silent retry that hides the 401 from the operator
+  severity: HIGH
+- http_status: 400
+  condition: malformed request payload
+  code: E_BAD_REQUEST
+  operator_sees: Request payload invalid — see error message for the failing field
+  forbidden: silently dropping invalid fields or coercing types
+  severity: MEDIUM
+- http_status: 500
+  condition: internal server error
+  code: E_INTERNAL
+  operator_sees: Internal error — message references the request id
+  forbidden: returning a stack trace or stderr in the response body
+  severity: HIGH
+observability:
+  required_spans:
+  - name: webshell.http.request
+    required_metadata:
+    - method
+    - path
+    - status
+    - duration_ms
+    parent_relationship: root
+  trace_context_propagation: true
+  duration_budget_ms: 30000
+hitl_boundaries:
+- none
+conformance_test:
+  given: webshell running; auth=either; provider-independent for this layer
+  when: POST /api/auth/nonce-exchange with body conforming to NonceExchange
+  then:
+  - assertion: response status is 2xx (or one of the documented errors)
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  - assertion: request without a valid credential returns 401 with the E_UNAUTHORIZED code
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  fixtures:
+  - NonceExchange.example.json
+  timeout_seconds: 30
+status_per_provider:
+  anthropic_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  openai_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  ollama_cloud:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  ollama_local:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  mistral_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  groq_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  openrouter_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+alpha_gate:
+  verdict: pass
+  reason: Provider-agnostic wire endpoint with intent, error specs, and observability fully declared. Conformance harness
+    wiring upgrades verdict from declared-pass to runtime-verified at Phase 4.
+wire_http:
+  path: /api/auth/nonce-exchange
+  method: POST
+  auth_required: either
+  idempotency: non_idempotent
+  cors_class: same_origin
+  sse_streaming: false
+  response_schemas:
+    '200':
+      type: object
+      description: shape not yet inferred — _audit pending_ until handler returns a typed Json<T>
+    '400':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '401':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '500':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+canon_refs:
+- canon://webshell-api-surface-v1

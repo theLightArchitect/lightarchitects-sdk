@@ -1,0 +1,169 @@
+# AUTO-GENERATED v3 — quality tier: MULTI_SOURCE (prose=True, doc=True, req_struct=ForkRequest, resp_struct=ForkResponse)
+# Source: lightarchitects-webshell/src/server/mod.rs:1333
+# Handler: session_fork::fork_handler
+
+schema_version: la-contracts/v1
+id: wire.http.api-session-fork.post
+kind: wire.http
+version: 0.1.0
+status: draft
+northstar_pillars:
+- P1
+operator_intent: 'Fork: handoff webshell session → terminal.'
+observable_outputs:
+- Response status 201 (or one of the documented errors) within the duration budget
+- 'Response body conforms to the ForkResponse schema (key fields: launched, command, session_id, agent, platform)'
+- 'Operator-visible effect: Fork: handoff webshell session → terminal.'
+- AYIN platform.http.request span emitted with {method, path, status, duration_ms}
+errors:
+- http_status: 401
+  condition: missing or invalid auth credential
+  code: E_UNAUTHORIZED
+  operator_sees: Sign in or refresh credential — webshell session expired
+  forbidden: silent retry that hides the 401 from the operator
+  severity: HIGH
+- http_status: 400
+  condition: malformed request payload
+  code: E_BAD_REQUEST
+  operator_sees: Request payload invalid — see error message for the failing field
+  forbidden: silently dropping invalid fields or coercing types
+  severity: MEDIUM
+- http_status: 404
+  condition: requested resource not found
+  code: E_NOT_FOUND
+  operator_sees: Requested resource not found
+  forbidden: returning 200 with an empty body in place of 404
+  severity: MEDIUM
+- http_status: 409
+  condition: resource state conflicts with the requested mutation
+  code: E_CONFLICT
+  operator_sees: Conflicting state — refresh and retry or resolve explicitly
+  forbidden: overwriting concurrent operator changes silently
+  severity: HIGH
+observability:
+  required_spans:
+  - name: webshell.http.request
+    required_metadata:
+    - method
+    - path
+    - status
+    - duration_ms
+    parent_relationship: root
+  trace_context_propagation: true
+  duration_budget_ms: 30000
+hitl_boundaries:
+- none
+conformance_test:
+  given: webshell running; auth=bearer_token; provider-independent for this layer
+  when: POST /api/session/fork with body conforming to ForkRequest
+  then:
+  - assertion: response status is 2xx (or one of the documented errors)
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  - assertion: request without a valid credential returns 401 with the E_UNAUTHORIZED code
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  fixtures:
+  - ForkRequest.example.json
+  timeout_seconds: 30
+status_per_provider:
+  anthropic_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  openai_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  ollama_cloud:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  ollama_local:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  mistral_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  groq_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  openrouter_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+alpha_gate:
+  verdict: pass
+  reason: Provider-agnostic wire endpoint with intent, error specs, and observability fully declared. Conformance harness
+    wiring upgrades verdict from declared-pass to runtime-verified at Phase 4.
+wire_http:
+  path: /api/session/fork
+  method: POST
+  auth_required: bearer_token
+  idempotency: non_idempotent
+  cors_class: same_origin
+  sse_streaming: false
+  request_schema:
+    type: object
+    properties:
+      build_id:
+        type: string
+    required:
+    - build_id
+  response_schemas:
+    '200':
+      type: object
+      properties:
+        launched:
+          type: boolean
+        command:
+          type: string
+        session_id:
+          type: string
+        agent:
+          type: object
+          description: 'Rust type: & str'
+        platform:
+          type: object
+          description: 'Rust type: & str'
+      required:
+      - launched
+      - command
+      - session_id
+      - agent
+      - platform
+    '400':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '404':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '409':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+canon_refs:
+- canon://webshell-api-surface-v1

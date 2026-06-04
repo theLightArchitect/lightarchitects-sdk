@@ -1,0 +1,3064 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lightarchitects.io/schemas/la-contracts/v1.json",
+  "title": "Light Architects Capability Contract v1",
+  "description": "Fullstack contract for any callable thing in the Light Architects platform. One schema. Nine kinds discriminated by 'kind'. Enforces provider-and-cloud-agnostic guarantees. See canon://webshell-operator-contracts for prose principle.",
+  "type": "object",
+
+  "required": [
+    "schema_version",
+    "id",
+    "kind",
+    "version",
+    "status",
+    "northstar_pillars",
+    "operator_intent",
+    "observable_outputs",
+    "errors",
+    "observability",
+    "conformance_test",
+    "status_per_provider",
+    "alpha_gate"
+  ],
+
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "la-contracts/v1",
+      "description": "Pins the contract schema dialect. Bumped on breaking schema changes."
+    },
+
+    "id": {
+      "$ref": "#/$defs/contract_id"
+    },
+
+    "kind": {
+      "$ref": "#/$defs/kind_enum"
+    },
+
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(-[a-z0-9.-]+)?$",
+      "description": "Semantic version of this contract instance (not the schema). Bump major on breaking observable_outputs / persistence / wire-shape change."
+    },
+
+    "status": {
+      "type": "string",
+      "enum": ["draft", "ratified", "deprecated"],
+      "description": "Lifecycle: draft (under review) → ratified (canon-bound, /GATE-enforced) → deprecated (replaced; see superseded_by)."
+    },
+
+    "deprecated": {
+      "type": "boolean",
+      "default": false,
+      "description": "Marks this contract as no longer recommended for new work."
+    },
+
+    "superseded_by": {
+      "$ref": "#/$defs/contract_id",
+      "description": "When deprecated, the contract id that replaces this one."
+    },
+
+    "uuid": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Stable identity surviving renames. Required for ratified contracts."
+    },
+
+    "xea_verified": {
+      "type": "string",
+      "format": "date",
+      "description": "ISO date of last XEA review. Required for ratified contracts (LÆX gate)."
+    },
+
+    "ratified_by": {
+      "type": "string",
+      "description": "Operator who promoted this contract to ratified status."
+    },
+
+    "northstar_pillars": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/northstar_pillar_enum" },
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Which Northstar Pillar(s) this contract advances. Must reference canon://northstar."
+    },
+
+    "operator_intent": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 2000,
+      "description": "What the operator (or caller) is trying to accomplish. Prefer one sentence; multi-line block scalars allowed up to 2000 chars for complex provider/trait contracts."
+    },
+
+    "prior_art": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/prior_art_entry" },
+      "description": "Industry standards or prior systems this contract descends from or extends. Canon XXXV citation discipline applies."
+    },
+
+    "inherits_from": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/contract_id" },
+      "uniqueItems": true,
+      "description": "Other contract ids this one composes with. Failures in inherited contracts cascade."
+    },
+
+    "memory_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]+\\.md$"
+      },
+      "description": "Memory entry filenames (canonical: ~/.claude/projects/.../memory/*.md). Make traceability machine-readable."
+    },
+
+    "helix_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^\\$HELIX/.+$|^helix:[0-9a-f-]{36}$"
+      },
+      "description": "Helix entry paths or UUIDs that ground this contract's claims."
+    },
+
+    "canon_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^canon://[a-z0-9-]+(#[A-Za-z0-9._§\\-\\u00A0-\\uFFFF]+)?$"
+      },
+      "description": "References to canonical documents. Format: canon://doc-name#optional-section. Anchor may contain Unicode (e.g., §)."
+    },
+
+    "inputs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/input_spec" },
+      "description": "Inputs the caller supplies. Each input has type, validation, and bounds."
+    },
+
+    "observable_outputs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1,
+      "description": "What the caller is entitled to observe on success. One obligation per line."
+    },
+
+    "errors": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/error_spec" },
+      "description": "Every failure mode that must be handled. Each names what the caller sees + what's forbidden (silent-spinner anti-pattern)."
+    },
+
+    "observability": {
+      "$ref": "#/$defs/observability_block",
+      "description": "Required AYIN spans and metadata fields. The conformance test asserts against these."
+    },
+
+    "persistence": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/persistence_entry" },
+      "description": "What hits disk, where, in what schema, with what TTL and redaction policy."
+    },
+
+    "hitl_boundaries": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Operator-consent points. Use ['none'] to declare no consent required (must be explicit, not omitted)."
+    },
+
+    "forbidden_behaviors": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Provider-coupling smells, silent fallbacks, security anti-patterns. Light Architects extension; no industry analog."
+    },
+
+    "conformance_test": {
+      "$ref": "#/$defs/conformance_test"
+    },
+
+    "status_per_provider": {
+      "$ref": "#/$defs/provider_matrix"
+    },
+
+    "alpha_gate": {
+      "$ref": "#/$defs/alpha_gate_block"
+    }
+  },
+
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "wire.http" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/wire_http_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "wire.mcp" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/wire_mcp_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "wire.cli" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/wire_cli_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "code.trait" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/code_trait_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "event.bus" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/event_bus_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "observe.span" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/observe_span_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "state.store" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/state_store_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "provider.llm" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/provider_llm_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "operator.surface" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/operator_surface_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "wire.ws" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/wire_ws_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "wire.ipc" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/wire_ipc_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "agent.loop" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/agent_loop_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "agent.tool_use" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/agent_tool_use_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "agent.a2a" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/agent_a2a_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "agent.identity" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/agent_identity_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "agent.skill" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/agent_skill_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "ui.component" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/ui_component_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "ui.store" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/ui_store_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "mcp.capability" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/mcp_capability_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "mcp.elicitation" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/mcp_elicitation_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "mcp.sampling" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/mcp_sampling_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "mcp.root" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/mcp_root_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "auth.flow" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/auth_flow_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "budget.envelope" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/budget_envelope_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "sandbox.policy" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/sandbox_policy_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "daemon.heartbeat" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/daemon_heartbeat_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "feature.flag" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/feature_flag_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "migration.schema" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/migration_schema_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "eval.scenario" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/eval_scenario_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "plugin.manifest" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/plugin_manifest_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "webhook.inbound" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/webhook_inbound_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "multimodal.input" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/multimodal_input_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "checkpoint.state" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/checkpoint_state_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "crypto.primitive" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/crypto_primitive_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "hitl.flow" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/hitl_flow_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "strand.activation" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/strand_activation_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "canon.evolution" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/canon_evolution_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "witness.evidence_chain" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/witness_evidence_chain_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "agent.scrum_round" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/agent_scrum_round_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "gate.composition" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/gate_composition_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "ldb.benchmark" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/ldb_benchmark_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "operator_wins.gate" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/operator_wins_gate_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "covenant.assertion" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/covenant_assertion_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "replay.deterministic_seed" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/replay_deterministic_seed_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "identity.handoff" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/identity_handoff_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "hmac_chain.audit_trail" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/hmac_chain_audit_trail_ext" }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "negative.contract" } }, "required": ["kind"] },
+      "then": { "$ref": "#/$defs/negative_contract_ext" }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": { "status": { "const": "ratified" } },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["uuid", "xea_verified", "ratified_by"],
+        "description": "Ratified contracts must carry canon-doc identity fields."
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": { "deprecated": { "const": true } },
+        "required": ["deprecated"]
+      },
+      "then": {
+        "required": ["superseded_by"],
+        "description": "Deprecated contracts must name their replacement."
+      }
+    }
+  ],
+
+  "unevaluatedProperties": false,
+
+  "$defs": {
+
+    "contract_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+$",
+      "minLength": 5,
+      "maxLength": 80,
+      "description": "Namespaced id: layer.surface.action (e.g., wire.http.dispatch-execute, agent.tool_use.anthropic-bash). Each segment is lowercase + digits + - or _."
+    },
+
+    "kind_enum": {
+      "type": "string",
+      "enum": [
+        "wire.http",
+        "wire.mcp",
+        "wire.cli",
+        "wire.ws",
+        "wire.ipc",
+        "code.trait",
+        "event.bus",
+        "observe.span",
+        "state.store",
+        "provider.llm",
+        "operator.surface",
+        "agent.loop",
+        "agent.tool_use",
+        "agent.a2a",
+        "agent.identity",
+        "agent.skill",
+        "ui.component",
+        "ui.store",
+        "mcp.capability",
+        "mcp.elicitation",
+        "mcp.sampling",
+        "mcp.root",
+        "auth.flow",
+        "budget.envelope",
+        "sandbox.policy",
+        "daemon.heartbeat",
+        "feature.flag",
+        "migration.schema",
+        "eval.scenario",
+        "plugin.manifest",
+        "webhook.inbound",
+        "multimodal.input",
+        "checkpoint.state",
+        "crypto.primitive",
+        "hitl.flow",
+        "strand.activation",
+        "canon.evolution",
+        "witness.evidence_chain",
+        "agent.scrum_round",
+        "gate.composition",
+        "ldb.benchmark",
+        "operator_wins.gate",
+        "covenant.assertion",
+        "replay.deterministic_seed",
+        "identity.handoff",
+        "hmac_chain.audit_trail",
+        "negative.contract"
+      ],
+      "description": "Discriminator for contract category. v1 = 18 kinds; v1.1 (Phase A — industry parity) adds 17 (mcp.*, auth.flow, budget.envelope, sandbox.policy, daemon.heartbeat, feature.flag, migration.schema, eval.scenario, plugin.manifest, webhook.inbound, multimodal.input, checkpoint.state, crypto.primitive, hitl.flow); v1.2 (Phase B — LA-native frontier moat) adds 12 (strand.activation, canon.evolution, witness.evidence_chain, agent.scrum_round, gate.composition, ldb.benchmark, operator_wins.gate, covenant.assertion, replay.deterministic_seed, identity.handoff, hmac_chain.audit_trail, negative.contract)."
+    },
+
+    "northstar_pillar_enum": {
+      "type": "string",
+      "enum": ["P1", "P2", "P3", "P4", "P5", "P6", "P7"],
+      "description": "Reference to canon://northstar Pillars (P1 E2E Webshell, P2 Vibe Coding, P3 MoE Platform, P4 Operator-Legible Arc, P5-P7 see canon)."
+    },
+
+    "provider_enum": {
+      "type": "string",
+      "enum": [
+        "anthropic_api",
+        "anthropic_http",
+        "openai_api",
+        "ollama_cloud",
+        "ollama_local",
+        "litellm_proxy",
+        "claude_code_cli",
+        "openai_compat_generic",
+        "mistral_api",
+        "groq_api",
+        "openrouter_api",
+        "vertex_ai",
+        "vertex_ai_gemini",
+        "vertex_ai_claude",
+        "azure_openai"
+      ],
+      "description": "Supported provider identifiers for the alpha matrix. Each maps to a concrete impl LlmAgentProvider in lightarchitects/src/agent/. Bumped 2026-06-03 (initial): added anthropic_http, litellm_proxy, claude_code_cli, openai_compat_generic, vertex_ai, azure_openai. Bumped 2026-06-03 (post-QUANTUM): split vertex_ai → vertex_ai_gemini + vertex_ai_claude per QUANTUM verification — Vertex hosts both Google's native Gemini API AND Anthropic's Messages API with different auth flows (Gemini accepts service-account; Claude-on-Vertex requires project_id + region in AnthropicVertex client). `vertex_ai` retained as deprecated alias; new contracts should use the split values."
+    },
+
+    "provider_category_enum": {
+      "type": "string",
+      "enum": ["managed_cloud_api", "cloud_routed_local_api", "local_runtime"],
+      "description": "Provider categories for alpha gate rollup."
+    },
+
+    "status_enum": {
+      "type": "string",
+      "enum": ["PASS", "PASS_INPUT_ONLY", "FAIL", "UNTESTED", "N/A"],
+      "description": "Conformance status for one contract × provider cell. PASS = both input and output sides verified. PASS_INPUT_ONLY = input-side guarantees verified (e.g., HMAC-pinning of system_prompt + messages + tool_args + temperature) but output-side guarantees are best-effort because the upstream provider does not natively support the determinism primitive this contract codifies; MUST carry output_side_unguaranteed_reason with verbatim upstream-docs citation. FAIL = at least one side of the contract is unmet. UNTESTED = no conformance run yet. N/A = contract does not apply to this provider category. Per LÆX ratification 2026-06-03 (la-contracts §7 Q1): PASS_INPUT_ONLY does NOT count toward alpha-gate satisfaction unless the contract instance explicitly sets output_side_unguaranteed_acceptable_at_alpha: true."
+    },
+
+    "evidence_tier_enum": {
+      "type": "string",
+      "enum": ["VERIFIED", "MULTI_SOURCE", "SINGLE_SOURCE", "INFERRED"],
+      "description": "Canon XXXV evidence tier for the matrix cell. Alpha gate pass requires VERIFIED ≥1 cell per category."
+    },
+
+    "alpha_gate_verdict_enum": {
+      "type": "string",
+      "enum": ["pass", "fail", "deferred"],
+      "description": "Mechanical alpha-readiness verdict."
+    },
+
+    "severity_enum": {
+      "type": "string",
+      "enum": ["BLOCKING", "CRITICAL", "HIGH", "MEDIUM", "LOW"],
+      "description": "Used in error specs and forbidden-behavior trips."
+    },
+
+    "input_spec": {
+      "type": "object",
+      "required": ["name", "type"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.]*$", "description": "Field/arg name. snake_case preferred; UPPER_SNAKE for env vars; dot-paths (e.g. req.field) allowed for nested args." },
+        "type": {
+          "type": "string",
+          "enum": ["string", "integer", "number", "boolean", "array", "object", "uuid", "url", "path", "enum", "secret", "env_var", "struct_ref", "bytes", "duration", "datetime"]
+        },
+        "description": { "type": "string" },
+        "required": { "type": "boolean", "default": true },
+        "max_bytes": { "type": "integer", "minimum": 1 },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "pattern": { "type": "string", "description": "Regex if type=string (anchor with ^ and $)" },
+        "enum": { "type": "array", "minItems": 2, "uniqueItems": true },
+        "items_schema": { "type": "object", "description": "JSON Schema fragment if type=array" },
+        "format": { "type": "string", "description": "url, uuid, date-time, ipv4, hostname, etc." },
+        "default": {},
+        "examples": { "type": "array" },
+        "secret": { "type": "boolean", "default": false, "description": "If true, value is redacted in logs/spans" }
+      },
+      "additionalProperties": false
+    },
+
+    "error_spec": {
+      "type": "object",
+      "required": ["condition", "operator_sees", "forbidden"],
+      "properties": {
+        "condition": { "type": "string", "description": "When this error fires." },
+        "code": { "type": "string", "description": "Stable error code (e.g., E_PROVIDER_UNREACHABLE)." },
+        "http_status": { "type": "integer", "minimum": 400, "maximum": 599 },
+        "operator_sees": { "type": "string", "description": "Exact message or message template the operator/caller sees. No generic spinners." },
+        "recovery": { "type": "string", "description": "What the operator can do to recover." },
+        "forbidden": { "type": "string", "description": "Anti-pattern. What this error must NOT degrade into." },
+        "severity": { "$ref": "#/$defs/severity_enum" },
+        "owasp_class": { "type": "string", "pattern": "^LLM(0[1-9]|10)$", "description": "OWASP LLM Top 10 category if security-relevant." },
+        "cwe_class": { "type": "string", "pattern": "^CWE-\\d+$", "description": "CWE category if security-relevant." }
+      },
+      "additionalProperties": false
+    },
+
+    "observability_block": {
+      "type": "object",
+      "required": ["required_spans"],
+      "properties": {
+        "required_spans": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/required_span" },
+          "minItems": 0,
+          "description": "AYIN spans this contract must emit. May be empty for kinds that are witnessed via upstream spans (ui.store, code.trait, agent.identity) — but observability_via_upstream MUST be set in that case."
+        },
+        "observability_via_upstream": {
+          "type": "string",
+          "description": "If required_spans is empty, name the upstream kind whose spans witness this contract (e.g., 'ui.component', 'agent.loop')."
+        },
+        "duration_budget_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Wall-clock budget for this capability. Conformance fails if exceeded."
+        },
+        "first_token_budget_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Time-to-first-token budget for streaming kinds. Conformance fails if exceeded."
+        },
+        "rate_limit": {
+          "$ref": "#/$defs/rate_limit_spec"
+        },
+        "trace_context_propagation": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether W3C traceparent must propagate across this boundary. Default true (AYIN R1)."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "required_span": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z._-]+[a-z]$",
+          "description": "Span name as emitted by GatewaySpanContext (e.g., 'gateway.tool.dispatch', 'assistant.response')."
+        },
+        "required_metadata": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Metadata keys that MUST be present in the span. Schema validation rejects conformance tests asserting against keys not listed here."
+        },
+        "parent_relationship": {
+          "type": "string",
+          "enum": ["root", "child_of_caller", "child_of_named", "any"],
+          "default": "child_of_caller"
+        },
+        "parent_span_name": {
+          "type": "string",
+          "description": "Required when parent_relationship=child_of_named."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "rate_limit_spec": {
+      "type": "object",
+      "required": ["requests_per_window", "window_seconds"],
+      "properties": {
+        "requests_per_window": { "type": "integer", "minimum": 1 },
+        "window_seconds": { "type": "integer", "minimum": 1 },
+        "response_when_exceeded": {
+          "type": "integer",
+          "minimum": 400,
+          "maximum": 599,
+          "default": 429,
+          "description": "HTTP status when rate-limited. Default 429."
+        },
+        "headers_emitted": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["X-Rate-Limit-Limit", "X-Rate-Limit-Remaining", "X-Rate-Limit-Reset"]
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "persistence_entry": {
+      "type": "object",
+      "required": ["path", "ttl"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Absolute path or env-rooted path (e.g., ~/lightarchitects/cli/turnlog/, $PROJECT_ROOT/.tmp/). MUST exist or the contract fails validation against runtime."
+        },
+        "schema_ref": {
+          "type": "string",
+          "description": "Contract id of a state.store contract that defines the file schema (cross-contract reference)."
+        },
+        "contains_one_line": {
+          "type": "string",
+          "description": "Free-text description of payload shape if no schema_ref."
+        },
+        "ttl": {
+          "type": "string",
+          "enum": ["session", "forever", "until-make-clean", "until-operator-deletion"],
+          "description": "Retention policy. Cannot be omitted; pick one explicitly."
+        },
+        "redaction_policy": {
+          "type": "string",
+          "description": "How secrets/PII are removed before write. Reference to feedback_helix_session_secret_redaction or equivalent."
+        },
+        "hmac_chained": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether entries are HMAC-chained (audit trail integrity)."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "prior_art_entry": {
+      "type": "object",
+      "required": ["name", "what_we_adopt"],
+      "properties": {
+        "name": { "type": "string", "description": "e.g., 'OpenAPI 3.1', 'AsyncAPI 3.0', 'Pact v4', 'JSON Schema 2020-12'" },
+        "url": { "type": "string", "format": "uri" },
+        "version": { "type": "string" },
+        "what_we_adopt": { "type": "string", "description": "Specific pattern/concept this contract takes from the cited prior art." },
+        "what_we_extend": { "type": "string", "description": "Where this contract goes beyond the cited prior art." }
+      },
+      "additionalProperties": false
+    },
+
+    "conformance_test": {
+      "type": "object",
+      "required": ["given", "when", "then"],
+      "properties": {
+        "given": {
+          "type": "string",
+          "description": "Preconditions. Provider configuration, fixture state, env vars."
+        },
+        "when": {
+          "type": "string",
+          "description": "Action the operator/caller takes."
+        },
+        "then": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/then_assertion" },
+          "minItems": 1,
+          "description": "Observable assertions. Each must be span-witnessable or filesystem-checkable."
+        },
+        "fixtures": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Required fixture file paths (relative to tests/conformance/<kind>/<id>/)."
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 60
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "then_assertion": {
+      "type": "object",
+      "required": ["assertion"],
+      "properties": {
+        "assertion": { "type": "string", "minLength": 5 },
+        "span_witness": {
+          "type": "string",
+          "description": "AYIN span name + field that proves the assertion (e.g., 'assistant.response.metadata.model'). Schema validates against observability.required_spans — assertions against absent fields are rejected at lint time (closes AYIN R1 false-pass)."
+        },
+        "filesystem_witness": {
+          "type": "string",
+          "description": "Path that must exist after the action (e.g., '$PROJECT_ROOT/.tmp/dispatch-<id>/agent-engineer.md'). Validated post-action."
+        },
+        "evidence_tier_required": { "$ref": "#/$defs/evidence_tier_enum" }
+      },
+      "additionalProperties": false
+    },
+
+    "provider_matrix": {
+      "type": "object",
+      "patternProperties": {
+        "^(anthropic_api|anthropic_http|openai_api|ollama_cloud|ollama_local|litellm_proxy|claude_code_cli|openai_compat_generic|mistral_api|groq_api|openrouter_api|vertex_ai|vertex_ai_gemini|vertex_ai_claude|azure_openai)$": {
+          "$ref": "#/$defs/provider_status_cell"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Per-provider conformance status. Every listed key MUST appear in provider_enum (1:1 with impl LlmAgentProvider in source)."
+    },
+
+    "provider_status_cell": {
+      "type": "object",
+      "required": ["result", "evidence_tier"],
+      "properties": {
+        "result": { "$ref": "#/$defs/status_enum" },
+        "evidence_tier": { "$ref": "#/$defs/evidence_tier_enum" },
+        "evidence_path": {
+          "type": "string",
+          "description": "Resolvable path to evidence (helix:, $HELIX/, file:line, turnlog id). NOT memory:// (non-canon URI). NOT .tmp/ (ephemeral)."
+        },
+        "last_run_at": { "type": "string", "format": "date-time" },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "failure_reason": { "type": "string", "description": "Required when result=FAIL." },
+        "na_reason": { "type": "string", "description": "Required when result=N/A. Default applicability is everywhere; N/A must be justified." },
+        "output_side_unguaranteed_reason": {
+          "type": "string",
+          "minLength": 30,
+          "description": "Required when result == PASS_INPUT_ONLY. Verbatim quote from upstream provider's official docs declaring the relevant non-guarantee, with citation URL + accessed date. Per LÆX ratification 2026-06-03 (Canon XXXV citation discipline)."
+        },
+        "output_side_unguaranteed_acceptable_at_alpha": {
+          "type": "boolean",
+          "default": false,
+          "description": "Per LÆX ratification 2026-06-03: only true when the contract instance explicitly accepts PASS_INPUT_ONLY as alpha-satisfying. Default false — PASS_INPUT_ONLY cells do NOT count toward alpha-gate satisfaction."
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "properties": { "result": { "const": "FAIL" } } },
+          "then": { "required": ["failure_reason"] }
+        },
+        {
+          "if": { "properties": { "result": { "const": "N/A" } } },
+          "then": { "required": ["na_reason"] }
+        },
+        {
+          "if": { "properties": { "result": { "const": "PASS_INPUT_ONLY" } } },
+          "then": { "required": ["output_side_unguaranteed_reason"] }
+        }
+      ]
+    },
+
+    "alpha_gate_block": {
+      "type": "object",
+      "required": ["verdict", "reason"],
+      "properties": {
+        "verdict": { "$ref": "#/$defs/alpha_gate_verdict_enum" },
+        "reason": { "type": "string", "minLength": 10 },
+        "computed_at": { "type": "string", "format": "date-time" },
+        "blocker_contract_ids": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/contract_id" },
+          "description": "Inherited or downstream contracts that share this verdict."
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "properties": { "verdict": { "const": "fail" } } },
+          "then": { "properties": { "reason": { "minLength": 30 } } },
+          "description": "Fail verdicts need substantial reason text."
+        }
+      ]
+    },
+
+    "wire_http_ext": {
+      "required": ["wire_http"],
+      "properties": {
+        "wire_http": {
+          "type": "object",
+          "required": ["path", "method", "auth_required", "idempotency"],
+          "properties": {
+            "path": {
+              "type": "string",
+              "pattern": "^/(v1|api|)[/a-zA-Z0-9_{}*.-]*$",
+              "description": "Route pattern. Path parameters in {braces}. Wildcard multi-segment params in {*name} (Axum syntax). MUST match a registered route."
+            },
+            "method": {
+              "type": "string",
+              "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+            },
+            "auth_required": {
+              "type": "string",
+              "enum": ["none", "bearer_token", "cookie_session", "either", "platform_admin", "internal_only"]
+            },
+            "idempotency": {
+              "type": "string",
+              "enum": ["idempotent", "non_idempotent", "idempotent_with_key"],
+              "description": "Idempotent: safe to retry. With key: requires Idempotency-Key header."
+            },
+            "cors_class": {
+              "type": "string",
+              "enum": ["same_origin", "configured_origins", "public"],
+              "default": "same_origin"
+            },
+            "request_schema": {
+              "type": "object",
+              "description": "JSON Schema for request body (POST/PUT/PATCH). Use {} for no body."
+            },
+            "response_schemas": {
+              "type": "object",
+              "patternProperties": {
+                "^[1-5][0-9X]{2}$": {
+                  "type": "object",
+                  "description": "JSON Schema for response body keyed by status (e.g., '200', '4XX')."
+                }
+              },
+              "additionalProperties": false
+            },
+            "sse_streaming": {
+              "type": "boolean",
+              "default": false,
+              "description": "Whether this endpoint streams Server-Sent Events. If true, event_bus contract should reference it."
+            },
+            "sse_event_contracts": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/contract_id" },
+              "description": "Event bus contract ids that may fire on this stream."
+            },
+            "max_request_bytes": { "type": "integer", "minimum": 1 },
+            "max_response_bytes": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "wire_mcp_ext": {
+      "required": ["wire_mcp"],
+      "properties": {
+        "wire_mcp": {
+          "type": "object",
+          "required": ["action", "params_schema", "result_schema"],
+          "properties": {
+            "action": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "description": "MCP tool action name registered in core_tools/mod.rs."
+            },
+            "params_schema": {
+              "type": "object",
+              "description": "JSON Schema for the params object passed to tools/call."
+            },
+            "result_schema": {
+              "type": "object",
+              "description": "JSON Schema for the tool result content."
+            },
+            "abort_semantics": {
+              "type": "string",
+              "enum": ["abortable", "non_abortable", "abortable_with_partial_result"]
+            },
+            "operator_wins": {
+              "type": "boolean",
+              "default": true,
+              "description": "If true, operator skill invocation supersedes LLM tool_use. Per gateway operator-wins invariant."
+            },
+            "sibling_routing": {
+              "type": "string",
+              "enum": ["none", "soul", "corso", "eva", "quantum", "seraph", "ayin", "laex"],
+              "description": "Which sibling this MCP action routes to (if any)."
+            },
+            "hosted_by_mcp_capability_contract_id": {
+              "$ref": "#/$defs/contract_id",
+              "description": "Back-pointer to the mcp.capability contract id for the server that exposes this action. The referenced capability contract MUST advertise tools and MUST list this contract in exposed_wire_mcp_contract_ids. Per MCP 2025-11-25: requestors may only invoke tools the server has declared at initialization. Added per LÆX ratification 2026-06-03 (la-contracts §7.1 Q3)."
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "wire_cli_ext": {
+      "required": ["wire_cli"],
+      "properties": {
+        "wire_cli": {
+          "type": "object",
+          "required": ["subcommand", "exit_codes"],
+          "properties": {
+            "subcommand": {
+              "type": "string",
+              "description": "CLI subcommand path (e.g., 'lightarchitects webshell start')."
+            },
+            "args_schema": {
+              "type": "object",
+              "description": "JSON Schema for positional args."
+            },
+            "flags_schema": {
+              "type": "object",
+              "description": "JSON Schema for --flag args."
+            },
+            "stdout_format": {
+              "type": "string",
+              "enum": ["text", "json", "ndjson", "sse"]
+            },
+            "stdout_schema": {
+              "type": "object",
+              "description": "JSON Schema for stdout when stdout_format != text."
+            },
+            "exit_codes": {
+              "type": "object",
+              "patternProperties": {
+                "^[0-9]+$": { "type": "string" }
+              },
+              "additionalProperties": false,
+              "description": "Map of exit code → meaning. 0 must be present."
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "code_trait_ext": {
+      "required": ["code_trait"],
+      "properties": {
+        "code_trait": {
+          "type": "object",
+          "required": ["trait_path", "method_contracts"],
+          "properties": {
+            "trait_path": {
+              "type": "string",
+              "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*(::[a-zA-Z_][a-zA-Z0-9_]*)+$",
+              "description": "Fully qualified Rust trait path (e.g., 'lightarchitects::agent::LlmAgentProvider')."
+            },
+            "method_contracts": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/trait_method_contract" },
+              "minItems": 1
+            },
+            "send_sync_required": { "type": "boolean", "default": true },
+            "panic_free": { "type": "boolean", "default": true, "description": "All methods must avoid panic!/unwrap()/expect() per Cookbook." },
+            "object_safe": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "trait_method_contract": {
+      "type": "object",
+      "required": ["name", "preconditions", "postconditions"],
+      "properties": {
+        "name": { "type": "string" },
+        "preconditions": { "type": "array", "items": { "type": "string" } },
+        "postconditions": { "type": "array", "items": { "type": "string" } },
+        "error_variants": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Named error variants this method may return."
+        },
+        "async": { "type": "boolean", "default": false },
+        "streaming": { "type": "boolean", "default": false }
+      },
+      "additionalProperties": false
+    },
+
+    "event_bus_ext": {
+      "required": ["event_bus"],
+      "properties": {
+        "event_bus": {
+          "type": "object",
+          "required": ["channel", "event_name", "payload_schema", "delivery_guarantee"],
+          "properties": {
+            "channel": {
+              "type": "string",
+              "description": "Bus/channel identifier (e.g., 'webshell.global', 'webshell.build:{id}', 'gateway.copilot:{session}')."
+            },
+            "event_name": {
+              "type": "string",
+              "pattern": "^[A-Z][a-zA-Z0-9]+$|^[a-z][a-z._-]+[a-z]$",
+              "description": "Event variant name (e.g., 'CopilotResponse' or 'gateway.tool.dispatch')."
+            },
+            "payload_schema": {
+              "type": "object",
+              "description": "JSON Schema for the event payload."
+            },
+            "fires_after": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Preconditions/triggers — what must happen before this event fires."
+            },
+            "ordering": {
+              "type": "string",
+              "enum": ["total", "per_channel", "per_key", "unordered"],
+              "default": "per_channel"
+            },
+            "delivery_guarantee": {
+              "type": "string",
+              "enum": ["at_most_once", "at_least_once", "exactly_once"],
+              "description": "SSE broadcasts are typically at_most_once with replay-on-reconnect."
+            },
+            "lagged_policy": {
+              "type": "string",
+              "enum": ["drop_and_warn", "buffer", "kick_subscriber"],
+              "description": "Per feedback_broadcast_recv_lagged_security: drop_and_warn for LLM/supervisor watchers."
+            },
+            "reconnect_replay_seconds": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Replay window on subscriber reconnect (0 = no replay)."
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "observe_span_ext": {
+      "required": ["observe_span"],
+      "properties": {
+        "observe_span": {
+          "type": "object",
+          "required": ["span_name", "metadata_schema"],
+          "properties": {
+            "span_name": {
+              "type": "string",
+              "pattern": "^[a-z][a-z._-]+[a-z]$"
+            },
+            "metadata_schema": {
+              "type": "object",
+              "description": "JSON Schema for the metadata field. Conformance tests that assert against unlisted keys are rejected at lint."
+            },
+            "parent_relationship": {
+              "type": "string",
+              "enum": ["root", "child_of_caller", "child_of_named", "any"]
+            },
+            "parent_span_name": { "type": "string" },
+            "disk_path_pattern": {
+              "type": "string",
+              "description": "Where spans land on disk (e.g., '~/lightarchitects/soul/helix/ayin/traces/{actor}/{YYYY-MM-DD}/')."
+            },
+            "max_payload_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Spans larger than this are silently dropped (eviction-attack mitigation). Per gateway CLAUDE.md: 64KB default."
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "state_store_ext": {
+      "required": ["state_store"],
+      "properties": {
+        "state_store": {
+          "type": "object",
+          "required": ["backend", "schema"],
+          "properties": {
+            "backend": {
+              "type": "string",
+              "enum": ["sqlite", "neo4j", "filesystem_jsonl", "filesystem_ndjson", "filesystem_yaml", "filesystem_md", "in_memory"]
+            },
+            "location": {
+              "type": "string",
+              "description": "Path or connection string (e.g., '~/lightarchitects/cli/turnlog/active/<uuid>.ndjson')."
+            },
+            "schema": {
+              "type": "object",
+              "description": "JSON Schema for one record/row."
+            },
+            "write_actors": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1,
+              "description": "Which components write to this store (e.g., ['lightarchitects-webshell::turnlog::TurnLogWriter'])."
+            },
+            "read_actors": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "redaction_policy": {
+              "type": "string",
+              "description": "Reference to a redaction implementation (e.g., 'HelixSessionMemory::SECRET_PATTERNS')."
+            },
+            "migration_path": {
+              "type": "string",
+              "description": "How schema evolution is handled (e.g., 'sqlx migrations', 'json schema versioning')."
+            },
+            "hmac_chained": { "type": "boolean", "default": false }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "provider_llm_ext": {
+      "required": ["provider_llm"],
+      "properties": {
+        "provider_llm": {
+          "type": "object",
+          "required": ["provider_id", "category", "streaming_contract", "error_mapping", "timeout_ms", "retry_policy"],
+          "properties": {
+            "provider_id": { "$ref": "#/$defs/provider_enum" },
+            "category": { "$ref": "#/$defs/provider_category_enum" },
+            "wire_protocol": {
+              "type": "string",
+              "enum": ["anthropic_v1", "anthropic_messages_api", "openai_v1_chat_completions", "openai_v1_responses", "openai_compat_http", "ollama_native", "anthropic_mcp", "custom_litellm_proxy", "subprocess_stdio", "subprocess_stream_json"]
+            },
+            "base_url_pattern": {
+              "type": "string",
+              "format": "uri",
+              "description": "Base URL template. SSRF guard rules apply (no IMDS, no link-local)."
+            },
+            "base_url_validation": {
+              "type": "object",
+              "properties": {
+                "scheme_allowlist": { "type": "array", "items": { "type": "string", "enum": ["https", "http"] } },
+                "host_denylist": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "default": ["169.254.169.254", "metadata.google.internal", "0.0.0.0"]
+                },
+                "private_ranges_blocked": { "type": "boolean", "default": true },
+                "dns_rebinding_check": { "type": "boolean", "default": true }
+              },
+              "additionalProperties": false
+            },
+            "auth_scheme": {
+              "type": "string",
+              "enum": ["bearer", "api_key_header", "oauth2", "none"]
+            },
+            "streaming_contract": {
+              "$ref": "#/$defs/streaming_contract"
+            },
+            "tool_protocol": {
+              "type": "string",
+              "enum": ["none", "openai_function_calling", "anthropic_tool_use", "claude_tools_json", "mcp_compatible", "ollama_native_tool_calls"]
+            },
+            "supported_capabilities": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["tool_use", "vision", "audio_input", "audio_output", "json_mode", "structured_outputs", "multimodal", "fine_tuning", "streaming", "multi_turn", "prompt_caching", "extended_thinking", "computer_use", "batch_api", "system_prompt", "function_calling_legacy"]
+              },
+              "uniqueItems": true
+            },
+            "context_window_tokens": { "type": "integer", "minimum": 1024 },
+            "max_output_tokens": { "type": "integer", "minimum": 1 },
+            "error_mapping": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["provider_status_or_code", "contract_error_code"],
+                "properties": {
+                  "provider_status_or_code": { "type": "string" },
+                  "contract_error_code": { "type": "string" },
+                  "retriable": { "type": "boolean", "default": false }
+                },
+                "additionalProperties": false
+              },
+              "description": "Map provider errors to contract error codes so callers see uniform shapes."
+            },
+            "timeout_ms": { "type": "integer", "minimum": 100 },
+            "retry_policy": {
+              "type": "object",
+              "required": ["max_attempts", "backoff"],
+              "properties": {
+                "max_attempts": { "type": "integer", "minimum": 1, "maximum": 10 },
+                "backoff": { "type": "string", "enum": ["constant", "linear", "exponential", "exponential_jittered"] },
+                "initial_delay_ms": { "type": "integer", "minimum": 0 },
+                "retriable_status_codes": { "type": "array", "items": { "type": "integer" } }
+              },
+              "additionalProperties": false
+            },
+            "cost_model": {
+              "type": "object",
+              "properties": {
+                "currency": { "type": "string", "enum": ["USD", "EUR"] },
+                "input_per_million_tokens": { "type": "number", "minimum": 0 },
+                "output_per_million_tokens": { "type": "number", "minimum": 0 },
+                "cache_creation_per_million_tokens": { "type": "number", "minimum": 0, "description": "OTel GenAI: cache write cost per M tokens (prompt caching)." },
+                "cache_read_per_million_tokens": { "type": "number", "minimum": 0, "description": "OTel GenAI: cache hit cost per M tokens." },
+                "reasoning_per_million_tokens": { "type": "number", "minimum": 0, "description": "OTel GenAI: extended-thinking output cost per M tokens." },
+                "free_tier": { "type": "boolean", "default": false },
+                "billing_mechanism": { "type": "string", "enum": ["per_token", "per_request", "subscription", "operator_subscription_proxy", "compute_pass_through", "free_self_hosted"], "description": "How the operator is billed. operator_subscription_proxy = Claude Code subscription used by gateway (no per-request fee)." }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "streaming_contract": {
+      "type": "object",
+      "required": ["frame_format", "on_disconnect", "on_lag"],
+      "properties": {
+        "frame_format": {
+          "type": "string",
+          "enum": ["sse_data_lines", "ndjson", "anthropic_event_blocks", "anthropic_sse", "openai_chat_stream", "openai_compat_sse", "ollama_native_stream", "subprocess_stream_json"]
+        },
+        "first_token_max_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Time-to-first-token budget. Conformance asserts."
+        },
+        "on_disconnect": {
+          "type": "string",
+          "enum": ["abort", "buffer_and_resume", "ignore"]
+        },
+        "on_lag": {
+          "type": "string",
+          "enum": ["drop_and_warn", "buffer", "buffer_and_warn", "kick_subscriber"],
+          "description": "Per feedback_broadcast_recv_lagged_security."
+        },
+        "supports_token_count_in_stream": { "type": "boolean", "default": false }
+      },
+      "additionalProperties": false
+    },
+
+    "operator_surface_ext": {
+      "required": ["operator_surface"],
+      "properties": {
+        "operator_surface": {
+          "type": "object",
+          "required": ["ui_locator", "screen_key"],
+          "properties": {
+            "ui_locator": {
+              "type": "string",
+              "description": "Human-readable locator (e.g., 'Copilot left-panel chat input + Send button')."
+            },
+            "screen_key": {
+              "type": "string",
+              "enum": [
+                "Dashboard", "Dispatch", "Builds", "Intake", "Helix", "BuildDetail", "ProjectDetail",
+                "Comms", "Editor", "Git", "PullRequest", "Architecture", "DiagramLibrary",
+                "Roadmap", "Observability", "Tools", "AutonomousBuilds", "Chat", "Security",
+                "Program", "Supervision", "Cockpit"
+              ],
+              "description": "From lightarchitects-webshell-ui/src/lib/routes.ts ScreenKey enum. Adding requires routes.ts edit + schema bump."
+            },
+            "card_role": {
+              "type": "string",
+              "description": "From src/lib/cockpit/cardRoles.ts CockpitCardRole. Required if screen_key=Cockpit."
+            },
+            "keyboard_shortcut": {
+              "type": "string",
+              "description": "Hotkey if applicable (e.g., '⌘T', 'Ctrl+`')."
+            },
+            "data_card_role_attr": {
+              "type": "string",
+              "description": "data-card-role HTML attribute value (Phase 7 taxonomy)."
+            },
+            "test_id": {
+              "type": "string",
+              "description": "data-testid attribute for Playwright selectors."
+            },
+            "history_continuity_on_provider_switch": {
+              "type": "string",
+              "enum": ["replay_to_new_provider", "fork_at_current_turn", "drop_and_restart", "n/a"],
+              "description": "EVA R1: what happens to prior turns when operator switches provider mid-session."
+            },
+            "cancellation": {
+              "type": "object",
+              "properties": {
+                "ack_max_ms": { "type": "integer", "minimum": 1 },
+                "kill_max_ms": { "type": "integer", "minimum": 1 },
+                "partial_artifact_retention": { "type": "boolean", "default": true },
+                "billing_bounded": { "type": "boolean", "default": true }
+              },
+              "additionalProperties": false,
+              "description": "CORSO R1: cancellation contract for surfaces with a CANCEL action."
+            },
+            "auto_mode_re_consent_triggers": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "after_idle_60min",
+                  "after_idle_15min",
+                  "absolute_ttl_60min",
+                  "on_provider_change",
+                  "on_model_change",
+                  "after_failed_dispatch",
+                  "after_forbidden_behavior_trip"
+                ]
+              },
+              "uniqueItems": true,
+              "description": "SERAPH/EVA/AYIN R1: auto-mode re-consent must include absolute TTL, not just idle."
+            },
+            "render_safety": {
+              "type": "object",
+              "properties": {
+                "monaco_read_only_only": { "type": "boolean", "default": true },
+                "html_injection_blocked": { "type": "boolean", "default": true },
+                "markdown_renderer_sanitization": { "type": "string", "enum": ["dompurify", "none", "plaintext_only"] },
+                "iframe_blocked": { "type": "boolean", "default": true },
+                "script_blocked": { "type": "boolean", "default": true }
+              },
+              "additionalProperties": false,
+              "description": "SERAPH R1: artifact rendering must block XSS vectors."
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "wire_ws_ext": {
+      "required": ["wire_ws"],
+      "properties": {
+        "wire_ws": {
+          "type": "object",
+          "required": ["path", "auth_required", "client_to_server_schema", "server_to_client_schema"],
+          "properties": {
+            "path": {
+              "type": "string",
+              "pattern": "^/(v1|api|)[/a-zA-Z0-9_{}*.-]*$",
+              "description": "WebSocket upgrade endpoint path."
+            },
+            "subprotocols": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Sec-WebSocket-Protocol values offered."
+            },
+            "auth_required": {
+              "type": "string",
+              "enum": ["none", "bearer_token", "cookie_session", "either", "platform_admin"]
+            },
+            "binary_framing": {
+              "type": "boolean",
+              "default": false,
+              "description": "Whether frames use binary opcode (vs text)."
+            },
+            "client_to_server_schema": {
+              "type": "object",
+              "description": "JSON Schema (or framed binary spec) for messages the client sends."
+            },
+            "server_to_client_schema": {
+              "type": "object",
+              "description": "JSON Schema for messages the server sends."
+            },
+            "close_codes": {
+              "type": "object",
+              "patternProperties": {
+                "^[1-4][0-9]{3}$": { "type": "string" }
+              },
+              "description": "Map of WebSocket close code → meaning. 1000 (normal) and 4xxx (application) at minimum."
+            },
+            "keepalive": {
+              "type": "object",
+              "properties": {
+                "ping_interval_seconds": { "type": "integer", "minimum": 1 },
+                "pong_timeout_seconds": { "type": "integer", "minimum": 1 }
+              },
+              "additionalProperties": false
+            },
+            "max_message_bytes": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "wire_ipc_ext": {
+      "required": ["wire_ipc"],
+      "properties": {
+        "wire_ipc": {
+          "type": "object",
+          "required": ["binary_path", "process_lifecycle", "request_schema", "response_schema"],
+          "properties": {
+            "binary_path": {
+              "type": "string",
+              "description": "Path or env-rooted location of the subprocess binary (e.g., ~/lightarchitects/soul/.config/bin/soul)."
+            },
+            "transport": {
+              "type": "string",
+              "enum": ["stdio_jsonrpc", "stdio_ndjson", "uds_jsonrpc", "named_pipe"]
+            },
+            "process_lifecycle": {
+              "type": "string",
+              "enum": ["spawn_per_call", "long_lived_daemon", "lazy_singleton", "pool"]
+            },
+            "request_schema": { "type": "object" },
+            "response_schema": { "type": "object" },
+            "stderr_protocol": {
+              "type": "string",
+              "enum": ["ignored", "logged_with_redaction", "forwarded_to_caller"]
+            },
+            "restart_policy": {
+              "type": "string",
+              "enum": ["fail_fast", "restart_with_backoff", "manual_only"]
+            },
+            "handshake_timeout_ms": { "type": "integer", "minimum": 100 },
+            "call_timeout_ms": { "type": "integer", "minimum": 100 }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "agent_loop_ext": {
+      "required": ["agent_loop"],
+      "properties": {
+        "agent_loop": {
+          "type": "object",
+          "required": ["loop_name", "step_kinds", "termination", "max_iterations"],
+          "properties": {
+            "loop_name": {
+              "type": "string",
+              "enum": [
+                "ReAct", "ReActWithMemory", "CoVe", "ACH", "BCRA", "ITT",
+                "Multipass", "RedTeam", "Drain", "Reflexion", "SandboxExec",
+                "CritiqueRefine", "Compose"
+              ],
+              "description": "Canonical loop strategy name. Adding a new loop requires SDK trait + schema bump."
+            },
+            "executor_trait": {
+              "type": "string",
+              "description": "Rust path of the executor trait (e.g., lightarchitects::agent::loops::react::ReActExecutor)."
+            },
+            "step_kinds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["Thought", "Action", "Observation", "Verification", "Hypothesis", "Critique", "Refine", "Plan", "Drain", "Reflect", "Compose"]
+              },
+              "minItems": 1,
+              "uniqueItems": true,
+              "description": "Per-iteration step types this loop emits."
+            },
+            "termination": {
+              "type": "object",
+              "required": ["primary"],
+              "properties": {
+                "primary": {
+                  "type": "string",
+                  "enum": ["final_answer_emitted", "max_iterations_reached", "convergence_threshold_met", "budget_exhausted", "operator_aborted", "verification_failed"]
+                },
+                "secondary": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "Additional termination triggers (any-of)."
+                }
+              },
+              "additionalProperties": false
+            },
+            "max_iterations": { "type": "integer", "minimum": 1, "maximum": 100 },
+            "convergence_criteria": {
+              "type": "object",
+              "description": "How convergence is measured (e.g., {kind: 'cosine_similarity', threshold: 0.95})."
+            },
+            "iteration_observability": {
+              "type": "object",
+              "properties": {
+                "per_iteration_span_name": { "type": "string" },
+                "step_metadata_keys": { "type": "array", "items": { "type": "string" } },
+                "context_window_tracking": { "type": "boolean" }
+              },
+              "additionalProperties": false
+            },
+            "memory_required": { "type": "boolean", "default": false },
+            "tool_use_required": { "type": "boolean", "default": true },
+            "parallel_compatible": { "type": "boolean", "default": false }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "agent_tool_use_ext": {
+      "required": ["agent_tool_use"],
+      "properties": {
+        "agent_tool_use": {
+          "type": "object",
+          "required": ["provider_format", "tool_name", "tool_schema", "result_schema"],
+          "properties": {
+            "provider_format": {
+              "type": "string",
+              "enum": ["anthropic_tool_use", "openai_function_calling", "ollama_native_tool_calls", "mcp_tools_call"],
+              "description": "Which wire format the tool_use block uses. Determines the request/response envelope shape."
+            },
+            "tool_name": {
+              "type": "string",
+              "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+              "description": "Tool name as registered with the LLM (must match the tool name in the provider's tools array)."
+            },
+            "tool_schema": {
+              "type": "object",
+              "description": "JSON Schema for the tool's input parameters (sent to the LLM as input_schema)."
+            },
+            "result_schema": {
+              "type": "object",
+              "description": "JSON Schema for what we return as tool_result content."
+            },
+            "tool_choice_policy": {
+              "type": "string",
+              "enum": ["auto", "any", "specific", "none"],
+              "description": "How the LLM chooses to invoke this tool."
+            },
+            "parallel_tool_use": {
+              "type": "boolean",
+              "default": false,
+              "description": "Whether the LLM may emit multiple tool_use blocks in parallel within one turn."
+            },
+            "streaming_partial_arguments": {
+              "type": "boolean",
+              "default": false,
+              "description": "Whether tool arguments stream in token-by-token (Anthropic input_json_delta)."
+            },
+            "operator_wins_supersedes": {
+              "type": "boolean",
+              "default": true,
+              "description": "Whether operator skill invocation aborts pending tool_use with SupersededByOperatorAction."
+            },
+            "side_effects": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Observable side effects (filesystem writes, network calls, etc.)."
+            },
+            "abort_on_indirect_injection": {
+              "type": "boolean",
+              "default": true,
+              "description": "Whether IndirectInjectionShield scans the tool's result before re-entering LLM context (OWASP LLM01)."
+            },
+            "trust_pin_required": {
+              "type": "boolean",
+              "default": false,
+              "description": "Whether SkillTrustLedger SHA-256 pin must verify before invocation."
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "agent_a2a_ext": {
+      "required": ["agent_a2a"],
+      "properties": {
+        "agent_a2a": {
+          "type": "object",
+          "required": ["message_type", "envelope_schema", "addressing"],
+          "properties": {
+            "message_type": {
+              "type": "string",
+              "enum": [
+                "TASK_DISPATCH", "TASK_PROGRESS", "TASK_COMPLETE", "TASK_FAILED",
+                "FILE_CLAIM", "FILE_RELEASE",
+                "GATE_REVIEW", "GATE_VERDICT",
+                "WAVE_START", "WAVE_COMPLETE",
+                "HITL_REQUEST", "HITL_RESOLVE",
+                "AGENT_HEARTBEAT", "AGENT_REGISTER", "AGENT_DEREGISTER",
+                "SCRUM_ROUND_1", "SCRUM_ROUND_2", "SCRUM_ROUND_3",
+                "CONDUCTOR_ENQUEUE", "CONDUCTOR_CLAIM", "CONDUCTOR_COMPLETE"
+              ],
+              "description": "A2A envelope type per Agents Playbook §III. Closed set; adding requires playbook + schema bump."
+            },
+            "envelope_schema": {
+              "type": "object",
+              "required": ["properties"],
+              "description": "JSON Schema for the envelope payload. Must include {v, agent_id, session_id, build_codename, worktree_path, branch, commit_sha, phase, wave, task_id, timestamp, type, payload} per Playbook §III."
+            },
+            "addressing": {
+              "type": "string",
+              "enum": ["broadcast", "unicast", "build_scoped", "wave_scoped", "agent_pair"],
+              "description": "Who sees this envelope."
+            },
+            "ordering": {
+              "type": "string",
+              "enum": ["total", "per_build", "per_wave", "per_agent_pair", "unordered"]
+            },
+            "idempotency_key": {
+              "type": "string",
+              "description": "Which field in the envelope serves as the dedup key (e.g., 'task_id')."
+            },
+            "delivery_guarantee": {
+              "type": "string",
+              "enum": ["at_most_once", "at_least_once", "exactly_once"]
+            },
+            "hmac_signed": {
+              "type": "boolean",
+              "default": false,
+              "description": "Whether envelope carries an HMAC signature per security-guardrails §SG-CRYPTO."
+            },
+            "fires_on": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Producer triggers (e.g., 'task transitions to Complete state')."
+            },
+            "consumed_by": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Named consumers (e.g., 'supervisor', 'conductor', 'webshell UI')."
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "agent_identity_ext": {
+      "required": ["agent_identity"],
+      "properties": {
+        "agent_identity": {
+          "type": "object",
+          "required": ["sibling_name", "identity_file", "strands", "verdict_vocabulary"],
+          "properties": {
+            "sibling_name": {
+              "type": "string",
+              "enum": ["claude", "eva", "corso", "soul", "quantum", "seraph", "ayin", "laex", "user"]
+            },
+            "identity_file": {
+              "type": "string",
+              "description": "Path to identity.md (e.g., $HELIX/eva/identity.md)."
+            },
+            "strands": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1,
+              "uniqueItems": true,
+              "description": "Personality strands (e.g., [Analytical, Precision, Architectural, Candid])."
+            },
+            "voice_rules": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "How the sibling speaks (e.g., 'direct, technical, dry humor')."
+            },
+            "verdict_vocabulary": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1,
+              "description": "Canonical verdict words (e.g., LÆX: RATIFY/RATIFY-WITH-AMENDMENTS/WITHHOLD)."
+            },
+            "gate_ownership": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["A", "S", "Q", "C", "O", "P", "K", "D", "T", "R"]
+              },
+              "uniqueItems": true,
+              "description": "Which gatekeeper-registry gates this sibling owns."
+            },
+            "mcp_actions_owned": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "MCP action names this sibling implements (cross-ref wire.mcp contracts)."
+            },
+            "helix_path": {
+              "type": "string",
+              "description": "Per-sibling helix root (e.g., $HELIX/eva/)."
+            },
+            "tts_voice": {
+              "type": "string",
+              "description": "Voice id for SOUL TTS synthesis."
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "agent_skill_ext": {
+      "required": ["agent_skill"],
+      "properties": {
+        "agent_skill": {
+          "type": "object",
+          "required": ["skill_path", "slash_command"],
+          "properties": {
+            "skill_path": {
+              "type": "string",
+              "description": "Path to SKILL.md (e.g., plugins/lightarchitects/skills/BUILD/SKILL.md)."
+            },
+            "slash_command": {
+              "type": "string",
+              "pattern": "^/[A-Z][A-Z0-9-]*$",
+              "description": "Slash command invocation (e.g., /BUILD, /PLAN, /SCRUM)."
+            },
+            "trigger_keywords": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Natural-language triggers that should invoke this skill."
+            },
+            "arguments_schema": {
+              "type": "object",
+              "description": "JSON Schema for the skill's input args."
+            },
+            "sub_skills": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/contract_id" },
+              "description": "Sibling/sub skills this one delegates to."
+            },
+            "trust_pin_sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$",
+              "description": "SHA-256 of SKILL.md content per SkillTrustLedger."
+            },
+            "delegates_to_agent": {
+              "type": "string",
+              "enum": ["claude", "eva", "corso", "soul", "quantum", "seraph", "ayin", "laex", "squad"]
+            },
+            "rejects_flags": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Flags this skill explicitly rejects (e.g., /RESEARCH rejects --then --watch --drain --fix)."
+            },
+            "hitl_required": {
+              "type": "boolean",
+              "default": false,
+              "description": "Whether skill requires HITL consent before any write-path action."
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "ui_component_ext": {
+      "required": ["ui_component"],
+      "properties": {
+        "ui_component": {
+          "type": "object",
+          "required": ["component_path", "props_schema", "events_schema"],
+          "properties": {
+            "component_path": {
+              "type": "string",
+              "pattern": "^lightarchitects-webshell-ui/src/.+\\.svelte$",
+              "description": "Workspace-relative path to .svelte file."
+            },
+            "framework": {
+              "type": "string",
+              "enum": ["svelte5", "svelte4"],
+              "default": "svelte5"
+            },
+            "props_schema": {
+              "type": "object",
+              "description": "JSON Schema for the component's $props() input."
+            },
+            "events_schema": {
+              "type": "object",
+              "description": "Map of event_name → payload schema. Use {} if no events emitted."
+            },
+            "slots": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Named slots this component exposes ('default' is implicit if used)."
+            },
+            "exposed_methods": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["name", "signature"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "signature": { "type": "string" },
+                  "description": { "type": "string" }
+                },
+                "additionalProperties": false
+              },
+              "description": "Methods exposed via bind:this for parent components."
+            },
+            "lifecycle_obligations": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "What onMount/onDestroy must clean up (subscriptions, timers, listeners)."
+            },
+            "screen_key": {
+              "type": "string",
+              "description": "ScreenKey this component lives under (if any)."
+            },
+            "card_role": {
+              "type": "string",
+              "description": "data-card-role value if this is a Cockpit card."
+            },
+            "data_test_id": {
+              "type": "string",
+              "description": "data-testid for Playwright selectors."
+            },
+            "a11y_requirements": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Accessibility obligations (aria-label, focus management, keyboard support)."
+            },
+            "store_subscriptions": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/contract_id" },
+              "description": "ui.store contracts this component subscribes to."
+            },
+            "consumes_events": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Document-level events this component listens for (e.g., 'la:permission-request')."
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "ui_store_ext": {
+      "required": ["ui_store"],
+      "properties": {
+        "ui_store": {
+          "type": "object",
+          "required": ["store_path", "store_kind", "value_schema"],
+          "properties": {
+            "store_path": {
+              "type": "string",
+              "description": "Workspace-relative path + export name (e.g., src/lib/stores.ts#ayinStatus)."
+            },
+            "store_kind": {
+              "type": "string",
+              "enum": ["writable", "readable", "derived", "custom"]
+            },
+            "value_schema": {
+              "type": "object",
+              "description": "JSON Schema for the store's current value."
+            },
+            "initial_value": {
+              "description": "Initial value at module load."
+            },
+            "writers": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Who can write (e.g., 'sse.ts on event v1.ayin.health', 'AyinPanel.svelte on retry click')."
+            },
+            "subscribers_observable": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Documented subscribers (components or other stores). Used for impact analysis."
+            },
+            "persistence_mirror": {
+              "type": "object",
+              "properties": {
+                "storage": { "type": "string", "enum": ["localStorage", "sessionStorage", "indexedDB", "none"] },
+                "key": { "type": "string" },
+                "serializer": { "type": "string" }
+              },
+              "additionalProperties": false,
+              "description": "Whether this store mirrors to browser storage."
+            },
+            "update_rules": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Invariants (e.g., 'never set null; default to empty array', 'always wrapped in new Map() before mutation per Svelte 5 reactivity')."
+            },
+            "derived_from": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/contract_id" },
+              "description": "If store_kind=derived, the upstream store contracts."
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "mcp_capability_ext": {
+      "required": ["mcp_capability"],
+      "properties": {
+        "mcp_capability": {
+          "type": "object",
+          "required": ["role", "protocol_version", "advertised_capabilities"],
+          "properties": {
+            "role": { "type": "string", "enum": ["server", "client", "host"], "description": "MCP role: server exposes tools/prompts/resources; client = LLM-host that consumes; host = orchestrator (gateway)." },
+            "protocol_version": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "MCP spec date (e.g., 2025-11-25)." },
+            "advertised_capabilities": {
+              "type": "object",
+              "properties": {
+                "tools": { "type": "object", "description": "Tool exposure capability per MCP 2025-11-25." },
+                "prompts": { "type": "object" },
+                "resources": { "type": "object" },
+                "sampling": {
+                  "type": "object",
+                  "properties": {
+                    "tools": { "type": "object", "description": "Sub-capability: sampling supports tool_use." },
+                    "context": { "type": "object", "description": "Sub-capability: sampling supports includeContext (soft-deprecated in 2025-11-25)." }
+                  }
+                },
+                "elicitation": { "type": "object" },
+                "roots": { "type": "object", "properties": { "listChanged": { "type": "boolean" } } },
+                "logging": { "type": "object" },
+                "completion": { "type": "object" }
+              }
+            },
+            "transport": { "type": "string", "enum": ["stdio", "http_sse", "http_streamable", "websocket"] },
+            "negotiation_failure_behavior": { "type": "string", "enum": ["reject_session", "degrade", "warn_continue"], "description": "What happens when client requests an unsupported capability." },
+            "exposed_wire_mcp_contract_ids": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/contract_id" },
+              "uniqueItems": true,
+              "description": "Forward-pointers to wire.mcp contract ids whose actions are exposed by this server. MUST be non-empty if advertised_capabilities.tools is present. Each referenced contract MUST have sibling_routing consistent with this server's role. Added per LÆX ratification 2026-06-03 (la-contracts §7.1 Q3): mirrors MCP 2025-11-25 lifecycle separation of Initialization-phase capabilities from Operation-phase dispatch; mechanically enforces 'requestors should only augment requests with a task if the receiver has declared the corresponding capability.'"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "mcp_elicitation_ext": {
+      "required": ["mcp_elicitation"],
+      "properties": {
+        "mcp_elicitation": {
+          "type": "object",
+          "required": ["trigger", "request_schema", "response_schema"],
+          "properties": {
+            "trigger": { "type": "string", "description": "What server-side condition raises an elicitation/createMessage." },
+            "request_schema": { "type": "object", "description": "JSON Schema for the elicitation request payload." },
+            "response_schema": { "type": "object", "description": "JSON Schema for the operator's response payload." },
+            "timeout_ms": { "type": "integer", "minimum": 100 },
+            "on_timeout": { "type": "string", "enum": ["abort", "default_value", "retry"] },
+            "operator_facing": { "type": "boolean", "default": true, "description": "Whether the operator sees this elicitation directly or it's handled by an orchestrator." }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "mcp_sampling_ext": {
+      "required": ["mcp_sampling"],
+      "properties": {
+        "mcp_sampling": {
+          "type": "object",
+          "required": ["server_id", "max_tokens", "model_preferences"],
+          "properties": {
+            "server_id": { "type": "string", "description": "The MCP server requesting a sample." },
+            "supports_tools": { "type": "boolean", "default": false, "description": "Per MCP 2025-11-25 client capabilities.sampling.tools." },
+            "supports_context": { "type": "boolean", "default": false, "description": "Per MCP 2025-11-25 client capabilities.sampling.context (soft-deprecated)." },
+            "max_tokens": { "type": "integer", "minimum": 1 },
+            "model_preferences": {
+              "type": "object",
+              "properties": {
+                "hints": { "type": "array", "items": { "type": "object", "properties": { "name": { "type": "string" } } } },
+                "cost_priority": { "type": "number", "minimum": 0, "maximum": 1 },
+                "speed_priority": { "type": "number", "minimum": 0, "maximum": 1 },
+                "intelligence_priority": { "type": "number", "minimum": 0, "maximum": 1 }
+              }
+            },
+            "system_prompt_allowed": { "type": "boolean", "default": false },
+            "stop_sequences_allowed": { "type": "boolean", "default": true },
+            "operator_approval_required": { "type": "boolean", "default": true, "description": "Whether the operator must approve before the host LLM is invoked on behalf of the server." }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "mcp_root_ext": {
+      "required": ["mcp_root"],
+      "properties": {
+        "mcp_root": {
+          "type": "object",
+          "required": ["uri", "name", "permissions"],
+          "properties": {
+            "uri": { "type": "string", "description": "Root URI (file:// or remote scheme)." },
+            "name": { "type": "string" },
+            "permissions": {
+              "type": "object",
+              "required": ["read", "write"],
+              "properties": {
+                "read": { "type": "boolean" },
+                "write": { "type": "boolean" },
+                "delete": { "type": "boolean", "default": false },
+                "execute": { "type": "boolean", "default": false }
+              },
+              "additionalProperties": false
+            },
+            "boundary_enforcement": { "type": "string", "enum": ["server_enforced", "client_enforced", "sandbox_enforced"] },
+            "list_changed_notifications": { "type": "boolean", "default": false }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "auth_flow_ext": {
+      "required": ["auth_flow"],
+      "properties": {
+        "auth_flow": {
+          "type": "object",
+          "required": ["flow_type", "steps", "credential_storage"],
+          "properties": {
+            "flow_type": { "type": "string", "enum": ["oauth2_pkce", "oauth2_device_flow", "oauth2_client_credentials", "api_key_provisioning", "session_cookie", "mtls", "saml"] },
+            "provider": { "type": "string", "description": "External provider (e.g., google, github, anthropic_admin)." },
+            "steps": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["step_name", "actor", "produces"],
+                "properties": {
+                  "step_name": { "type": "string" },
+                  "actor": { "type": "string", "enum": ["operator", "webshell", "external_provider", "gateway", "keychain"] },
+                  "produces": { "type": "string", "description": "What artifact this step produces (e.g., 'PKCE verifier', 'authorization code', 'access token')." },
+                  "consumes": { "type": "string", "description": "What artifact this step requires." },
+                  "max_duration_ms": { "type": "integer", "minimum": 1 }
+                }
+              },
+              "minItems": 1
+            },
+            "credential_storage": {
+              "type": "object",
+              "required": ["storage_backend", "redaction"],
+              "properties": {
+                "storage_backend": { "type": "string", "enum": ["macos_keychain", "linux_secret_service", "sqlite_encrypted", "in_memory"] },
+                "redaction": { "type": "string", "enum": ["never_logged", "redacted_in_logs", "redacted_in_spans"] },
+                "rotation_required": { "type": "boolean", "default": false },
+                "rotation_interval_days": { "type": "integer", "minimum": 1 }
+              },
+              "additionalProperties": false
+            },
+            "csrf_protection": { "type": "string", "enum": ["state_param", "double_submit_cookie", "none_intentional"] },
+            "pkce_method": { "type": "string", "enum": ["S256", "plain", "none"], "description": "PKCE code challenge method per RFC 7636." },
+            "revocation_endpoint": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "budget_envelope_ext": {
+      "required": ["budget_envelope"],
+      "properties": {
+        "budget_envelope": {
+          "type": "object",
+          "required": ["scope", "limits", "enforcement"],
+          "properties": {
+            "scope": { "type": "string", "enum": ["per_call", "per_turn", "per_session", "per_wave", "per_build", "per_operator_per_day"] },
+            "limits": {
+              "type": "object",
+              "properties": {
+                "max_input_tokens": { "type": "integer", "minimum": 1 },
+                "max_output_tokens": { "type": "integer", "minimum": 1 },
+                "max_reasoning_tokens": { "type": "integer", "minimum": 0, "description": "Extended-thinking token cap (Claude 4.x, Gemini 2.x)." },
+                "max_cost_usd": { "type": "number", "minimum": 0 },
+                "max_wall_clock_ms": { "type": "integer", "minimum": 1 },
+                "max_retry_attempts": { "type": "integer", "minimum": 0, "maximum": 20 },
+                "max_tool_calls": { "type": "integer", "minimum": 0 },
+                "max_parallel_agents": { "type": "integer", "minimum": 1 }
+              }
+            },
+            "enforcement": { "type": "string", "enum": ["hard_abort", "soft_warn", "ask_operator", "degrade_to_cheaper_provider"] },
+            "on_exceed_action": { "type": "string", "description": "What user-visible action runs when a limit is hit." },
+            "telemetry_destination": { "type": "string", "description": "Where budget consumption is reported (e.g., AYIN span, BudgetState struct, /metrics endpoint)." },
+            "carryover_policy": { "type": "string", "enum": ["reset_per_scope", "carry_within_session", "carry_within_build"] }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "sandbox_policy_ext": {
+      "required": ["sandbox_policy"],
+      "properties": {
+        "sandbox_policy": {
+          "type": "object",
+          "required": ["isolation_level", "filesystem_policy", "network_policy"],
+          "properties": {
+            "isolation_level": { "type": "string", "enum": ["docker_unprivileged", "docker_privileged", "podman", "firecracker_microvm", "macos_sandbox_exec", "linux_seccomp_only", "process_only"] },
+            "image_id": { "type": "string", "description": "Container image identity (SHA256-pinned)." },
+            "image_trust_pin_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "filesystem_policy": {
+              "type": "object",
+              "required": ["readonly_paths", "writable_paths"],
+              "properties": {
+                "readonly_paths": { "type": "array", "items": { "type": "string" } },
+                "writable_paths": { "type": "array", "items": { "type": "string" }, "minItems": 0 },
+                "tmpfs_paths": { "type": "array", "items": { "type": "string" } },
+                "denied_paths": { "type": "array", "items": { "type": "string" } }
+              },
+              "additionalProperties": false
+            },
+            "network_policy": {
+              "type": "object",
+              "required": ["egress_mode"],
+              "properties": {
+                "egress_mode": { "type": "string", "enum": ["deny_all", "allowlist_cidr", "allowlist_host", "open"] },
+                "allowed_cidrs": { "type": "array", "items": { "type": "string" } },
+                "allowed_hosts": { "type": "array", "items": { "type": "string" } },
+                "metadata_service_blocked": { "type": "boolean", "default": true, "description": "Always block 169.254.169.254 IMDS." }
+              },
+              "additionalProperties": false
+            },
+            "seccomp_profile": { "type": "string", "description": "Seccomp profile name or inline JSON." },
+            "cgroups_limits": {
+              "type": "object",
+              "properties": {
+                "memory_bytes": { "type": "integer", "minimum": 1 },
+                "cpu_quota_percent": { "type": "integer", "minimum": 1, "maximum": 1000 },
+                "pids_max": { "type": "integer", "minimum": 1 }
+              }
+            },
+            "drop_capabilities": { "type": "array", "items": { "type": "string" }, "description": "Linux capabilities dropped (e.g., NET_RAW, SYS_ADMIN)." }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "daemon_heartbeat_ext": {
+      "required": ["daemon_heartbeat"],
+      "properties": {
+        "daemon_heartbeat": {
+          "type": "object",
+          "required": ["daemon_name", "binary_path", "lifecycle", "health_probe", "restart_policy"],
+          "properties": {
+            "daemon_name": { "type": "string" },
+            "binary_path": { "type": "string" },
+            "lifecycle": { "type": "string", "enum": ["launchagent", "launchdaemon", "systemd", "tokio_task", "embedded_thread", "kubernetes_pod"] },
+            "health_probe": {
+              "type": "object",
+              "required": ["kind", "interval_seconds"],
+              "properties": {
+                "kind": { "type": "string", "enum": ["http_get", "tcp_connect", "file_touch", "process_signal", "stdout_pattern"] },
+                "target": { "type": "string" },
+                "interval_seconds": { "type": "integer", "minimum": 1 },
+                "timeout_seconds": { "type": "integer", "minimum": 1 },
+                "failure_threshold": { "type": "integer", "minimum": 1 }
+              },
+              "additionalProperties": false
+            },
+            "restart_policy": {
+              "type": "object",
+              "required": ["strategy"],
+              "properties": {
+                "strategy": { "type": "string", "enum": ["always", "on_failure", "manual_only", "backoff_then_alert"] },
+                "max_restarts_per_hour": { "type": "integer", "minimum": 0 },
+                "backoff_seconds": { "type": "array", "items": { "type": "integer" }, "description": "Per-attempt backoff schedule (e.g., [1, 2, 5, 30])." }
+              },
+              "additionalProperties": false
+            },
+            "graceful_shutdown_timeout_ms": { "type": "integer", "minimum": 100 },
+            "concurrency_model": { "type": "string", "enum": ["single_instance", "leader_election", "pool", "sharded"] },
+            "owner_sibling": { "type": "string", "enum": ["claude", "eva", "corso", "soul", "quantum", "seraph", "ayin", "laex", "shared"] }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "feature_flag_ext": {
+      "required": ["feature_flag"],
+      "properties": {
+        "feature_flag": {
+          "type": "object",
+          "required": ["flag_name", "build_system", "default_state"],
+          "properties": {
+            "flag_name": { "type": "string", "pattern": "^[a-z][a-z0-9-]+$", "description": "Cargo feature name." },
+            "build_system": { "type": "string", "enum": ["cargo_feature", "vite_env_var", "growthbook", "feature_toml"] },
+            "default_state": { "type": "string", "enum": ["on", "off"] },
+            "implies": { "type": "array", "items": { "type": "string" }, "description": "Other flags activated when this one is on (Cargo composite)." },
+            "gates_kinds": { "type": "array", "items": { "$ref": "#/$defs/kind_enum" }, "description": "Contract kinds whose behavior depends on this flag." },
+            "alpha_required": { "type": "boolean", "default": false, "description": "Whether alpha shipment requires this flag on by default." },
+            "removal_target_version": { "type": "string", "description": "Version when this flag is planned for removal (if temporary)." }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "migration_schema_ext": {
+      "required": ["migration_schema"],
+      "properties": {
+        "migration_schema": {
+          "type": "object",
+          "required": ["target_store", "version_from", "version_to", "direction"],
+          "properties": {
+            "target_store": { "$ref": "#/$defs/contract_id", "description": "state.store contract this migrates." },
+            "version_from": { "type": "string" },
+            "version_to": { "type": "string" },
+            "direction": { "type": "string", "enum": ["forward", "rollback", "bidirectional"] },
+            "applies_via": { "type": "string", "enum": ["sqlx_migration", "neo4j_cypher_script", "ndjson_rewrite", "in_app_migrator", "manual_operator"] },
+            "preconditions": { "type": "array", "items": { "type": "string" } },
+            "postconditions": { "type": "array", "items": { "type": "string" } },
+            "rollback_supported": { "type": "boolean", "default": true },
+            "dry_run_supported": { "type": "boolean", "default": true },
+            "data_loss_risk": { "type": "string", "enum": ["none", "low", "medium", "high"] },
+            "operator_consent_required": { "type": "boolean", "default": false }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "eval_scenario_ext": {
+      "required": ["eval_scenario"],
+      "properties": {
+        "eval_scenario": {
+          "type": "object",
+          "required": ["scenario_id", "evaluator", "test_dataset", "metrics"],
+          "properties": {
+            "scenario_id": { "type": "string" },
+            "evaluator": { "type": "string", "enum": ["ollama_judge", "human_review", "anthropic_judge", "openai_judge", "rule_based"] },
+            "test_dataset": { "type": "string", "description": "Path or identifier of the dataset." },
+            "test_count": { "type": "integer", "minimum": 1 },
+            "metrics": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["pass_rate", "f1", "exact_match", "rouge_l", "humanlike_score", "groundedness", "factual_accuracy", "tool_call_accuracy", "tool_argument_validity", "latency_p50", "latency_p95", "latency_p99", "cost_per_query"]
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "baseline_required": { "type": "boolean", "default": false, "description": "Whether this eval requires a baseline pass before being declared meaningful." },
+            "passing_threshold": { "type": "number", "minimum": 0, "maximum": 1 },
+            "regression_threshold": { "type": "number", "description": "Drop below baseline that triggers an alarm." }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "plugin_manifest_ext": {
+      "required": ["plugin_manifest"],
+      "properties": {
+        "plugin_manifest": {
+          "type": "object",
+          "required": ["plugin_name", "manifest_path", "exposes"],
+          "properties": {
+            "plugin_name": { "type": "string", "pattern": "^[a-z][a-z0-9-]+$" },
+            "manifest_path": { "type": "string", "description": "Path to plugin.json." },
+            "trust_pin_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "exposes": {
+              "type": "object",
+              "properties": {
+                "skills": { "type": "array", "items": { "$ref": "#/$defs/contract_id" } },
+                "agents": { "type": "array", "items": { "type": "string" } },
+                "commands": { "type": "array", "items": { "type": "string", "pattern": "^/[A-Za-z][A-Za-z0-9-]*$" } },
+                "mcp_actions": { "type": "array", "items": { "type": "string" } },
+                "hooks": { "type": "array", "items": { "type": "string" } }
+              }
+            },
+            "requires_capabilities": { "type": "array", "items": { "type": "string" } },
+            "marketplace_listed": { "type": "boolean", "default": false },
+            "installation_path": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "webhook_inbound_ext": {
+      "required": ["webhook_inbound"],
+      "properties": {
+        "webhook_inbound": {
+          "type": "object",
+          "required": ["path", "external_source", "signature_verification", "idempotency"],
+          "properties": {
+            "path": { "type": "string", "description": "HTTP path that receives the webhook." },
+            "external_source": { "type": "string", "description": "External provider (e.g., github, stripe, slack)." },
+            "signature_verification": {
+              "type": "object",
+              "required": ["algorithm", "header_name"],
+              "properties": {
+                "algorithm": { "type": "string", "enum": ["hmac_sha256", "hmac_sha512", "ed25519", "rsa_sha256"] },
+                "header_name": { "type": "string" },
+                "secret_storage_ref": { "type": "string", "description": "Reference to where the verification secret is stored." },
+                "timestamp_tolerance_seconds": { "type": "integer", "minimum": 0, "default": 300 }
+              },
+              "additionalProperties": false
+            },
+            "idempotency": {
+              "type": "object",
+              "required": ["key_source"],
+              "properties": {
+                "key_source": { "type": "string", "enum": ["header_idempotency_key", "body_event_id", "header_delivery_id"] },
+                "dedup_window_seconds": { "type": "integer", "minimum": 1 }
+              },
+              "additionalProperties": false
+            },
+            "rate_limit": { "$ref": "#/$defs/rate_limit_spec" },
+            "downstream_dispatcher": { "$ref": "#/$defs/contract_id", "description": "Internal contract that handles the verified event." },
+            "ip_allowlist_cidrs": { "type": "array", "items": { "type": "string" } }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "multimodal_input_ext": {
+      "required": ["multimodal_input"],
+      "properties": {
+        "multimodal_input": {
+          "type": "object",
+          "required": ["modality", "accepted_mime_types", "size_limits"],
+          "properties": {
+            "modality": { "type": "string", "enum": ["image", "audio", "video", "pdf", "structured_file", "screen_capture"] },
+            "accepted_mime_types": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+            "size_limits": {
+              "type": "object",
+              "required": ["max_bytes"],
+              "properties": {
+                "max_bytes": { "type": "integer", "minimum": 1 },
+                "max_dimensions_pixels": { "type": "string", "description": "WIDTHxHEIGHT, e.g., 8192x8192" },
+                "max_duration_ms": { "type": "integer", "minimum": 1, "description": "Audio/video duration cap." }
+              }
+            },
+            "preprocessing": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["downscale_if_oversize", "transcode_to_standard", "extract_exif", "ocr_text", "speaker_diarization", "blur_faces", "remove_pii"] }
+            },
+            "encoding_to_provider": { "type": "string", "enum": ["base64_inline", "signed_url", "binary_part", "data_uri"] },
+            "provider_capabilities_required": { "type": "array", "items": { "type": "string", "enum": ["vision", "audio_input", "multimodal"] } },
+            "pii_scrubbing_required": { "type": "boolean", "default": false }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "checkpoint_state_ext": {
+      "required": ["checkpoint_state"],
+      "properties": {
+        "checkpoint_state": {
+          "type": "object",
+          "required": ["checkpoint_id_pattern", "state_schema", "persistence_backend", "frequency"],
+          "properties": {
+            "checkpoint_id_pattern": { "type": "string", "description": "Format of checkpoint IDs (e.g., {build}:{phase}:{wave}:{timestamp})." },
+            "state_schema": { "type": "object", "description": "JSON Schema for the persisted state." },
+            "persistence_backend": { "type": "string", "enum": ["sqlite", "filesystem_ndjson", "filesystem_yaml", "neo4j", "in_memory", "redis"] },
+            "frequency": { "type": "string", "enum": ["per_superstep", "per_wave", "per_phase", "manual", "on_interrupt"] },
+            "supports_time_travel": { "type": "boolean", "default": false, "description": "LangGraph-style replay from arbitrary checkpoint." },
+            "channel_versions_tracked": { "type": "boolean", "default": false, "description": "Per-channel version tracking for memory consistency (LangGraph pattern)." },
+            "max_retained_checkpoints": { "type": "integer", "minimum": 1 },
+            "compression": { "type": "string", "enum": ["none", "gzip", "zstd", "lz4"] },
+            "resume_semantics": { "type": "string", "enum": ["exactly_where_left_off", "rerun_last_step", "rerun_from_phase_start"] },
+            "hmac_chained": { "type": "boolean", "default": false, "description": "Whether checkpoints HMAC-chain to prior — bridges to hmac_chain.audit_trail (Phase B)." }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "crypto_primitive_ext": {
+      "required": ["crypto_primitive"],
+      "properties": {
+        "crypto_primitive": {
+          "type": "object",
+          "required": ["primitive", "purpose"],
+          "properties": {
+            "primitive": { "type": "string", "enum": ["hkdf_sha256", "hkdf_sha512", "aes_256_gcm", "ed25519_sign", "ed25519_verify", "hmac_sha256", "hmac_sha512", "chacha20_poly1305", "x25519_dh", "argon2id_kdf"] },
+            "purpose": { "type": "string", "description": "What this primitive secures (e.g., 'turnlog HMAC chain', 'program manifest signing')." },
+            "key_source": { "type": "string", "enum": ["keychain", "hkdf_derived", "ephemeral", "operator_supplied", "kjv_verse_keyed"] },
+            "key_rotation_policy": { "type": "string" },
+            "nonce_source": { "type": "string", "enum": ["random_96bit", "counter", "timestamp_plus_random", "n_a"] },
+            "subkey_id_scheme": { "type": "string", "description": "If subkeys are derived (e.g., ironclaw program manifest HKDF subkeys)." },
+            "constant_time_required": { "type": "boolean", "default": false, "description": "MAC comparison or auth-token check (CWE-208 mitigation)." },
+            "revocation_supported": { "type": "boolean", "default": false }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "hitl_flow_ext": {
+      "required": ["hitl_flow"],
+      "properties": {
+        "hitl_flow": {
+          "type": "object",
+          "required": ["interrupt_id", "request_schema", "allowance_config", "response_schema"],
+          "properties": {
+            "interrupt_id": { "type": "string", "description": "Stable id for the HITL interrupt type (e.g., 'dispatch.fs_approve', 'copilot.tool_use_approve')." },
+            "request_schema": {
+              "type": "object",
+              "description": "Per LangGraph HumanInterrupt: {action_request: {action, args}, config, description}."
+            },
+            "allowance_config": {
+              "type": "object",
+              "required": ["allow_ignore", "allow_respond", "allow_edit", "allow_accept"],
+              "properties": {
+                "allow_ignore": { "type": "boolean", "description": "Operator may dismiss without action." },
+                "allow_respond": { "type": "boolean", "description": "Operator may respond with text feedback." },
+                "allow_edit": { "type": "boolean", "description": "Operator may modify the proposed action's args." },
+                "allow_accept": { "type": "boolean", "description": "Operator may approve as-is." }
+              },
+              "additionalProperties": false
+            },
+            "response_schema": { "type": "object", "description": "Schema for HumanResponse: {type: 'response'|'edit'|'accept'|'ignore', value?}." },
+            "timeout_ms": { "type": "integer", "minimum": 100, "description": "0 = wait forever." },
+            "on_timeout": { "type": "string", "enum": ["abort", "default_to_safe", "operator_alerted_and_continue"] },
+            "operator_notification_channel": { "type": "string", "enum": ["webshell_inbox", "desktop_notification", "remote_trigger", "email", "slack"] },
+            "operator_wins_compatible": { "type": "boolean", "default": true, "description": "Whether operator-wins gate can supersede this HITL (Phase B operator_wins.gate)." }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "strand_activation_ext": {
+      "required": ["strand_activation"],
+      "properties": {
+        "strand_activation": {
+          "type": "object",
+          "required": ["activates_strands", "intensity_vector", "coverage_requirement"],
+          "description": "F1 — 10-dimensional quality-vector tracing per Canon XXX. Every operation declares its [A][S][Q][C][O][P][K][D][T][R] activation.",
+          "properties": {
+            "activates_strands": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["A", "S", "Q", "C", "O", "P", "K", "D", "T", "R"] },
+              "minItems": 1,
+              "uniqueItems": true,
+              "description": "[A]rchitecture, [S]ecurity, [Q]uality, [C]anon, [O]perations, [P]erformance, [K]nowledge, [D]ocumentation, [T]esting, [R]esearch+Risk."
+            },
+            "intensity_vector": {
+              "type": "object",
+              "description": "0.0-1.0 intensity per strand. Strands not listed are assumed 0.0.",
+              "patternProperties": {
+                "^[ASQCOPKDTR]$": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+              },
+              "additionalProperties": false
+            },
+            "coverage_requirement": {
+              "type": "string",
+              "enum": ["at_least_one", "must_include_all_activated", "weighted_threshold"],
+              "description": "Conformance test asserts: at_least_one = ≥1 activated strand observed in spans; must_include_all_activated = every declared strand must fire."
+            },
+            "weighted_threshold": {
+              "type": "number",
+              "minimum": 0.0,
+              "maximum": 10.0,
+              "description": "Required when coverage_requirement=weighted_threshold: sum of intensity_vector × observed must reach this value."
+            },
+            "gate_owner_per_strand": {
+              "type": "object",
+              "description": "Which sibling owns each strand for this operation (cross-ref gatekeeper-registry).",
+              "patternProperties": {
+                "^[ASQCOPKDTR]$": { "type": "string", "enum": ["claude", "eva", "corso", "soul", "quantum", "seraph", "ayin", "laex"] }
+              }
+            },
+            "activation_witness_span": { "type": "string", "description": "AYIN span name whose strand_activations field records the activation." }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "canon_evolution_ext": {
+      "required": ["canon_evolution"],
+      "properties": {
+        "canon_evolution": {
+          "type": "object",
+          "required": ["evolution_kind", "stages", "ratification_authority"],
+          "description": "F2 — Canon XXXIX lifecycle: memory entry → promotion candidate → contradiction check → LÆX ratification.",
+          "properties": {
+            "evolution_kind": {
+              "type": "string",
+              "enum": ["doctrine_addition", "doctrine_amendment", "doctrine_removal", "section_promotion", "cross_canon_resolution"]
+            },
+            "target_canon_doc": {
+              "type": "string",
+              "enum": ["platform-canon", "builders-cookbook", "agents-playbook", "architects-blueprint", "operators-manual", "lasdlc-template", "security-guardrails", "northstar"],
+              "description": "Which of the 8 canonical documents this evolves."
+            },
+            "stages": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["stage_name", "actor", "produces", "blocks_until"],
+                "properties": {
+                  "stage_name": {
+                    "type": "string",
+                    "enum": ["memory_entry", "promotion_candidate", "contradiction_check_7_docs", "scrum_review", "laex_ratification", "operator_stamp", "canon_edit_pr", "merge_to_canon", "archive"]
+                  },
+                  "actor": { "type": "string", "enum": ["claude", "eva", "corso", "soul", "quantum", "seraph", "ayin", "laex", "operator"] },
+                  "produces": { "type": "string" },
+                  "blocks_until": { "type": "string", "enum": ["actor_signoff", "scrum_unanimous", "operator_stamp", "no_contradictions_found"] }
+                },
+                "additionalProperties": false
+              },
+              "minItems": 4
+            },
+            "ratification_authority": { "type": "string", "enum": ["laex_only", "scrum_unanimous", "operator_with_laex"], "description": "Who has final authority to promote to ratified." },
+            "auto_apply_forbidden": {
+              "type": "boolean",
+              "const": true,
+              "description": "Canon XXXIX rule: session lessons NEVER auto-apply to canon — explicit ratification required."
+            },
+            "contradiction_check_required": { "type": "boolean", "default": true, "description": "Whether the 7-doc contradiction check is required (default yes; opt-out for non-doctrinal edits only)." }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "witness_evidence_chain_ext": {
+      "required": ["witness_evidence_chain"],
+      "properties": {
+        "witness_evidence_chain": {
+          "type": "object",
+          "required": ["claim", "evidence_links", "composition_rule"],
+          "description": "F3 — Canon XXXV epistemic provenance. Every claim carries an evidence chain with tier composition.",
+          "properties": {
+            "claim": { "type": "string", "minLength": 10, "description": "The assertion being witnessed." },
+            "evidence_links": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["tier", "source", "captured_at"],
+                "properties": {
+                  "tier": { "$ref": "#/$defs/evidence_tier_enum" },
+                  "source": { "type": "string", "description": "URI: helix:<uuid>, $HELIX/<path>, file:<path>:line, turnlog:<id>, span:<id>." },
+                  "captured_at": { "type": "string", "format": "date-time" },
+                  "captured_by": { "type": "string", "description": "Sibling or actor who recorded this evidence." },
+                  "verbatim_quote": { "type": "string", "description": "Per Canon XXXV: primary sources require verbatim quote." },
+                  "line_range": { "type": "string", "pattern": "^[0-9]+(-[0-9]+)?$", "description": "Source line range when applicable." }
+                },
+                "additionalProperties": false
+              },
+              "minItems": 1
+            },
+            "composition_rule": {
+              "type": "string",
+              "enum": ["worst_tier_wins", "best_tier_wins", "majority_tier", "weighted_average", "all_or_nothing_verified"],
+              "description": "How tiers compose into the chain verdict."
+            },
+            "chain_verdict_tier": { "$ref": "#/$defs/evidence_tier_enum", "description": "Final tier after composition. Conformance asserts." },
+            "min_tier_for_pass": { "$ref": "#/$defs/evidence_tier_enum", "description": "Minimum chain tier acceptable for this claim's contract verdict." },
+            "uncited_claims_blocked": {
+              "type": "boolean",
+              "const": true,
+              "description": "Canon XXXV: claims without primary-source citations fail validation."
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "agent_scrum_round_ext": {
+      "required": ["agent_scrum_round"],
+      "properties": {
+        "agent_scrum_round": {
+          "type": "object",
+          "required": ["round_number", "participants", "lens_per_participant", "convergence_detection"],
+          "description": "F4 — Bounded multi-sibling SCRUM round with cross-critique and convergence detection.",
+          "properties": {
+            "round_number": { "type": "integer", "enum": [1, 2, 3] },
+            "participants": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["eva", "corso", "soul", "quantum", "seraph", "ayin", "laex"] },
+              "minItems": 2,
+              "uniqueItems": true,
+              "description": "Siblings participating (excludes claude — the moderator) and user (operator)."
+            },
+            "lens_per_participant": {
+              "type": "object",
+              "patternProperties": {
+                "^[a-z]+$": {
+                  "type": "object",
+                  "properties": {
+                    "lens_focus": { "type": "string" },
+                    "max_findings": { "type": "integer", "minimum": 1 },
+                    "verdict_vocabulary": { "type": "array", "items": { "type": "string" } }
+                  }
+                }
+              }
+            },
+            "convergence_detection": {
+              "type": "object",
+              "required": ["detector"],
+              "properties": {
+                "detector": { "type": "string", "enum": ["unanimous_verdict", "score_delta_below_threshold", "consecutive_rounds_zero_blocking", "operator_stamp", "ceiling_reached"] },
+                "score_delta_threshold": { "type": "number" },
+                "consecutive_clean_rounds_required": { "type": "integer", "minimum": 1 },
+                "max_rounds": { "type": "integer", "minimum": 1, "maximum": 5, "default": 3 }
+              },
+              "additionalProperties": false
+            },
+            "cross_critique_pattern": {
+              "type": "string",
+              "enum": ["sequential_response", "parallel_independent", "fishbowl", "adversarial_pair"],
+              "description": "How siblings see each other's R1 outputs."
+            },
+            "moderator_role": { "type": "string", "enum": ["claude_summarizer", "operator_only", "rotating_sibling"], "default": "claude_summarizer" },
+            "round_3_required": { "type": "boolean", "default": true, "description": "Whether R3 (Claude moderation + final validation) is mandatory or skippable on R1 unanimity." }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "gate_composition_ext": {
+      "required": ["gate_composition"],
+      "properties": {
+        "gate_composition": {
+          "type": "object",
+          "required": ["phase", "gates", "veto_authorities", "composition_rule"],
+          "description": "F5 — [A][S][Q][C][O][P][K][D][T][R] gate composition with named veto siblings.",
+          "properties": {
+            "phase": { "type": "string", "description": "LASDLC phase this composition applies to (e.g., phase-3-build, pre-merge)." },
+            "gates": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["gate_letter", "weight", "owner_sibling", "min_score_to_pass"],
+                "properties": {
+                  "gate_letter": { "type": "string", "enum": ["A", "S", "Q", "C", "O", "P", "K", "D", "T", "R"] },
+                  "weight": { "type": "number", "minimum": 0, "maximum": 1, "description": "Weight in the aggregate score." },
+                  "owner_sibling": { "type": "string", "enum": ["claude", "eva", "corso", "soul", "quantum", "seraph", "ayin", "laex"] },
+                  "min_score_to_pass": { "type": "number", "minimum": 0, "maximum": 100 },
+                  "secondary_reviewer": { "type": "string", "enum": ["claude", "eva", "corso", "soul", "quantum", "seraph", "ayin", "laex"] }
+                },
+                "additionalProperties": false
+              },
+              "minItems": 1,
+              "maxItems": 10,
+              "uniqueItems": true
+            },
+            "veto_authorities": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["sibling", "veto_scope"],
+                "properties": {
+                  "sibling": { "type": "string", "enum": ["seraph", "soul", "laex"] },
+                  "veto_scope": { "type": "string", "enum": ["security_only", "knowledge_only", "canon_only", "any_critical"] }
+                },
+                "additionalProperties": false
+              },
+              "description": "Per platform-canon: [S]/SERAPH, [K]/SOUL, [C]/LÆX have veto authorities."
+            },
+            "composition_rule": {
+              "type": "string",
+              "enum": ["weighted_average", "all_must_pass", "veto_wins", "veto_wins_else_weighted"]
+            },
+            "aggregate_threshold": { "type": "number", "minimum": 0, "maximum": 100, "description": "Required when composition_rule=weighted_average." }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "ldb_benchmark_ext": {
+      "required": ["ldb_benchmark"],
+      "properties": {
+        "ldb_benchmark": {
+          "type": "object",
+          "required": ["d_components", "independent_runner", "cold_context_requirement", "scoring_method"],
+          "description": "F6 — Deliverable Benchmark D1-D8 with cold-context independent runner (Canon XXXIII).",
+          "properties": {
+            "d_components": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["component_id", "rubric", "weight"],
+                "properties": {
+                  "component_id": { "type": "string", "enum": ["D1_request_fidelity", "D2_iso_iec_25010", "D3_cisq_automated", "D4_test_coverage", "D5_user_value", "D6_security", "D7_economic", "D8_parallel_agentic_perf"] },
+                  "rubric": { "type": "string", "description": "Reference to per-D rubric (e.g., 'D6 sub-components: D6a-D6j')." },
+                  "weight": { "type": "number", "minimum": 0, "maximum": 1 },
+                  "sub_components": { "type": "array", "items": { "type": "string" } },
+                  "owner_sibling": { "type": "string", "enum": ["claude", "eva", "corso", "soul", "quantum", "seraph", "ayin", "laex"] }
+                }
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "independent_runner": {
+              "type": "object",
+              "required": ["runner_kind", "isolation_guarantees", "runner_session_id_pattern", "fallback_runner_kind"],
+              "properties": {
+                "runner_kind": {
+                  "type": "string",
+                  "enum": ["fresh_agent_session", "separate_sibling", "external_human_reviewer", "fresh_gateway_subprocess"],
+                  "description": "Per LASDLC §7.1 Q3 resolution (SQUAD 2026-06-03): fresh_gateway_subprocess is the default mechanical runner; external_human_reviewer is REQUIRED as fallback_runner_kind for d_components containing D6_security or D8_parallel_agentic_perf; separate_sibling is RESERVED until a future canon evolution produces a 10th orphan strand to claim a dedicated AUDITOR identity (per Canon XXX)."
+                },
+                "isolation_guarantees": {
+                  "type": "array",
+                  "items": { "type": "string", "enum": ["no_build_context", "no_prior_session", "different_sibling_identity", "different_model", "fresh_keychain", "no_memory_access"] },
+                  "minItems": 3,
+                  "contains": { "enum": ["no_build_context", "no_prior_session", "fresh_keychain"] },
+                  "description": "Canon XXXIII minimum: every contract MUST guarantee at least no_build_context + no_prior_session + fresh_keychain. Additional guarantees strengthen the contract."
+                },
+                "runner_session_id_pattern": {
+                  "type": "string",
+                  "pattern": "^ldb-run-[0-9a-f]{8}-build-[0-9a-f]{8}$",
+                  "description": "Runner session id MUST be structurally distinct from build_session_id; pair-able via the second half for hmac_chain linkage."
+                },
+                "fallback_runner_kind": {
+                  "type": "string",
+                  "enum": ["external_human_reviewer"],
+                  "description": "Canon XXXIII override path: when mechanical runner produces DEFICIENT or UNSAFE on D6_security or D8_parallel_agentic_perf, operator review is the documented escape hatch."
+                },
+                "hmac_chain_binding": {
+                  "type": "object",
+                  "required": ["chain_target", "signed_tuple"],
+                  "properties": {
+                    "chain_target": { "type": "string", "const": "ldb_benchmark_record" },
+                    "signed_tuple": {
+                      "type": "array",
+                      "items": { "type": "string", "enum": ["build_session_id", "deliverable_hash", "rubric_version", "score_vector"] },
+                      "minItems": 4,
+                      "uniqueItems": true
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "F11 binding: runner HMACs the tuple under a key the build agents cannot derive. Per SQUAD 2026-06-03: wires LDB record to F11's ldb_benchmark_record chain target."
+                }
+              },
+              "additionalProperties": false
+            },
+            "cold_context_requirement": {
+              "type": "boolean",
+              "const": true,
+              "description": "Canon XXXIII non-negotiable: the runner CANNOT be the agents that built the deliverable."
+            },
+            "scoring_method": {
+              "type": "string",
+              "enum": ["weighted_sum", "min_of_components", "threshold_per_component", "rank_aggregation"]
+            },
+            "passing_band": {
+              "type": "string",
+              "enum": ["EXEMPLARY_>=_90", "STRONG_>=_75", "ACCEPTABLE_>=_60", "DEFICIENT_<_60", "UNSAFE_<_40"],
+              "description": "Required band per the LASDLC band system (matches plan C1-C8 bands)."
+            },
+            "shipped_means_5_conditions_required": {
+              "type": "boolean",
+              "default": true,
+              "description": "LDB ≥ STRONG is condition 4 of the 5 'shipped means' conditions; conformance asserts all 5 pass."
+            },
+            "self_score_forbidden": {
+              "type": "boolean",
+              "const": true,
+              "description": "Canon XXXIII: build's own agents NEVER self-score LDB."
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "operator_wins_gate_ext": {
+      "required": ["operator_wins_gate"],
+      "properties": {
+        "operator_wins_gate": {
+          "type": "object",
+          "required": ["scope", "supersession_actions", "propagation_to_llm"],
+          "description": "F7 — Per-turn, per-slug LIVE supersession: operator skill aborts in-flight LLM tool_use with SupersededByOperatorAction.",
+          "properties": {
+            "scope": { "type": "string", "enum": ["per_turn_per_slug", "per_session_per_slug", "per_build_per_slug", "global"] },
+            "slug_pattern": { "type": "string", "description": "Pattern that defines the supersession identity (e.g., skill slug, tool name)." },
+            "supersession_actions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["trigger", "consequence"],
+                "properties": {
+                  "trigger": { "type": "string", "enum": ["operator_invokes_slug", "operator_aborts", "operator_redirects", "operator_supplies_answer"] },
+                  "consequence": { "type": "string", "enum": ["abort_in_flight_tool_use", "replace_with_operator_result", "queue_after_turn", "drop_silently"] }
+                }
+              },
+              "minItems": 1
+            },
+            "propagation_to_llm": {
+              "type": "object",
+              "required": ["error_code", "operator_message"],
+              "properties": {
+                "error_code": { "type": "string", "const": "SupersededByOperatorAction", "description": "Stable error code propagated to LLM as tool_result is_error=true." },
+                "operator_message": { "type": "string", "description": "Message visible in tool_result content explaining the supersession." },
+                "llm_adaptation_expected": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "Whether the LLM is expected to adapt (re-plan around the supersession) vs simply terminate."
+                }
+              },
+              "additionalProperties": false
+            },
+            "reset_boundaries": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["new_turn", "new_session", "operator_explicit_clear", "tool_choice_change"] },
+              "description": "When the supersession state resets."
+            },
+            "telemetry_span": { "type": "string", "description": "AYIN span name for the supersession event." }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "covenant_assertion_ext": {
+      "required": ["covenant_assertion"],
+      "properties": {
+        "covenant_assertion": {
+          "type": "object",
+          "required": ["covenant_rule_number", "rule_text", "verification_method"],
+          "description": "F8 — Communication Covenant 11 truth-telling rules as enforceable contracts.",
+          "properties": {
+            "covenant_rule_number": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 11,
+              "description": "1=Arithmetic before assertions; 2=No false witness; 3=Calculated confidence; 4=Stop early explain why; 5=Research before spending; 6=Follow the instructions; 7=Directness without padding; 8=Honest uncertainty; 9=When reality diverges; 10=Golden rule of tools; 11=Audit-pending disclosure."
+            },
+            "rule_text": { "type": "string", "minLength": 20, "description": "Verbatim rule text from the Covenant." },
+            "applies_to": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["assistant_responses", "tool_results", "scrum_verdicts", "ldb_scores", "contract_claims", "canon_amendments", "alpha_gate_decisions", "evidence_tiers"]
+              },
+              "minItems": 1
+            },
+            "verification_method": {
+              "type": "string",
+              "enum": ["static_pattern_lint", "runtime_assertion", "post_hoc_audit", "operator_review", "scrum_round_check"]
+            },
+            "violation_severity": { "$ref": "#/$defs/severity_enum" },
+            "forbidden_patterns": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Detectable patterns that violate this rule (e.g., '\"should work\"', '\"I think\"', '\"seems fine\"' for rule 3)."
+            },
+            "audit_pending_format": {
+              "type": "string",
+              "description": "When violation_severity allows, the standard `_audit pending_` disclosure pattern per rule 11."
+            },
+            "implemented_by_negative_contracts": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/contract_id" },
+              "description": "Optional. Contract IDs of negative.contract instances that mechanically enforce some surface of this covenant rule. Example: covenant_rule_number=2 (No false witness) may be implemented by 'negative.no-silent-provider-fallback' and 'negative.no-uncited-confidence-claim'. Many-to-many: one covenant rule may be enforced by many negative contracts; one negative contract may project from at most one covenant rule (per derived_from_covenant_rule on the negative.contract side). Added per LÆX ratification 2026-06-03 (la-contracts §7 Q2)."
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "replay_deterministic_seed_ext": {
+      "required": ["replay_deterministic_seed"],
+      "properties": {
+        "replay_deterministic_seed": {
+          "type": "object",
+          "required": ["seed_components", "replay_target", "hmac_pinning"],
+          "description": "F9 — Cryptographically replayable agentic decisions: seed + RNG + time-pinned context + HMAC chain.",
+          "properties": {
+            "seed_components": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["component", "source"],
+                "properties": {
+                  "component": { "type": "string", "enum": ["llm_provider_seed", "rng_seed", "time_pinned_context_hash", "tool_arg_hash", "system_prompt_hash", "operator_input_hash", "session_state_hash"] },
+                  "source": { "type": "string", "description": "Where this component is derived from." },
+                  "encoding": { "type": "string", "enum": ["uint64", "hex_sha256", "base64", "raw_json"] }
+                },
+                "additionalProperties": false
+              },
+              "minItems": 1
+            },
+            "replay_target": { "type": "string", "enum": ["full_session", "single_turn", "single_tool_call", "loop_iteration", "phase_transition"] },
+            "hmac_pinning": {
+              "type": "object",
+              "required": ["hmac_algorithm", "chains_to_prior"],
+              "properties": {
+                "hmac_algorithm": { "type": "string", "enum": ["hmac_sha256", "hmac_sha512"] },
+                "chains_to_prior": { "type": "boolean", "description": "Whether this entry HMAC-chains to the prior turnlog entry (bridges to hmac_chain.audit_trail)." },
+                "key_derivation": { "type": "string", "description": "How the HMAC key is derived (e.g., 'HKDF-SHA256 from session pepper')." }
+              },
+              "additionalProperties": false
+            },
+            "provider_seed_supported": {
+              "type": "object",
+              "patternProperties": {
+                "^(anthropic_api|anthropic_http|openai_api|ollama_cloud|ollama_local|litellm_proxy|claude_code_cli|openai_compat_generic|mistral_api|groq_api|openrouter_api|vertex_ai|vertex_ai_gemini|vertex_ai_claude|azure_openai)$": {
+                  "type": "object",
+                  "properties": {
+                    "native_seed_param": { "type": "boolean", "description": "Whether the provider exposes a seed parameter natively." },
+                    "fallback_method": { "type": "string", "enum": ["hmac_pinning_only", "deterministic_temperature_zero", "n_a"] }
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "replay_verification_method": { "type": "string", "enum": ["byte_exact_output", "semantic_equivalence_check", "tool_call_sequence_match", "final_artifact_hash_match"] }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "identity_handoff_ext": {
+      "required": ["identity_handoff"],
+      "properties": {
+        "identity_handoff": {
+          "type": "object",
+          "required": ["from_sibling", "to_sibling", "handoff_trigger", "verdict_on_receive_required"],
+          "description": "F10 — Typed sibling-to-sibling transition with strand-vector preservation.",
+          "properties": {
+            "from_sibling": { "type": "string", "enum": ["claude", "eva", "corso", "soul", "quantum", "seraph", "ayin", "laex"] },
+            "to_sibling": { "type": "string", "enum": ["claude", "eva", "corso", "soul", "quantum", "seraph", "ayin", "laex"] },
+            "handoff_trigger": {
+              "type": "string",
+              "enum": ["phase_transition", "review_request", "escalation", "veto_authority_check", "operator_directive", "scrum_round_advance"]
+            },
+            "strand_vector_preservation": {
+              "type": "boolean",
+              "default": true,
+              "description": "Whether the receiving sibling inherits the sending sibling's strand activation vector."
+            },
+            "verdict_on_receive_required": {
+              "type": "boolean",
+              "const": true,
+              "description": "Receiving sibling MUST declare an explicit acknowledgment + intended next action."
+            },
+            "verdict_vocabulary_at_receive": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Acceptable verdict words for the receiver (drawn from the receiver's verdict_vocabulary in agent.identity)."
+            },
+            "context_carry": {
+              "type": "object",
+              "properties": {
+                "carries_evidence_chain": { "type": "boolean", "default": true },
+                "carries_budget_envelope": { "type": "boolean", "default": true },
+                "carries_strand_activation": { "type": "boolean", "default": true },
+                "carries_session_id": { "type": "boolean", "default": true },
+                "redacts_secrets": { "type": "boolean", "default": true }
+              }
+            },
+            "handoff_span_name": { "type": "string", "description": "AYIN span emitted at handoff (e.g., 'identity.handoff')." }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "hmac_chain_audit_trail_ext": {
+      "required": ["hmac_chain_audit_trail"],
+      "properties": {
+        "hmac_chain_audit_trail": {
+          "type": "object",
+          "required": ["chain_target", "hmac_algorithm", "entry_schema", "chain_verification_method"],
+          "description": "F11 — Tamper-evident decision log with HMAC chain (prev_hash + self_hash per entry).",
+          "properties": {
+            "chain_target": {
+              "type": "string",
+              "enum": ["turnlog_ndjson", "program_manifest_decisions", "canon_evolution_log", "scrum_round_record", "ldb_benchmark_record", "wave_envelope_log"]
+            },
+            "hmac_algorithm": { "type": "string", "enum": ["hmac_sha256", "hmac_sha512"] },
+            "entry_schema": {
+              "type": "object",
+              "required": ["required"],
+              "description": "JSON Schema for one chain entry. Must include prev_hmac, self_hmac, seq, payload, timestamp."
+            },
+            "genesis_entry": {
+              "type": "object",
+              "properties": {
+                "prev_hmac_value": { "type": "string", "description": "Fixed value for the genesis entry's prev_hmac (e.g., zeros, KJV verse hash)." },
+                "pepper_source": { "type": "string", "description": "Where the HMAC key/pepper is derived from." }
+              }
+            },
+            "chain_verification_method": {
+              "type": "string",
+              "enum": ["walk_from_genesis", "spot_check_random_entries", "external_audit_signature", "merkle_tree_root"]
+            },
+            "tamper_response": { "type": "string", "enum": ["alert_only", "halt_session", "alert_and_isolate", "operator_decision"] },
+            "rotation_policy": { "type": "string", "description": "When/how chain keys rotate." },
+            "off_chain_anchor": { "type": "string", "description": "Optional external anchor (e.g., periodic publish to a public log)." }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+
+    "negative_contract_ext": {
+      "required": ["negative_contract"],
+      "properties": {
+        "negative_contract": {
+          "type": "object",
+          "required": ["invariant", "scope", "violation_consequence", "detection_method"],
+          "description": "F12 — Formal anti-contract: platform-wide invariants we promise NOT to do.",
+          "properties": {
+            "invariant": { "type": "string", "minLength": 20, "description": "The negative-space contract (e.g., 'no feature ever silently routes to a non-operator-selected provider')." },
+            "scope": {
+              "type": "string",
+              "enum": ["platform_wide", "all_wire_kinds", "all_agent_kinds", "all_provider_kinds", "named_contracts_only"]
+            },
+            "applies_to_contracts": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/contract_id" },
+              "description": "When scope=named_contracts_only, which contracts this invariant applies to."
+            },
+            "violation_consequence": {
+              "type": "string",
+              "enum": ["build_blocked", "merge_blocked", "alpha_gate_fail_all_dependents", "operator_alert_only", "audit_trail_only"]
+            },
+            "detection_method": {
+              "type": "string",
+              "enum": ["static_code_audit", "runtime_assertion", "ayin_pattern_scan", "covenant_scrum_check", "external_audit"]
+            },
+            "detector_implementation_path": { "type": "string", "description": "Path to the detector (e.g., 'tools/contract-gate/src/negative.rs::silent_fallback_check')." },
+            "exceptions": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Explicit exceptions (must be enumerated; no implicit exceptions)."
+            },
+            "cross_canon_basis": {
+              "type": "array",
+              "items": { "type": "string", "pattern": "^canon://[a-z0-9-]+(#[^/]+)?$" },
+              "description": "Canon docs that ground this invariant."
+            },
+            "derived_from_covenant_rule": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 11,
+              "description": "Optional. When a negative.contract is the platform-invariant projection of a Communication Covenant rule (e.g., a static-lint manifestation of Rule 2 'No false witness' applied to a specific surface), this field names the originating covenant_rule_number. The cross-reference is informational: the covenant.assertion kind remains the canonical home for the rule itself; this negative.contract is one of N implementations. Forbidden when the invariant has no covenant lineage. Added per LÆX ratification 2026-06-03 (la-contracts §7 Q2)."
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    }
+  }
+}

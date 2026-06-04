@@ -1,0 +1,169 @@
+schema_version: la-contracts/v1
+id: replay.deterministic_seed.anthropic-family
+kind: replay.deterministic_seed
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P3, P4]
+
+operator_intent: |
+  Cryptographically pin every agentic decision that runs through an Anthropic provider (anthropic_api,
+  anthropic_http, claude_code_cli) to a verifiable input envelope, so that replay attempts produce
+  detectable divergence on the output side without claiming byte-exact reproducibility. Per LÆX
+  ratification 2026-06-03 §7.1 Q1: input-side HMAC pinning satisfies the replay obligation only
+  to the PASS_INPUT_ONLY tier; output-side byte-exactness is not provider-guaranteed because
+  Anthropic exposes no seed parameter and explicitly documents temperature: 0 as non-deterministic.
+
+prior_art:
+  - name: Anthropic Messages API
+    url: https://docs.anthropic.com/en/api/messages/create
+    version: "2026-06-03 (accessed)"
+    what_we_adopt: "the request shape (model, messages, system, tools, tool_choice, max_tokens, temperature) becomes the canonicalised input envelope we HMAC-pin"
+    what_we_extend: "HMAC-SHA256 over canonical(input_envelope) provides input-side reproducibility that Anthropic does not offer; output-side determinism remains best-effort per upstream"
+  - name: OpenAI seed parameter (comparative framing)
+    url: https://platform.openai.com/docs/api-reference/chat/create
+    what_we_adopt: "'subject to backend changes' framing — even providers WITH seed don't promise byte-exact replay"
+
+canon_refs:
+  - canon://platform-canon
+  - canon://security-guardrails
+  - canon://builders-cookbook
+  - canon://la-contracts-canon#§7.1
+
+memory_refs: []
+
+inputs:
+  - name: input_envelope
+    type: object
+    description: "canonical(messages + system + tools + tool_choice + temperature + max_tokens + thinking + model)"
+  - name: session_pepper
+    type: secret
+    description: "HKDF-derived per-session HMAC pepper (never on disk in plaintext)"
+  - name: turnlog_seq
+    type: integer
+    description: "monotonic sequence inside the session's turnlog NDJSON"
+    min: 0
+
+observable_outputs:
+  - "turnlog NDJSON entry carries hmac_self computed over (turnlog_seq || prev_hmac || canonical(input_envelope) || timestamp)"
+  - "replay attempt regenerates hmac_self over the recorded input_envelope; mismatch → tamper detected"
+  - "output text may differ across runs (Anthropic non-determinism); the contract surfaces divergence via output_hash comparison and reports {input_replays: true, output_replays: false_best_effort}"
+  - "AYIN replay.seed.pin span emitted with {provider_id, model, input_envelope_hmac_preview, turnlog_seq}"
+
+errors:
+  - condition: input_envelope canonicalization unstable across runs
+    code: E_REPLAY_INPUT_NONCANONICAL
+    operator_sees: "Replay failed: input envelope canonicalization differs across runs — fix canonicalizer before pinning more turns"
+    forbidden: "shipping a canonicalizer that produces different bytes for semantically identical inputs"
+    severity: BLOCKING
+  - condition: HMAC chain verification fails on replay
+    code: E_REPLAY_HMAC_MISMATCH
+    operator_sees: "Replay aborted at seq=<N>: HMAC chain tamper detected"
+    forbidden: "continuing replay past a tamper-detected entry without operator stamp"
+    severity: BLOCKING
+  - condition: provider returned divergent output despite identical input envelope
+    code: E_REPLAY_OUTPUT_DIVERGED
+    operator_sees: "Output divergence detected (expected per Anthropic non-determinism) — input-side replay succeeded, output-side did not"
+    forbidden: "claiming PASS (byte-exact replay) for an Anthropic provider"
+    severity: LOW
+
+observability:
+  required_spans:
+    - name: replay.seed.pin
+      required_metadata: [provider_id, model, input_envelope_hmac_preview, turnlog_seq]
+      parent_relationship: child_of_caller
+    - name: replay.seed.verify
+      required_metadata: [from_seq, to_seq, input_replays, output_replays, divergence_summary]
+      parent_relationship: root
+  duration_budget_ms: 1000
+  trace_context_propagation: true
+
+persistence:
+  - path: ~/lightarchitects/cli/turnlog/active/<session>.ndjson
+    schema_ref: state.store.turnlog-ndjson
+    ttl: forever
+    hmac_chained: true
+    redaction_policy: HelixSessionMemory::SECRET_PATTERNS
+
+hitl_boundaries:
+  - "Tamper detection halts session; operator decides resume vs investigate"
+
+forbidden_behaviors:
+  - "Claiming PASS (byte-exact replay) for any Anthropic provider — must be PASS_INPUT_ONLY per LÆX 2026-06-03"
+  - "Storing the session pepper in plain text outside the keychain"
+  - "Canonicalizer drift between runs (must be byte-stable for identical semantic inputs)"
+  - "Setting output_side_unguaranteed_acceptable_at_alpha: true for replay contracts (the moat narrative requires honest output-side disclosure)"
+
+conformance_test:
+  given: "Anthropic provider configured; valid keychain pepper; turnlog session running"
+  when: |
+    Operator runs the same prompt twice through the contract; first run pins, second run replays
+  then:
+    - assertion: replay.seed.pin span fires on the first run with non-empty input_envelope_hmac_preview
+      span_witness: replay.seed.pin
+      evidence_tier_required: VERIFIED
+    - assertion: replay.seed.verify span on the second run reports input_replays=true (HMAC matches)
+      span_witness: replay.seed.verify
+      evidence_tier_required: VERIFIED
+    - assertion: replay.seed.verify reports output_replays=false OR output_replays=best_effort with divergence_summary attached (Anthropic non-determinism is acceptable per contract level)
+      span_witness: replay.seed.verify
+      evidence_tier_required: VERIFIED
+  fixtures: [proof_replay_envelope.example.json]
+  timeout_seconds: 60
+
+status_per_provider:
+  anthropic_api:
+    result: PASS_INPUT_ONLY
+    evidence_tier: VERIFIED
+    evidence_path: "helix:laex-ratification-2026-06-03-replay-deterministic-seed-q1"
+    output_side_unguaranteed_reason: "Anthropic Messages API exposes no seed parameter. Per docs.anthropic.com/en/api/messages/create (accessed 2026-06-03): 'Note that even with temperature of 0.0, the results will not be fully deterministic.' On Opus 4.7+, temperature/top_p/top_k are rejected with HTTP 400, removing even best-effort mitigation. Replay contract is PASS_INPUT_ONLY: HMAC-pinned request payload guarantees input-side reproducibility; output-side byte-exactness is not provider-guaranteed."
+    output_side_unguaranteed_acceptable_at_alpha: false
+  anthropic_http:
+    result: PASS_INPUT_ONLY
+    evidence_tier: VERIFIED
+    evidence_path: "helix:laex-ratification-2026-06-03-replay-deterministic-seed-q1"
+    output_side_unguaranteed_reason: "Anthropic Messages API exposes no seed parameter. Per docs.anthropic.com/en/api/messages/create (accessed 2026-06-03): 'Note that even with temperature of 0.0, the results will not be fully deterministic.' On Opus 4.7+, temperature/top_p/top_k are rejected with HTTP 400, removing even best-effort mitigation. Replay contract is PASS_INPUT_ONLY: HMAC-pinned request payload guarantees input-side reproducibility; output-side byte-exactness is not provider-guaranteed."
+    output_side_unguaranteed_acceptable_at_alpha: false
+  claude_code_cli:
+    result: PASS_INPUT_ONLY
+    evidence_tier: VERIFIED
+    evidence_path: "helix:laex-ratification-2026-06-03-replay-deterministic-seed-q1"
+    output_side_unguaranteed_reason: "Claude Code CLI wraps the Anthropic Messages API and inherits its non-determinism. Per docs.anthropic.com/en/api/messages/create (accessed 2026-06-03): 'Note that even with temperature of 0.0, the results will not be fully deterministic.' On Opus 4.7+, temperature/top_p/top_k are rejected with HTTP 400. Replay contract is PASS_INPUT_ONLY: HMAC-pinned request payload guarantees input-side reproducibility; output-side byte-exactness is not provider-guaranteed."
+    output_side_unguaranteed_acceptable_at_alpha: false
+  openai_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "OpenAI providers have native seed parameter; covered by replay.deterministic_seed.openai-compat-family contract." }
+  openai_compat_generic: { result: N/A, evidence_tier: VERIFIED, na_reason: "Covered by replay.deterministic_seed.openai-compat-family contract." }
+  ollama_cloud: { result: N/A, evidence_tier: VERIFIED, na_reason: "Covered by replay.deterministic_seed.ollama-family contract (Ollama exposes seed per-model)." }
+  ollama_local: { result: N/A, evidence_tier: VERIFIED, na_reason: "Covered by replay.deterministic_seed.ollama-family contract." }
+  litellm_proxy: { result: N/A, evidence_tier: VERIFIED, na_reason: "LiteLLM transports — provider-specific replay handled by the per-provider contract sibling." }
+  mistral_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "Mistral exposes seed; covered by replay.deterministic_seed.openai-compat-family contract." }
+  groq_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "Groq exposes seed; covered by replay.deterministic_seed.openai-compat-family contract." }
+  openrouter_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "OpenRouter normalises to OpenAI seed; covered by replay.deterministic_seed.openai-compat-family contract." }
+
+alpha_gate:
+  verdict: deferred
+  reason: "PASS_INPUT_ONLY tier; per LÆX ratification 2026-06-03 §7.1 Q1 and the schema's default output_side_unguaranteed_acceptable_at_alpha=false, this contract does NOT count toward alpha-gate satisfaction. The moat narrative gets honest: Anthropic replay is HMAC-input-pinned, not output-side guaranteed."
+
+replay_deterministic_seed:
+  seed_components:
+    - component: time_pinned_context_hash
+      source: "turnlog NDJSON timestamp + envelope"
+      encoding: hex_sha256
+    - component: tool_arg_hash
+      source: "canonical(tools[] + tool_choice)"
+      encoding: hex_sha256
+    - component: system_prompt_hash
+      source: "canonical(system + messages[0].content)"
+      encoding: hex_sha256
+    - component: operator_input_hash
+      source: "canonical(messages[N].content) for the operator turn"
+      encoding: hex_sha256
+  replay_target: single_turn
+  hmac_pinning:
+    hmac_algorithm: hmac_sha256
+    chains_to_prior: true
+    key_derivation: "HKDF-SHA256 from session_pepper (KJV verse-keyed master, never on disk in plaintext)"
+  provider_seed_supported:
+    anthropic_api: { native_seed_param: false, fallback_method: hmac_pinning_only }
+    anthropic_http: { native_seed_param: false, fallback_method: hmac_pinning_only }
+    claude_code_cli: { native_seed_param: false, fallback_method: hmac_pinning_only }
+  replay_verification_method: tool_call_sequence_match

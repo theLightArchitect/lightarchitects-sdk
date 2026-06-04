@@ -1,0 +1,216 @@
+schema_version: la-contracts/v1
+id: wire.mcp.file-read
+kind: wire.mcp
+version: 0.1.0
+status: draft
+northstar_pillars:
+- P3
+operator_intent: 'Read a file from disk via the gateway''s core_tools::read handler.
+  Path is canonicalized and bounded
+
+  to the operator''s project tree before any I/O; oversized files are rejected pre-read.
+  Supports
+
+  offset + limit windowing for paging through large files.
+
+  '
+prior_art:
+- name: MCP 2025-11-25 tools/call
+  url: https://modelcontextprotocol.io/specification/2025-11-25/server/tools
+  what_we_adopt: action + params dispatcher
+  what_we_extend: pre-I/O path canonicalization + size guard
+canon_refs:
+- canon://platform-canon
+- canon://security-guardrails
+memory_refs:
+- feedback_ancestor_walk_canonicalization.md
+inputs:
+- name: path
+  type: path
+  description: File path to read; canonicalized via ancestor-walk before I/O
+  required: true
+- name: offset
+  type: integer
+  description: 1-based starting line (default 1)
+  required: false
+  min: 1
+  default: 1
+- name: limit
+  type: integer
+  description: Max lines to return (default 2000)
+  required: false
+  min: 1
+  max: 100000
+  default: 2000
+observable_outputs:
+- tools/call returns {content, lines_returned, total_lines, truncated} JSON
+- content carries the lines from offset..offset+limit with line-number prefixes (cat
+  -n format)
+- truncated=true when offset+limit < total_lines
+- AYIN gateway.tool.dispatch span with tool='read' and result file size in metadata
+errors:
+- condition: path missing from params
+  code: E_MISSING_PARAM
+  operator_sees: Required parameter 'path' was not provided
+  forbidden: guessing a default path
+  severity: MEDIUM
+- condition: path canonicalization escapes the operator's project tree
+  code: E_PATH_OUTSIDE_BOUNDS
+  operator_sees: Path escapes the operator's project tree; read denied
+  forbidden: following symlinks that point outside the boundary (CWE-22)
+  severity: BLOCKING
+  cwe_class: CWE-22
+- condition: file exceeds configured size limit
+  code: E_FILE_TOO_LARGE
+  operator_sees: File exceeds size cap; use offset + limit to page or compress source
+  forbidden: reading the full file into memory and then truncating (memory exhaustion
+    vector)
+  severity: HIGH
+- condition: file not found
+  code: E_FILE_NOT_FOUND
+  operator_sees: File not found at {path}
+  forbidden: returning empty content as if the file existed
+  severity: MEDIUM
+observability:
+  required_spans:
+  - name: gateway.tool.dispatch
+    required_metadata:
+    - tool
+    - actor
+    - duration_ms
+    - mcp_session_id
+    - mcp_protocol_version
+    - file_size_bytes
+    parent_relationship: child_of_caller
+  duration_budget_ms: 1000
+  trace_context_propagation: true
+persistence: []
+hitl_boundaries:
+- none
+forbidden_behaviors:
+- "Reading a path that fails ancestor-walk canonicalization (Cookbook \xA763.P5)"
+- Following symlinks whose target is outside the operator's project tree
+- Reading files past the configured size cap (memory-exhaustion vector)
+- Echoing the raw filesystem error message in the response (information disclosure)
+conformance_test:
+  given: Gateway running with operator project tree at $PROJECT_ROOT
+  when: 'Client sends {jsonrpc: ''2.0'', method: ''tools/call'', params: {name: ''read'',
+    arguments: {path: ''$PROJECT_ROOT/CLAUDE.md''}}}
+
+    '
+  then:
+  - assertion: response contains content non-empty and total_lines > 0
+    span_witness: gateway.tool.dispatch
+    evidence_tier_required: VERIFIED
+  - assertion: request with path='../etc/passwd' (traversal) returns E_PATH_OUTSIDE_BOUNDS
+    span_witness: gateway.tool.dispatch
+    evidence_tier_required: VERIFIED
+  - assertion: request with path to oversized file returns E_FILE_TOO_LARGE before
+      reading
+    span_witness: gateway.tool.dispatch
+    evidence_tier_required: VERIFIED
+  fixtures:
+  - read_canonical.example.json
+  - read_path_traversal.example.json
+  timeout_seconds: 5
+status_per_provider:
+  anthropic_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: Provider-independent
+  anthropic_http:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: Provider-independent
+  openai_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: Provider-independent
+  openai_compat_generic:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: Provider-independent
+  ollama_cloud:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: Provider-independent
+  ollama_local:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: Provider-independent
+  litellm_proxy:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: Provider-independent
+  claude_code_cli:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: Provider-independent
+  mistral_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: Provider-independent
+  groq_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: Provider-independent
+  openrouter_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: Provider-independent
+  vertex_ai_gemini:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: Provider-independent
+  vertex_ai_claude:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: Provider-independent
+  azure_openai:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: Provider-independent
+alpha_gate:
+  verdict: pass
+  reason: Action dispatcher contract matches lightarchitects-gateway/src/core_tools/read.rs::run
+    handler; ancestor-walk canonicalization + size guard verified at SECURITY layer.
+wire_mcp:
+  action: read
+  params_schema:
+    type: object
+    required:
+    - path
+    properties:
+      path:
+        type: string
+        minLength: 1
+      offset:
+        type: integer
+        minimum: 1
+        default: 1
+      limit:
+        type: integer
+        minimum: 1
+        maximum: 100000
+        default: 2000
+    additionalProperties: false
+  result_schema:
+    type: object
+    required:
+    - content
+    properties:
+      content:
+        type: string
+      lines_returned:
+        type: integer
+        minimum: 0
+      total_lines:
+        type: integer
+        minimum: 0
+      truncated:
+        type: boolean
+    additionalProperties: false
+  abort_semantics: abortable
+  operator_wins: true
+  sibling_routing: none
+  hosted_by_mcp_capability_contract_id: mcp.capability.gateway-server

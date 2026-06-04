@@ -1,0 +1,148 @@
+# AUTO-GENERATED v3 — quality tier: SINGLE_SOURCE (prose=False, doc=True, req_struct=DomSnapshotRequest, resp_struct=-)
+# Source: lightarchitects-webshell/src/server/mod.rs:1324
+# Handler: crate::copilot::playwright::handle_dom_snapshot
+
+schema_version: la-contracts/v1
+id: wire.http.api-copilot-playwright-dom-snapshot.post
+kind: wire.http
+version: 0.1.0
+status: draft
+northstar_pillars:
+- P1
+- P3
+operator_intent: 'POST /api/copilot/playwright/dom-snapshot
+
+
+  Captures a DOM snapshot of the given localhost URL via CDP.'
+observable_outputs:
+- Response status 201 (or one of the documented errors) within the duration budget
+- 'Operator-visible effect: POST /api/copilot/playwright/dom-snapshot.'
+- AYIN platform.http.request span emitted with {method, path, status, duration_ms}
+errors:
+- http_status: 403
+  condition: caller authenticated but not authorised for this resource
+  code: E_FORBIDDEN
+  operator_sees: You do not have access to this resource
+  forbidden: leaking the resource id in a generic 404 response
+  severity: HIGH
+- http_status: 502
+  condition: upstream subprocess or sibling unreachable
+  code: E_UPSTREAM_UNREACHABLE
+  operator_sees: Upstream unreachable — name which sibling/binary failed
+  forbidden: generic spinner that hides which upstream failed
+  severity: HIGH
+- http_status: 503
+  condition: service temporarily unavailable
+  code: E_UNAVAILABLE
+  operator_sees: Service unavailable — retry after a short delay
+  forbidden: returning 200 with empty data instead of 503
+  severity: HIGH
+observability:
+  required_spans:
+  - name: webshell.http.request
+    required_metadata:
+    - method
+    - path
+    - status
+    - duration_ms
+    parent_relationship: root
+  trace_context_propagation: true
+  duration_budget_ms: 30000
+hitl_boundaries:
+- none
+conformance_test:
+  given: webshell running; auth=none; provider-independent for this layer
+  when: POST /api/copilot/playwright/dom-snapshot with body conforming to DomSnapshotRequest
+  then:
+  - assertion: response status is 2xx (or one of the documented errors)
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  fixtures:
+  - DomSnapshotRequest.example.json
+  timeout_seconds: 30
+status_per_provider:
+  anthropic_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  openai_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  ollama_cloud:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  ollama_local:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  mistral_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  groq_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  openrouter_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+alpha_gate:
+  verdict: deferred
+  reason: Provider-dependent endpoint; alpha gate awaits conformance harness exercising each of seven providers in scope.
+wire_http:
+  path: /api/copilot/playwright/dom-snapshot
+  method: POST
+  auth_required: none
+  idempotency: non_idempotent
+  cors_class: same_origin
+  sse_streaming: false
+  request_schema:
+    type: object
+    properties:
+      url:
+        type: string
+      token:
+        type: string
+    required:
+    - url
+    - token
+  response_schemas:
+    '200':
+      type: object
+      description: shape not yet inferred — _audit pending_ until handler returns a typed Json<T>
+    '401':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '403':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '502':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '503':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string

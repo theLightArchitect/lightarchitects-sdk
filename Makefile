@@ -12,10 +12,18 @@ help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-quality: ## Run quality gates (fmt check + clippy + unit/integration tests)
+quality: ## Run quality gates (fmt check + clippy + unit/integration tests + contract gate)
 	cargo fmt --all -- --check
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 	cargo test --workspace --all-features --lib --tests
+	cargo run --quiet --release -p contract-gate -- \
+	    --schema standards/canon/la-contracts.schema.json \
+	    --contracts-dir standards/canon/contracts
+
+contract-gate: ## Run contract gate standalone (schema + symmetric-edge sweep)
+	cargo run --release -p contract-gate -- \
+	    --schema standards/canon/la-contracts.schema.json \
+	    --contracts-dir standards/canon/contracts
 
 test: ## Run unit and integration tests
 	cargo test --workspace --all-features --lib --tests

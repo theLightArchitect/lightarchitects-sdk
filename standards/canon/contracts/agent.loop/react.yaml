@@ -1,0 +1,141 @@
+schema_version: la-contracts/v1
+id: agent.loop.react
+kind: agent.loop
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P3]
+
+operator_intent: |
+  Execute the ReAct strategy (Reason → Act → Observe → repeat) for an LLM-driven task, terminating on a final answer
+  or when the iteration cap is hit, with every step emitting an observable AYIN span.
+
+prior_art:
+  - name: ReAct paper (Yao et al., 2022)
+    url: https://arxiv.org/abs/2210.03629
+    what_we_adopt: Thought / Action / Observation step taxonomy + interleaved reasoning-and-acting
+    what_we_extend: per-step AYIN span with metadata + operator-wins abort (LA-specific safety primitive)
+  - name: LangChain ReAct
+    url: https://python.langchain.com/docs/concepts/agents/
+    what_we_adopt: parser-driven step boundary detection
+    what_we_extend: streaming-token contract via Cookbook §78.3 plus tool_use abort on indirect injection
+
+canon_refs:
+  - canon://builders-cookbook#§78.3
+
+inputs:
+  - { name: task, type: string, max_bytes: 8192 }
+  - { name: tools, type: array, description: registered tool_use contracts available to this loop }
+  - { name: max_iterations, type: integer, min: 1, max: 50 }
+  - { name: model, type: string }
+
+observable_outputs:
+  - Per-iteration AYIN span agent.loop.iteration emitted with {iteration_index, step_kind, duration_ms, token_count}
+  - Final answer span emits with {final_answer_text, total_iterations, terminated_reason}
+  - Streaming tokens visible to the caller as the LLM emits them (per Cookbook §78.3)
+  - Tool result returned to LLM within the configured tool_timeout_ms budget
+  - On termination, the loop reports terminated_reason from the closed enum
+
+errors:
+  - condition: max iterations exceeded without a final answer
+    code: E_LOOP_MAX_ITER
+    operator_sees: "Loop terminated after {N} iterations with no final answer — see last Thought for context"
+    forbidden: silently returning the last Thought as if it were the final answer
+    severity: HIGH
+  - condition: tool invocation returned an error result that the LLM cannot recover from
+    code: E_LOOP_TOOL_DEAD
+    operator_sees: "Tool {name} failed; loop aborted to avoid infinite retry"
+    forbidden: re-invoking the same tool with the same args after a documented hard failure
+    severity: HIGH
+  - condition: operator skill superseded an in-flight tool_use
+    code: E_OPERATOR_SUPERSEDED
+    operator_sees: "Operator action took precedence over the loop; the loop aborted cleanly"
+    forbidden: continuing the loop after operator-wins fires
+    severity: MEDIUM
+  - condition: provider streaming connection dropped mid-iteration
+    code: E_PROVIDER_DISCONNECT
+    operator_sees: "Provider stream dropped during iteration {N}; partial output buffered"
+    recovery: retry the iteration with the partial-output buffer attached
+    forbidden: dropping the buffered partial output silently
+    severity: MEDIUM
+
+observability:
+  required_spans:
+    - name: agent.loop.start
+      required_metadata: [loop_name, max_iterations, model, provider]
+      parent_relationship: child_of_caller
+    - name: agent.loop.iteration
+      required_metadata: [iteration_index, step_kind, duration_ms, token_count]
+      parent_relationship: child_of_named
+      parent_span_name: agent.loop.start
+    - name: agent.loop.complete
+      required_metadata: [total_iterations, terminated_reason, final_answer_emitted]
+      parent_relationship: child_of_named
+      parent_span_name: agent.loop.start
+  duration_budget_ms: 600000
+  first_token_budget_ms: 5000
+  trace_context_propagation: true
+
+persistence:
+  - path: ~/lightarchitects/cli/turnlog/active/<session>.ndjson
+    schema_ref: state.store.turnlog-ndjson
+    ttl: forever
+    hmac_chained: true
+
+hitl_boundaries:
+  - "Operator may abort via /api/dispatch/cancel/{id} or by invoking a skill that the operator-wins gate recognises"
+
+forbidden_behaviors:
+  - Continuing iteration after operator-wins fires (must return E_OPERATOR_SUPERSEDED within one iteration boundary)
+  - Returning the last Thought as a final answer (must distinguish 'no answer reached' from 'answer reached')
+  - Re-invoking the same failed tool with identical args (must break the loop after one hard failure)
+  - Dropping streaming tokens without buffering them for retry on provider disconnect
+  - Hiding which tool was invoked from the AYIN trace (every Action must produce a tool_use span)
+
+conformance_test:
+  given: "Provider <P> with tool_use support; task='What is 2+2? Use the calculator tool.'; calculator tool registered"
+  when: "ReActExecutor.run(task) is invoked"
+  then:
+    - assertion: agent.loop.iteration span fires at least twice (Thought then Action then Observation then Final)
+      span_witness: agent.loop.iteration
+      evidence_tier_required: VERIFIED
+    - assertion: tool_use span fires with tool_name=calculator
+      span_witness: agent.tool_use.invoke
+      evidence_tier_required: VERIFIED
+    - assertion: agent.loop.complete emits final_answer_emitted=true with terminated_reason=final_answer_emitted
+      span_witness: agent.loop.complete
+      evidence_tier_required: VERIFIED
+  fixtures: [calculator_tool.example.json]
+  timeout_seconds: 60
+
+status_per_provider:
+  anthropic_api: { result: UNTESTED, evidence_tier: INFERRED }
+  openai_api: { result: UNTESTED, evidence_tier: INFERRED }
+  ollama_cloud: { result: UNTESTED, evidence_tier: INFERRED }
+  ollama_local: { result: UNTESTED, evidence_tier: INFERRED }
+  mistral_api: { result: UNTESTED, evidence_tier: INFERRED }
+  groq_api: { result: UNTESTED, evidence_tier: INFERRED }
+  openrouter_api: { result: UNTESTED, evidence_tier: INFERRED }
+
+alpha_gate:
+  verdict: deferred
+  reason: "ReAct loop is provider-dependent (requires tool_use support). Alpha gate awaits per-provider conformance runs in Phase 4 — particularly Ollama local where tool_use semantics differ across model families."
+
+agent_loop:
+  loop_name: ReAct
+  executor_trait: lightarchitects::agent::loops::react::ReActExecutor
+  step_kinds: [Thought, Action, Observation]
+  termination:
+    primary: final_answer_emitted
+    secondary: [max_iterations_reached, operator_aborted, verification_failed]
+  max_iterations: 10
+  convergence_criteria:
+    kind: explicit_final_answer_token
+    description: "ReAct terminates when the LLM emits a 'Final Answer:' marker, not on similarity convergence"
+  iteration_observability:
+    per_iteration_span_name: agent.loop.iteration
+    step_metadata_keys: [step_kind, thought_text_preview, action_tool_name, action_args_preview, observation_text_preview]
+    context_window_tracking: true
+  memory_required: false
+  tool_use_required: true
+  parallel_compatible: false

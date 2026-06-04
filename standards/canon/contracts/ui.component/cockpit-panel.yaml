@@ -1,0 +1,148 @@
+schema_version: la-contracts/v1
+id: ui.component.cockpit-panel
+kind: ui.component
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P1, P4]
+
+operator_intent: |
+  Cockpit.svelte is the operator's primary workspace screen. It renders the bento-grid of always-present
+  cards (build health, hitl escalations, worker fleet, decision feed, git state, builds rail, hitl inbox)
+  plus conditional cards (pr-detail-panel, engineer-zones) based on preset + selected target.
+
+prior_art:
+  - name: Svelte 5 runes
+    url: https://svelte.dev/docs/svelte/runes
+    what_we_adopt: "$state, $derived, $effect for reactivity; $props for typed inputs"
+
+canon_refs:
+  - canon://webshell-api-surface-v1
+
+memory_refs:
+  - feedback_svelte_map_store_concurrent_state.md
+
+inputs:
+  - { name: preset, type: enum, enum: [engineer, security, ops, quality, knowledge, researcher, testing] }
+  - { name: target, type: object, description: "CockpitTarget | null per stores.ts" }
+
+observable_outputs:
+  - "13 always-present card roles render with their data-card-role attributes set"
+  - "Conditional cards render iff their precondition holds (e.g., engineer-zones only when preset==='engineer')"
+  - "preset chip change updates $state.selectedPreset and triggers $effect that swaps engineer-zones"
+  - "⌘T hotkey opens QuickPickPalette"
+  - "HITL Inbox card renders within 60s of an escalation event (Pillar 1 mechanical check)"
+  - "All 13 cards have data-card-role attribute matching cardRoles.ts registry"
+  - "Exhaustiveness test src/__tests__/cockpit-card-roles.test.ts passes"
+
+errors:
+  - condition: card-role registry contains a role that no source file declares
+    code: E_CARD_ROLE_ORPHAN
+    operator_sees: "Test failure: cockpit-card-roles.test.ts: orphan role"
+    forbidden: "shipping an orphan role; registry MUST exhaustively map to source"
+    severity: BLOCKING
+  - condition: store subscription leak across navigation
+    code: E_STORE_LEAK
+    operator_sees: "subscription not cleaned up on onDestroy"
+    forbidden: "leaving listeners attached after the component unmounts (memory leak)"
+    severity: HIGH
+
+observability:
+  required_spans:
+    - name: webshell.ui.render
+      required_metadata: [component_path, screen_key, render_time_ms]
+      parent_relationship: root
+    - name: webshell.ui.interaction
+      required_metadata: [component_path, event_name, target_role]
+      parent_relationship: child_of_named
+      parent_span_name: webshell.ui.render
+  duration_budget_ms: 200
+
+persistence:
+  - path: sessionStorage.la_webshell_settings.selectedPreset
+    contains_one_line: "{preset: string}"
+    ttl: session
+
+hitl_boundaries:
+  - none
+
+forbidden_behaviors:
+  - "Adding a card without registering it in cardRoles.ts (orphan card-role)"
+  - "Hard-coding card layout — order/visibility must derive from card-role registry and preset state"
+  - "Subscribing to a writable store in onMount without cleaning up in onDestroy"
+  - "Using $state on an external object reference that the parent mutates (breaks reactivity per memory:svelte_map_store)"
+  - "Direct DOM manipulation outside Svelte's runtime (use $effect for non-reactive integration)"
+
+conformance_test:
+  given: "webshell up at /#/cockpit; preset='engineer'; no target selected"
+  when: "page renders + Playwright runs the cockpit.spec.ts golden paths"
+  then:
+    - assertion: "10 always-present card-role data attributes appear in DOM (G1)"
+      filesystem_witness: lightarchitects-webshell-ui/e2e/cockpit.spec.ts
+      evidence_tier_required: VERIFIED
+    - assertion: "switching preset to 'security' removes engineer-zones (G2)"
+      filesystem_witness: lightarchitects-webshell-ui/e2e/cockpit.spec.ts
+      evidence_tier_required: VERIFIED
+    - assertion: "⌘T opens QuickPickPalette; ESC closes (G3)"
+      filesystem_witness: lightarchitects-webshell-ui/e2e/cockpit.spec.ts
+      evidence_tier_required: VERIFIED
+    - assertion: "permission-request event renders perm-card; APPROVE removes it (G7)"
+      filesystem_witness: lightarchitects-webshell-ui/e2e/cockpit.spec.ts
+      evidence_tier_required: VERIFIED
+  fixtures: []
+  timeout_seconds: 120
+
+status_per_provider:
+  anthropic_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI component is provider-agnostic; renders identically regardless of LLM provider." }
+  openai_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI component is provider-agnostic." }
+  ollama_cloud: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI component is provider-agnostic." }
+  ollama_local: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI component is provider-agnostic." }
+  mistral_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI component is provider-agnostic." }
+  groq_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI component is provider-agnostic." }
+  openrouter_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI component is provider-agnostic." }
+
+alpha_gate:
+  verdict: pass
+  reason: "13 card-role registry + exhaustiveness test wired; Phase 7 cockpit.spec.ts golden paths cover G1-G7."
+
+ui_component:
+  component_path: lightarchitects-webshell-ui/src/lib/cockpit/Cockpit.svelte
+  framework: svelte5
+  props_schema:
+    type: object
+    required: []
+    properties:
+      preset: { type: string, enum: [engineer, security, ops, quality, knowledge, researcher, testing] }
+      target: { type: ['object', 'null'] }
+    additionalProperties: false
+  events_schema:
+    preset:change:
+      type: object
+      properties:
+        new_preset: { type: string }
+      additionalProperties: false
+    target:change:
+      type: object
+      properties:
+        new_target: { type: ['object', 'null'] }
+      additionalProperties: false
+  slots: []
+  exposed_methods: []
+  lifecycle_obligations:
+    - "onDestroy must unregister the ⌘T hotkey"
+    - "onDestroy must unsubscribe from all store subscriptions"
+    - "All event listeners attached via window.addEventListener must be removed"
+  screen_key: Cockpit
+  data_test_id: cockpit-root
+  a11y_requirements:
+    - "All cards have aria-label or aria-labelledby"
+    - "Keyboard navigation between cards via Tab; focus visible"
+    - "⌘T announces 'Quick pick palette opened' to screen readers"
+  store_subscriptions:
+    - ui.store.selected-preset
+    - ui.store.selected-target
+    - ui.store.hitl-escalations
+    - ui.store.builds
+  consumes_events:
+    - "la:permission-request (document-level)"
+    - "la:project-update (document-level)"

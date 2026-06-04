@@ -1,0 +1,192 @@
+schema_version: la-contracts/v1
+id: provider.llm.azure-openai
+kind: provider.llm
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P3]
+
+operator_intent: |
+  Microsoft Azure OpenAI Service — OpenAI-compatible wire protocol hosted on Azure Foundry. Supports
+  both the new v1 path (/openai/v1/{endpoint}) and the legacy deployment-name path
+  (/openai/deployments/{deployment}/...?api-version=...). Auth via api-key header OR Azure AD bearer.
+  Inherits OpenAI's best-effort seed semantics per LÆX §7.1 Q1 (PASS_INPUT_ONLY tier).
+
+prior_art:
+  - name: Microsoft Azure OpenAI Service REST reference
+    url: https://learn.microsoft.com/en-us/azure/ai-services/openai/reference
+    version: "2026-06-03 (accessed via QUANTUM research)"
+    what_we_adopt: OpenAI-compatible chat/completions + responses schemas; api-key header auth
+    what_we_extend: deployment-name routing (legacy path); Azure AD bearer alternative
+
+canon_refs:
+  - canon://platform-canon
+  - canon://la-contracts-canon#§3.1
+  - canon://la-contracts-canon#§7.1
+
+memory_refs: []
+
+inputs:
+  - { name: resource, type: string, description: "Azure resource name (subdomain of openai.azure.com)" }
+  - { name: deployment_name, type: string, description: "Required for legacy path only", required: false }
+  - { name: api_version, type: string, description: "Required for legacy path only", required: false }
+  - { name: model, type: string, description: "Model id when using v1 path; ignored when using legacy deployment path" }
+  - { name: messages, type: array, description: "OpenAI Chat Completions messages[]" }
+
+observable_outputs:
+  - "POST to https://{resource}.openai.azure.com/openai/v1/chat/completions (or /openai/v1/responses) returns OpenAI-compatible response within budget"
+  - "Legacy path POST to https://{resource}.openai.azure.com/openai/deployments/{deployment}/chat/completions?api-version={version} returns identically-shaped response"
+  - "api-key header (NOT Authorization) authenticates the request when using api-key auth scheme"
+  - "Azure AD bearer mode uses standard Authorization header"
+  - "Streaming via SSE 'data: ' prefixed lines terminated by 'data: [DONE]'"
+  - "AYIN llm.call span with metadata.provider=azure_openai, metadata.resource, metadata.deployment_name (if legacy)"
+
+errors:
+  - condition: api-key rejected
+    code: E_PROVIDER_AUTH
+    http_status: 401
+    operator_sees: "Azure OpenAI rejected api-key — verify keychain entry for resource {resource}"
+    forbidden: "silent retry without surfacing the 401"
+    severity: HIGH
+    owasp_class: LLM06
+  - condition: deployment_name not found on resource
+    code: E_PROVIDER_DEPLOYMENT_UNKNOWN
+    http_status: 404
+    operator_sees: "Azure deployment {deployment} not found on resource {resource} — check Azure portal deployments list"
+    forbidden: "silently routing to a different deployment"
+    severity: HIGH
+  - condition: quota exhausted
+    code: E_PROVIDER_QUOTA
+    http_status: 429
+    operator_sees: "Azure OpenAI quota exhausted for resource {resource} — see TPM/RPM limits in Azure portal"
+    forbidden: "tight retry loop"
+    severity: MEDIUM
+  - condition: api-version missing on legacy path
+    code: E_AZURE_API_VERSION_MISSING
+    http_status: 400
+    operator_sees: "Legacy deployment path requires api-version query parameter (e.g., 2024-02-15-preview)"
+    forbidden: "defaulting to a fixed api-version without operator config"
+    severity: MEDIUM
+
+observability:
+  required_spans:
+    - name: llm.call
+      required_metadata: [model, provider, stop_reason, parent_id, duration_ms, tokens_input, tokens_output, resource, deployment_name]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 300000
+  first_token_budget_ms: 8000
+  trace_context_propagation: true
+
+persistence:
+  - path: ~/lightarchitects/cli/turnlog/active/<session>.ndjson
+    schema_ref: state.store.turnlog-ndjson
+    ttl: forever
+    hmac_chained: true
+    redaction_policy: HelixSessionMemory::SECRET_PATTERNS
+
+hitl_boundaries: [none]
+
+forbidden_behaviors:
+  - "Forwarding api-key in the Authorization header (Azure expects 'api-key:' for key-auth mode)"
+  - "Forwarding Azure AD bearer in the api-key header (Azure expects 'Authorization: Bearer' for AAD mode)"
+  - "Assuming model == deployment on legacy path (deployment-name routing decouples them)"
+  - "Treating Azure OpenAI seed as guaranteed-deterministic (inherits OpenAI's best-effort framing per LÆX §7.1 Q1)"
+  - "Logging the api-key or AAD bearer token to disk or AYIN"
+
+conformance_test:
+  given: "Azure resource provisioned with GPT-5 deployment; api-key in keychain"
+  when: |
+    POST /openai/v1/chat/completions with body {model: 'gpt-5', messages: [{role: user, content: 'Reply PROOF_<hex>.'}], seed: 42, stream: true}
+  then:
+    - assertion: "first SSE chunk arrives within first_token_budget_ms (8000)"
+      span_witness: llm.call
+      evidence_tier_required: VERIFIED
+    - assertion: "accumulated content contains 'PROOF_<the_exact_hex>'"
+      span_witness: llm.call
+      evidence_tier_required: VERIFIED
+    - assertion: "response includes system_fingerprint field"
+      span_witness: llm.call
+      evidence_tier_required: VERIFIED
+  fixtures: [proof_hex_seed.txt]
+  timeout_seconds: 60
+
+status_per_provider:
+  azure_openai: { result: UNTESTED, evidence_tier: INFERRED }
+  openai_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Direct OpenAI API; different transport. Sibling provider." }
+  openai_compat_generic: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  anthropic_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  anthropic_http: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  claude_code_cli: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  ollama_cloud: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  ollama_local: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  litellm_proxy: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  mistral_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  groq_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  openrouter_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  vertex_ai_gemini: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  vertex_ai_claude: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+
+alpha_gate:
+  verdict: deferred
+  reason: "Provider contract drafted from QUANTUM matrix 2026-06-03. _audit pending_: Azure 2026-06 list-price snapshot (pricing page JS-rendered; needs Playwright fetch or hand-confirm against Azure portal calculator). Awaits live PROOF_<hex> round-trip + deployment-name resolution test + dual-auth-mode test in Phase 4 conformance harness."
+
+provider_llm:
+  provider_id: azure_openai
+  category: managed_cloud_api
+  wire_protocol: openai_compat_http
+  base_url_pattern: "https://example.openai.azure.com"
+  base_url_validation:
+    scheme_allowlist: [https]
+    host_denylist:
+      - 169.254.169.254
+      - metadata.google.internal
+      - 0.0.0.0
+      - localhost
+      - 127.0.0.1
+    private_ranges_blocked: true
+    dns_rebinding_check: true
+  auth_scheme: api_key_header
+  streaming_contract:
+    frame_format: openai_compat_sse
+    first_token_max_ms: 8000
+    on_disconnect: abort
+    on_lag: drop_and_warn
+    supports_token_count_in_stream: true
+  tool_protocol: openai_function_calling
+  supported_capabilities:
+    - tool_use
+    - vision
+    - json_mode
+    - structured_outputs
+    - multimodal
+    - fine_tuning
+    - streaming
+    - multi_turn
+    - prompt_caching
+    - extended_thinking
+    - computer_use
+    - batch_api
+    - system_prompt
+    - function_calling_legacy
+  context_window_tokens: 1050000
+  max_output_tokens: 128000
+  error_mapping:
+    - { provider_status_or_code: '400', contract_error_code: E_AZURE_API_VERSION_MISSING, retriable: false }
+    - { provider_status_or_code: '401', contract_error_code: E_PROVIDER_AUTH, retriable: false }
+    - { provider_status_or_code: '404', contract_error_code: E_PROVIDER_DEPLOYMENT_UNKNOWN, retriable: false }
+    - { provider_status_or_code: '429', contract_error_code: E_PROVIDER_QUOTA, retriable: true }
+    - { provider_status_or_code: '500', contract_error_code: E_INTERNAL, retriable: true }
+    - { provider_status_or_code: '503', contract_error_code: E_UNAVAILABLE, retriable: true }
+  timeout_ms: 300000
+  retry_policy:
+    max_attempts: 3
+    backoff: exponential_jittered
+    initial_delay_ms: 500
+    retriable_status_codes: [429, 500, 502, 503, 504]
+  cost_model:
+    currency: USD
+    input_per_million_tokens: 1.25
+    output_per_million_tokens: 10.00
+    cache_read_per_million_tokens: 0.125
+    free_tier: false
+    billing_mechanism: per_token

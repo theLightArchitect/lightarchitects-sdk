@@ -1,0 +1,113 @@
+# AUTO-GENERATED v3 — quality tier: MULTI_SOURCE (prose=True, doc=True, req_struct=-, resp_struct=-)
+# Source: lightarchitects-webshell/src/server/mod.rs:1070
+# Handler: builds_handler::plan_draft_stream_handler
+
+schema_version: la-contracts/v1
+id: wire.http.api-builds-plan-draft-stream-session-id.get
+kind: wire.http
+version: 0.1.0
+status: draft
+northstar_pillars:
+- P2
+operator_intent: SSE stream for an in-flight plan draft.
+observable_outputs:
+- Response status 200 (or one of the documented errors) within the duration budget
+- 'Content-Type: text/event-stream is set; each event is a single SSE frame delimited by a blank line'
+- Subscriber sees events appear within the first_token_budget_ms of the underlying broadcaster's emission
+- 'Operator-visible effect: SSE stream for an in-flight plan draft.'
+- AYIN platform.http.request span emitted with {method, path, status, duration_ms}
+errors:
+- http_status: 404
+  condition: requested resource not found
+  code: E_NOT_FOUND
+  operator_sees: Requested resource not found
+  forbidden: returning 200 with an empty body in place of 404
+  severity: MEDIUM
+observability:
+  required_spans:
+  - name: webshell.http.request
+    required_metadata:
+    - method
+    - path
+    - status
+    - duration_ms
+    parent_relationship: root
+  - name: webshell.sse.frame
+    required_metadata:
+    - event_name
+    - seq
+    - bytes
+    parent_relationship: child_of_named
+    parent_span_name: webshell.http.request
+  trace_context_propagation: true
+  duration_budget_ms: 3600000
+hitl_boundaries:
+- none
+conformance_test:
+  given: webshell running; auth=none; provider-independent for this layer
+  when: GET /api/builds/plan/draft-stream/{session_id}
+  then:
+  - assertion: response status is 2xx (or one of the documented errors)
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  - assertion: Content-Type is text/event-stream and at least one event arrives within 10s
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  fixtures: []
+  timeout_seconds: 60
+status_per_provider:
+  anthropic_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  openai_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  ollama_cloud:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  ollama_local:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  mistral_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  groq_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  openrouter_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+alpha_gate:
+  verdict: pass
+  reason: Provider-agnostic wire endpoint with intent, error specs, and observability fully declared. Conformance harness
+    wiring upgrades verdict from declared-pass to runtime-verified at Phase 4.
+wire_http:
+  path: /api/builds/plan/draft-stream/{session_id}
+  method: GET
+  auth_required: none
+  idempotency: idempotent
+  cors_class: same_origin
+  sse_streaming: true
+  response_schemas:
+    '404':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '200':
+      type: object
+      description: shape not yet inferred — _audit pending_ until handler returns a typed Json<T>
+canon_refs:
+- canon://webshell-api-surface-v1

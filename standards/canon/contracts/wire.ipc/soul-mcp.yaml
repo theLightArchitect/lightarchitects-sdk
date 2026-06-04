@@ -1,0 +1,149 @@
+schema_version: la-contracts/v1
+id: wire.ipc.soul-mcp
+kind: wire.ipc
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P3]
+
+operator_intent: |
+  SOUL sibling subprocess invoked by the gateway over stdio JSON-RPC. Gateway sends MCP-shape JSON-RPC
+  requests on stdin; SOUL emits JSON-RPC responses on stdout. Long-lived daemon process; warm pool
+  reuse across calls.
+
+prior_art:
+  - name: JSON-RPC 2.0
+    url: https://www.jsonrpc.org/specification
+    what_we_adopt: request/response envelope with id, method, params, result, error
+    what_we_extend: stderr-redirected-with-redaction (Cookbook §security); HMAC-signed pool token
+
+canon_refs:
+  - canon://operators-manual
+  - canon://security-guardrails
+
+memory_refs:
+  - feedback_gateway_is_sibling_access_layer.md
+
+inputs: []
+
+observable_outputs:
+  - "Subprocess handshake completes within 2000ms"
+  - "First call after handshake returns within 5000ms"
+  - "Subsequent calls return within 500ms (warm pool)"
+  - "Process restart on crash respects backoff (linear 1s, 2s, 5s; max 5 attempts before fail_fast)"
+  - "AYIN platform.subprocess.call span emitted with {binary, method, duration_ms, exit_code}"
+  - "Stderr lines redacted via SECRET_PATTERNS before being logged"
+
+errors:
+  - condition: binary not found at expected path
+    code: E_IPC_BINARY_MISSING
+    operator_sees: "SOUL binary missing at ~/lightarchitects/soul/.config/bin/soul — run make deploy in SOUL-DEV"
+    forbidden: "silently falling back to a default response (operator believes SOUL responded)"
+    severity: BLOCKING
+  - condition: handshake timeout
+    code: E_IPC_HANDSHAKE_TIMEOUT
+    operator_sees: "SOUL subprocess handshake timed out — check ~/lightarchitects/soul/.config/logs/soul.log"
+    forbidden: "marking the subprocess as ready when handshake did not complete"
+    severity: HIGH
+  - condition: malformed JSON-RPC response
+    code: E_IPC_BAD_JSONRPC
+    operator_sees: "SOUL returned non-JSON-RPC response — see logs"
+    forbidden: "best-effort parsing of partial JSON (security risk)"
+    severity: HIGH
+  - condition: stderr contains apparent secrets
+    code: E_IPC_STDERR_LEAK
+    operator_sees: "stderr line redacted to protect potential secret"
+    forbidden: "logging unredacted stderr to disk or AYIN"
+    severity: HIGH
+    owasp_class: LLM06
+
+observability:
+  required_spans:
+    - name: platform.subprocess.call
+      required_metadata: [binary, method, duration_ms, exit_code]
+      parent_relationship: child_of_caller
+    - name: platform.subprocess.spawn
+      required_metadata: [binary, pid, handshake_ms]
+      parent_relationship: root
+  duration_budget_ms: 10000
+  trace_context_propagation: true
+
+persistence:
+  - path: ~/lightarchitects/soul/.config/logs/soul.log
+    contains_one_line: "JSON-RPC trace lines (redacted)"
+    ttl: forever
+    redaction_policy: HelixSessionMemory::SECRET_PATTERNS
+
+hitl_boundaries:
+  - none
+
+forbidden_behaviors:
+  - "Spawning a fresh SOUL subprocess per call (must reuse warm pool)"
+  - "Forwarding bearer tokens or API keys via env vars to the subprocess (security)"
+  - "Logging unredacted stderr to disk or AYIN spans"
+  - "Treating exit code 0 as 'success' when stdout contains a JSON-RPC error response"
+  - "Silently swallowing subprocess panics (panics MUST mark the pool entry as poisoned)"
+
+conformance_test:
+  given: "SOUL binary present at ~/lightarchitects/soul/.config/bin/soul; gateway running"
+  when: |
+    Gateway invokes soul.chat.status method via stdio JSON-RPC
+  then:
+    - assertion: "platform.subprocess.spawn span fires within 2000ms with valid pid"
+      span_witness: platform.subprocess.spawn
+      evidence_tier_required: VERIFIED
+    - assertion: "JSON-RPC response contains {jsonrpc: '2.0', id: <matching>, result: {count: integer, sessions: array}}"
+      span_witness: platform.subprocess.call
+      evidence_tier_required: VERIFIED
+    - assertion: "Second call returns in < 500ms (warm pool reused)"
+      span_witness: platform.subprocess.call
+      evidence_tier_required: VERIFIED
+  fixtures: [soul_chat_status.example.jsonrpc]
+  timeout_seconds: 30
+
+status_per_provider:
+  anthropic_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Subprocess IPC is provider-agnostic." }
+  openai_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Subprocess IPC is provider-agnostic." }
+  ollama_cloud: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Subprocess IPC is provider-agnostic." }
+  ollama_local: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Subprocess IPC is provider-agnostic." }
+  mistral_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Subprocess IPC is provider-agnostic." }
+  groq_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Subprocess IPC is provider-agnostic." }
+  openrouter_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Subprocess IPC is provider-agnostic." }
+
+alpha_gate:
+  verdict: deferred
+  reason: "Subprocess IPC contract drafted; harness must exercise spawn → handshake → call → reuse cycle on each supported sibling (SOUL/CORSO/EVA) at Phase 4."
+
+wire_ipc:
+  binary_path: ~/lightarchitects/soul/.config/bin/soul
+  transport: stdio_jsonrpc
+  process_lifecycle: long_lived_daemon
+  request_schema:
+    type: object
+    required: [jsonrpc, method, id]
+    properties:
+      jsonrpc: { type: string, const: '2.0' }
+      method: { type: string, pattern: "^[a-z][a-z0-9_.]+$" }
+      params: { type: object }
+      id: { oneOf: [{ type: integer }, { type: string }] }
+    additionalProperties: false
+  response_schema:
+    type: object
+    required: [jsonrpc, id]
+    properties:
+      jsonrpc: { type: string, const: '2.0' }
+      id: { oneOf: [{ type: integer }, { type: string }] }
+      result: { description: "Method-specific result; absent on error" }
+      error:
+        type: object
+        required: [code, message]
+        properties:
+          code: { type: integer }
+          message: { type: string }
+          data: {}
+        additionalProperties: false
+    additionalProperties: false
+  stderr_protocol: logged_with_redaction
+  restart_policy: restart_with_backoff
+  handshake_timeout_ms: 2000
+  call_timeout_ms: 10000

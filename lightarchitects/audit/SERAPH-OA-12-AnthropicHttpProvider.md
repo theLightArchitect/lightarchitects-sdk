@@ -1,10 +1,20 @@
 # SERAPH OA-12 — API Key Handling Audit
-## AnthropicHttpProvider + VertexHttpProvider (Phase 6)
+## AnthropicHttpProvider + GoogleAiStudioProvider (Phase 6)
 
-**Audit date**: 2026-05-22  
-**Build**: agentic-loops-foundation `feat/agentic-loops-foundation`  
-**Auditor**: SERAPH (Phase 6 BLOCKING gate, plan §Security-gated items)  
+**Audit date**: 2026-05-22 (original), 2026-06-04 (rename annotated)
+**Build**: agentic-loops-foundation `feat/agentic-loops-foundation`
+**Auditor**: SERAPH (Phase 6 BLOCKING gate, plan §Security-gated items)
 **Status**: **PASS — no BLOCKING findings**
+
+**2026-06-04 rename note**: this audit originally referred to `VertexHttpProvider` /
+`resolve_vertex_key`. Those were misnomers (the impl targeted Google AI Studio
+`generativelanguage.googleapis.com`, NOT production Vertex AI at
+`{region}-aiplatform.googleapis.com`). Renamed to `GoogleAiStudioProvider` /
+`resolve_google_ai_studio_key` on 2026-06-04. The keychain entry `"vertex-api-key"`
+is intentionally preserved to keep operator state stable across the rename. All
+security guarantees in this audit transfer unchanged to the renamed symbols.
+A separate Rust impl for real Vertex AI (provider.llm.vertex-ai-gemini +
+provider.llm.vertex-ai-claude contracts) is a follow-up build.
 
 ---
 

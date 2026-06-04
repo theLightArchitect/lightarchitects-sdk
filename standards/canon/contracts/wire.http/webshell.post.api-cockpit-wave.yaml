@@ -1,0 +1,201 @@
+# AUTO-GENERATED v3 — quality tier: SINGLE_SOURCE (prose=False, doc=False, req_struct=WaveComposerRequest, resp_struct=WaveComposerResponse)
+# Source: lightarchitects-webshell/src/server/mod.rs:1452
+# Handler: cockpit_wave::cockpit_wave_handler
+
+schema_version: la-contracts/v1
+id: wire.http.api-cockpit-wave.post
+kind: wire.http
+version: 0.1.0
+status: draft
+northstar_pillars:
+- P1
+operator_intent: Create or invoke the resource at api/cockpit/wave.
+observable_outputs:
+- Response status 201 (or one of the documented errors) within the duration budget
+- 'Response body conforms to the WaveComposerResponse schema (key fields: wave_id, build_id, agent_count, estimated_start_ms)'
+- 'Operator-visible effect: Create or invoke the resource at api/cockpit/wave.'
+- AYIN platform.http.request span emitted with {method, path, status, duration_ms}
+errors:
+- http_status: 401
+  condition: missing or invalid auth credential
+  code: E_UNAUTHORIZED
+  operator_sees: Sign in or refresh credential — webshell session expired
+  forbidden: silent retry that hides the 401 from the operator
+  severity: HIGH
+- http_status: 400
+  condition: malformed request payload
+  code: E_BAD_REQUEST
+  operator_sees: Request payload invalid — see error message for the failing field
+  forbidden: silently dropping invalid fields or coercing types
+  severity: MEDIUM
+- http_status: 422
+  condition: request well-formed but semantically invalid
+  code: E_UNPROCESSABLE
+  operator_sees: Request semantically invalid — see field-level error
+  forbidden: returning 400 for semantic errors
+  severity: MEDIUM
+- http_status: 500
+  condition: internal server error
+  code: E_INTERNAL
+  operator_sees: Internal error — message references the request id
+  forbidden: returning a stack trace or stderr in the response body
+  severity: HIGH
+observability:
+  required_spans:
+  - name: webshell.http.request
+    required_metadata:
+    - method
+    - path
+    - status
+    - duration_ms
+    parent_relationship: root
+  trace_context_propagation: true
+  duration_budget_ms: 30000
+hitl_boundaries:
+- none
+conformance_test:
+  given: webshell running; auth=bearer_token; provider-independent for this layer
+  when: POST /api/cockpit/wave with body conforming to WaveComposerRequest
+  then:
+  - assertion: response status is 2xx (or one of the documented errors)
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  - assertion: request without a valid credential returns 401 with the E_UNAUTHORIZED code
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  fixtures:
+  - WaveComposerRequest.example.json
+  timeout_seconds: 30
+status_per_provider:
+  anthropic_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  openai_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  ollama_cloud:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  ollama_local:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  mistral_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  groq_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  openrouter_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+alpha_gate:
+  verdict: deferred
+  reason: operator_intent inferred from path semantics only (no prose or doc comment available); awaits human review or webshell-api-surface
+    companion edit before promotion to pass.
+wire_http:
+  path: /api/cockpit/wave
+  method: POST
+  auth_required: bearer_token
+  idempotency: non_idempotent
+  cors_class: same_origin
+  sse_streaming: false
+  request_schema:
+    type: object
+    properties:
+      codename:
+        type: string
+      agents:
+        type: array
+        items:
+          type: object
+          properties:
+            preset:
+              type: object
+              description: 'Rust type: CockpitPreset'
+            skill:
+              type: string
+            task_description:
+              type: string
+            file_ownership:
+              type: array
+              items:
+                type: string
+          required:
+          - preset
+          - skill
+          - task_description
+          - file_ownership
+      target:
+        type: object
+        properties:
+          target_type:
+            type: string
+          id:
+            type: string
+          label:
+            type: string
+        required:
+        - target_type
+        - id
+        - label
+      worktree:
+        type: string
+    required:
+    - codename
+    - agents
+    - target
+    - worktree
+  response_schemas:
+    '200':
+      type: object
+      properties:
+        wave_id:
+          type: string
+        build_id:
+          type: string
+        agent_count:
+          type: integer
+        estimated_start_ms:
+          type: integer
+      required:
+      - wave_id
+      - build_id
+      - agent_count
+      - estimated_start_ms
+    '400':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '422':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '500':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string

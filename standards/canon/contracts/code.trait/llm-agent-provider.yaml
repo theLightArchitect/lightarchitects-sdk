@@ -1,0 +1,194 @@
+schema_version: la-contracts/v1
+id: code.trait.llm-agent-provider
+kind: code.trait
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P2, P3]
+
+operator_intent: |
+  LlmAgentProvider is the platform-wide provider trait — the single seam that lets
+  the gateway, copilot, loop engine, and squad dispatcher swap LLM backends without
+  source changes. Every concrete provider (ClaudeCliProvider, AnthropicHttpProvider,
+  OpenAICompatProvider, OllamaCliProvider) implements this trait.
+  The trait is object-safe: Arc<dyn LlmAgentProvider> is the canonical dispatch surface.
+
+prior_art:
+  - name: lightarchitects/src/agent/provider.rs
+    url: file://lightarchitects/src/agent/provider.rs
+    what_we_adopt: "Send + Sync bounds, SanitizedAgentRequest compile-time proof of G1, BoxStream return for spawn_streaming"
+    what_we_extend: "EnvProviderFactory (platform-provider-abstraction build) introduces factory-level construction"
+
+canon_refs:
+  - canon://builders-cookbook
+  - canon://security-guardrails
+  - canon://platform-canon
+
+memory_refs:
+  - feedback_streaming_tx_forwarding.md
+  - feedback_default_impl_direction_streaming_wraps_batch.md
+  - feedback_tool_executor_failclosed_with_nullimpl.md
+
+inputs:
+  - { name: req, type: object, description: "SanitizedAgentRequest — pre-sanitized; holding one is compile-time proof that G1 was applied" }
+
+observable_outputs:
+  - "spawn() returns AgentResponse with .output, .tokens.{input,output}, optional .cost_usd"
+  - "spawn_streaming() returns BoxStream<'static, ProviderEvent>; first event is always MessageStart"
+  - "capabilities() returns ProviderCapabilities declaring tool_use, streaming, json_mode support"
+  - "AYIN llm.call span emitted for every spawn/spawn_streaming call with model, provider, stop_reason"
+
+errors:
+  - condition: subprocess exits non-zero or HTTP response is non-2xx
+    code: E_PROVIDER_SPAWN_FAILED
+    operator_sees: "Provider {name} failed: {detail}"
+    forbidden: "Swallowing the error and returning empty output"
+    severity: HIGH
+  - condition: budget gate exceeded before subprocess launch
+    code: E_PROVIDER_BUDGET_EXCEEDED
+    operator_sees: "Estimated cost ${estimate} exceeds budget ${max} — spawn rejected"
+    forbidden: "Spawning when cost gate rejects"
+    severity: HIGH
+  - condition: SanitizedAgentRequest.safe_prompt fails validation
+    code: E_PROVIDER_SANITIZATION_FAILED
+    operator_sees: "Request failed G1 sanitization — spawn rejected"
+    forbidden: "Bypassing G1 and using raw prompt strings"
+    severity: BLOCKING
+    owasp_class: LLM01
+
+observability:
+  required_spans:
+    - name: llm.call
+      required_metadata: [model, provider, stop_reason, parent_id, duration_ms, tokens_input, tokens_output]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 300000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - none
+
+forbidden_behaviors:
+  - "Any impl accepting a raw &str prompt (must use SanitizedAgentRequest)"
+  - "Any impl calling unwrap()/expect()/panic!() in non-test code (Cookbook §12)"
+  - "Returning partial/empty output on spawn without a corresponding Err variant"
+  - "spawn_streaming default returning non-streaming data without MessageStart first"
+  - "Exposing ANTHROPIC_API_KEY or any credential in log output"
+
+conformance_test:
+  given: "A concrete LlmAgentProvider impl (e.g. ClaudeCliProvider::default())"
+  when: "spawn(SanitizedAgentRequest{safe_prompt: 'Reply with PROOF_<hex>.', ..}) is called"
+  then:
+    - assertion: "Returns Ok(AgentResponse) with non-empty .output"
+      evidence_tier_required: VERIFIED
+    - assertion: "spawn_streaming() emits MessageStart as first event"
+      evidence_tier_required: VERIFIED
+    - assertion: "capabilities() returns a ProviderCapabilities with at least streaming=true for streaming providers"
+      evidence_tier_required: MULTI_SOURCE
+  timeout_seconds: 120
+
+status_per_provider:
+  claude_code_cli:
+    result: PASS_INPUT_ONLY
+    evidence_tier: INFERRED
+    output_side_unguaranteed_reason: "Subprocess stdout is non-deterministic; output content verified only by round-trip PROOF_<hex> conformance test, not by trait contract inspection."
+    output_side_unguaranteed_acceptable_at_alpha: true
+  anthropic_http:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  litellm_proxy:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  ollama_local:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  ollama_cloud:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  anthropic_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Trait contract — all providers implement it" }
+  openai_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Trait contract" }
+  openai_compat_generic:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  mistral_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  groq_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  openrouter_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  vertex_ai: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Deprecated alias — see vertex_ai_gemini / vertex_ai_claude" }
+  vertex_ai_gemini:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  vertex_ai_claude:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  azure_openai:
+    result: UNTESTED
+    evidence_tier: INFERRED
+
+alpha_gate:
+  verdict: deferred
+  reason: "Trait contract drafted; round-trip conformance tests must run for each concrete provider before promotion."
+
+code_trait:
+  trait_path: "lightarchitects::agent::LlmAgentProvider"
+  send_sync_required: true
+  panic_free: true
+  object_safe: true
+  method_contracts:
+    - name: name
+      async: false
+      streaming: false
+      preconditions:
+        - "None — pure query method"
+      postconditions:
+        - "Returns a static str; never empty"
+      error_variants: []
+    - name: spawn
+      async: true
+      streaming: false
+      preconditions:
+        - "req.safe_prompt is non-empty (G1 sanitization applied by caller)"
+        - "req.budget_usd ≤ cost_gate.max_usd if cost_gate is set (checked pre-spawn)"
+        - "TRACEPARENT env var injected from req.parent_span_id if present"
+      postconditions:
+        - "Ok(AgentResponse) with .output containing at least one character"
+        - "AYIN llm.call span emitted with provider and model metadata"
+        - "Tokens returned in .tokens.{input, output} (may be 0 if provider does not count)"
+      error_variants:
+        - E_PROVIDER_SPAWN_FAILED
+        - E_PROVIDER_BUDGET_EXCEEDED
+        - E_PROVIDER_SANITIZATION_FAILED
+        - E_PROVIDER_UNREACHABLE
+        - E_PROVIDER_AUTH
+    - name: capabilities
+      async: false
+      streaming: false
+      preconditions:
+        - "None — pure query method"
+      postconditions:
+        - "Returns ProviderCapabilities with streaming, tool_use, json_mode fields"
+      error_variants: []
+    - name: spawn_streaming
+      async: true
+      streaming: true
+      preconditions:
+        - "Same as spawn — G1 sanitization required"
+        - "First event in returned stream MUST be ProviderEvent::MessageStart"
+      postconditions:
+        - "Returns BoxStream<'static, ProviderEvent> — stream does not borrow from self"
+        - "MessageStart → ContentBlockStart → TextDelta* → ContentBlockStop → MessageDelta → MessageStop ordering"
+        - "AYIN llm.call span emitted with streaming=true attribute"
+        - "Default impl synthesises events from spawn() batch response (no-op compat)"
+      error_variants:
+        - E_PROVIDER_SPAWN_FAILED
+        - E_PROVIDER_BUDGET_EXCEEDED
+        - E_PROVIDER_SANITIZATION_FAILED
+        - E_PROVIDER_DISCONNECT
+    - name: estimate_cost
+      async: false
+      streaming: false
+      preconditions:
+        - "input_tokens and max_output_tokens are > 0"
+        - "Provider uses gateway-owned rate tables, NOT upstream API echoes"
+      postconditions:
+        - "Returns f64 ≥ 0.0 representing estimated USD cost"
+        - "Returns 0.0 for free-tier providers (ClaudeCliProvider uses subscription)"
+      error_variants: []

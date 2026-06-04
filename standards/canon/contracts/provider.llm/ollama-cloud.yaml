@@ -1,0 +1,175 @@
+schema_version: la-contracts/v1
+id: provider.llm.ollama-cloud
+kind: provider.llm
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P3]
+
+operator_intent: |
+  Ollama Cloud — invoking Ollama-hosted models with the `:cloud` (or `-cloud`) suffix via /api/chat over
+  HTTPS to api.ollama.com (or the configured base_url) with Bearer authentication.
+
+prior_art:
+  - name: Ollama API docs (chat)
+    url: https://github.com/ollama/ollama/blob/main/docs/api.md
+    what_we_adopt: /api/chat NDJSON streaming + tool_calls in message envelope
+    what_we_extend: SSRF guard on base_url + provider_id discrimination via :cloud / -cloud suffix
+
+canon_refs:
+  - canon://builders-cookbook
+  - canon://security-guardrails
+
+memory_refs:
+  - reference_ollama_cloud_capabilities_2026.md
+  - feedback_ollama_cloud_suffix_variants.md
+  - feedback_ollama_v1_messages_anthropic_proxy.md
+
+inputs:
+  - { name: model, type: string, pattern: "^[a-zA-Z0-9_.:-]+(:cloud|-cloud)$" }
+  - { name: messages, type: array, description: "OpenAI-style {role, content} array" }
+  - { name: tools, type: array, description: "tools array per Ollama tool_calls protocol" }
+  - { name: stream, type: boolean, default: true }
+  - { name: options, type: object, description: "Ollama-specific options (temperature, num_ctx, etc.)" }
+
+observable_outputs:
+  - "Streaming response in NDJSON; each line is a chunk with {message: {role, content}, done: bool}"
+  - "Tool calls appear as message.tool_calls[]"
+  - "Final chunk has done: true with prompt_eval_count, eval_count, total_duration"
+  - "first_token within first_token_max_ms budget"
+  - "AYIN llm.call span with metadata.model and metadata.provider == ollama_cloud"
+
+errors:
+  - condition: model suffix is :cloud or -cloud but base_url is localhost (misconfigured)
+    code: E_PROVIDER_LOCAL_FOR_CLOUD_MODEL
+    operator_sees: "Model {model} requires Ollama Cloud — configured base_url is localhost"
+    forbidden: "falling back to localhost without surfacing the misconfiguration"
+    severity: HIGH
+  - condition: Bearer token rejected
+    code: E_PROVIDER_AUTH
+    http_status: 401
+    operator_sees: "Ollama Cloud rejected credential — verify token in keychain"
+    forbidden: "silent retry loop"
+    severity: HIGH
+    owasp_class: LLM06
+  - condition: cloud rate limit reached
+    code: E_PROVIDER_RATE_LIMITED
+    http_status: 429
+    operator_sees: "Ollama Cloud rate limit hit — backoff and retry"
+    forbidden: "tight retry loop without backoff"
+    severity: MEDIUM
+  - condition: streaming connection dropped before done:true
+    code: E_PROVIDER_DISCONNECT
+    operator_sees: "Stream dropped before completion; partial output buffered ({chunks_received} chunks)"
+    recovery: "retry with retry-after backoff"
+    forbidden: "marking the call as successful when done:true was never received"
+    severity: MEDIUM
+  - condition: base_url resolves to private network or IMDS
+    code: E_PROVIDER_SSRF_BLOCKED
+    operator_sees: "Provider base_url rejected — private/metadata addresses are blocked"
+    forbidden: "honouring the configured base_url without SSRF guard"
+    severity: BLOCKING
+    cwe_class: CWE-918
+
+observability:
+  required_spans:
+    - name: llm.call
+      required_metadata: [model, provider, stop_reason, parent_id, duration_ms, tokens_input, tokens_output]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 300000
+  first_token_budget_ms: 8000
+  trace_context_propagation: true
+
+persistence:
+  - path: ~/lightarchitects/cli/turnlog/active/<session>.ndjson
+    schema_ref: state.store.turnlog-ndjson
+    ttl: forever
+    hmac_chained: true
+    redaction_policy: HelixSessionMemory::SECRET_PATTERNS
+
+hitl_boundaries:
+  - none
+
+forbidden_behaviors:
+  - "Accepting base_url whose resolved A/AAAA record is in 169.254.169.254 IMDS or RFC1918 ranges"
+  - "Logging the Authorization header value to disk or AYIN"
+  - "Forwarding Ollama Cloud errors to the operator without distinguishing them from local Ollama errors"
+  - "Treating models with :cloud / -cloud suffix as if they were local (must validate base_url is non-localhost)"
+  - "Buffering the entire response before streaming to the caller (Cookbook §78.3 streaming-by-default)"
+
+conformance_test:
+  given: "OLLAMA_BASE_URL set to https://api.ollama.com; valid OLLAMA_API_KEY in keychain"
+  when: |
+    POST /api/chat with model='qwen3-coder:480b-cloud' messages=[{role: user, content: 'Reply with PROOF_<hex>.'}] stream=true
+  then:
+    - assertion: "first chunk arrives within first_token_budget_ms (8000)"
+      span_witness: llm.call
+      evidence_tier_required: VERIFIED
+    - assertion: "final chunk has done:true with non-zero eval_count"
+      span_witness: llm.call
+      evidence_tier_required: VERIFIED
+    - assertion: "accumulated message content contains 'PROOF_<the_exact_hex>'"
+      span_witness: llm.call
+      evidence_tier_required: VERIFIED
+  fixtures: [proof_hex_seed.txt]
+  timeout_seconds: 60
+
+status_per_provider:
+  anthropic_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "This contract IS the ollama_cloud provider; other provider contracts are siblings." }
+  openai_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  ollama_cloud:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  ollama_local: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  mistral_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  groq_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  openrouter_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+
+alpha_gate:
+  verdict: deferred
+  reason: "Provider contract drafted; conformance harness must run a live PROOF_<hex> round-trip against at least one cloud model before promotion."
+
+provider_llm:
+  provider_id: ollama_cloud
+  category: cloud_routed_local_api
+  wire_protocol: ollama_native
+  base_url_pattern: https://api.ollama.com
+  base_url_validation:
+    scheme_allowlist: [https]
+    host_denylist:
+      - 169.254.169.254
+      - metadata.google.internal
+      - 0.0.0.0
+      - localhost
+      - 127.0.0.1
+    private_ranges_blocked: true
+    dns_rebinding_check: true
+  auth_scheme: bearer
+  streaming_contract:
+    frame_format: ollama_native_stream
+    first_token_max_ms: 8000
+    on_disconnect: abort
+    on_lag: drop_and_warn
+    supports_token_count_in_stream: true
+  tool_protocol: openai_function_calling
+  supported_capabilities:
+    - tool_use
+    - json_mode
+  context_window_tokens: 131072
+  max_output_tokens: 8192
+  error_mapping:
+    - { provider_status_or_code: '401', contract_error_code: E_PROVIDER_AUTH, retriable: false }
+    - { provider_status_or_code: '429', contract_error_code: E_PROVIDER_RATE_LIMITED, retriable: true }
+    - { provider_status_or_code: '500', contract_error_code: E_INTERNAL, retriable: true }
+    - { provider_status_or_code: '502', contract_error_code: E_UPSTREAM_UNREACHABLE, retriable: true }
+    - { provider_status_or_code: '503', contract_error_code: E_UNAVAILABLE, retriable: true }
+    - { provider_status_or_code: 'connection_refused', contract_error_code: E_PROVIDER_UNREACHABLE, retriable: true }
+  timeout_ms: 300000
+  retry_policy:
+    max_attempts: 3
+    backoff: exponential_jittered
+    initial_delay_ms: 500
+    retriable_status_codes: [429, 500, 502, 503, 504]
+  cost_model:
+    currency: USD
+    free_tier: false

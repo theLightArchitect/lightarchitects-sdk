@@ -103,13 +103,13 @@ pub mod hooks;
 #[cfg(feature = "loops-core")]
 pub mod orchestration;
 
-/// L0 HTTP providers — [`AnthropicHttpProvider`] and [`VertexHttpProvider`].
+/// L0 HTTP providers — [`AnthropicHttpProvider`] and [`GoogleAiStudioProvider`].
 ///
 /// Direct API callers without subprocess delegation. Keychain-only key
 /// resolution in release builds (SERAPH OA-12).
 ///
 /// [`AnthropicHttpProvider`]: http::AnthropicHttpProvider
-/// [`VertexHttpProvider`]: http::VertexHttpProvider
+/// [`GoogleAiStudioProvider`]: http::GoogleAiStudioProvider
 #[cfg(feature = "loops-core")]
 pub mod http;
 

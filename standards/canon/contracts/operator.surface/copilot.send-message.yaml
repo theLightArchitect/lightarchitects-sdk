@@ -1,0 +1,186 @@
+schema_version: la-contracts/v1
+id: operator.surface.copilot-send-message
+kind: operator.surface
+version: 0.1.0
+status: draft
+
+northstar_pillars:
+  - P1
+  - P3
+  - P4
+
+operator_intent: |
+  Send a prompt to the configured LLM provider via the copilot chat and receive a streamed response in the log, regardless of which provider is configured.
+
+prior_art:
+  - name: OpenAI Chat Completions (streaming)
+    url: https://platform.openai.com/docs/api-reference/chat/streaming
+    what_we_adopt: SSE data-line frame format + delta-content accumulation
+  - name: Anthropic Messages API (streaming)
+    url: https://docs.anthropic.com/en/api/messages
+    what_we_adopt: event-block streaming with content_block_delta semantics
+    what_we_extend: provider-agnostic Runner trait abstracts both behind one operator-surface contract
+
+inherits_from:
+  - provider.llm.anthropic-api
+  - provider.llm.ollama-cloud
+
+canon_refs:
+  - canon://platform-canon#XIV
+  - canon://builders-cookbook#§78.1
+  - canon://builders-cookbook#§78.3
+  - canon://security-guardrails#LLM02
+
+memory_refs:
+  - feedback_alpha_provider_agnostic_contract_gate.md
+  - feedback_webshell_copilot_provider_coupling.md
+  - feedback_litellm_provider_unifier.md
+
+inputs:
+  - name: message
+    type: string
+    max_bytes: 8192
+    required: true
+  - name: provider_selection
+    type: enum
+    enum: [anthropic_api, openai_api, ollama_cloud, ollama_local, mistral_api, groq_api, openrouter_api]
+    required: true
+  - name: model
+    type: string
+    pattern: "^[a-zA-Z0-9_/.:-]+$"
+    max_bytes: 256
+    required: true
+
+observable_outputs:
+  - "User's message appears in the chat log within 200ms of Send"
+  - "Streamed assistant tokens appear in the chat log progressively"
+  - "First token within first_token_max_ms budget per provider.llm contract"
+  - "On completion, assistant message carries stable id + timestamp + model badge"
+  - "On provider switch mid-session, system message announces continuity policy (replay / fork / drop)"
+  - "Active model badge on each assistant turn so operator can attribute on scroll-back"
+  - "Switching cost dialog before Save in provider.select shows {prior_model, new_model, capability_deltas, latency_band}"
+
+errors:
+  - condition: provider_unreachable
+    code: E_PROVIDER_UNREACHABLE
+    operator_sees: "Provider {name} unreachable — check {actionable_hint}"
+    recovery: "Open Settings → Provider, verify base_url"
+    forbidden: "generic 'Agent bridge connecting…' that hides which provider failed"
+    severity: BLOCKING
+    owasp_class: LLM02
+  - condition: provider_auth_rejected
+    code: E_PROVIDER_AUTH
+    http_status: 401
+    operator_sees: "Provider {name} rejected credential — open Settings to update"
+    forbidden: "silent retry loop without surfacing the rejection"
+    severity: HIGH
+    owasp_class: LLM06
+  - condition: model_not_supported
+    code: E_MODEL_UNSUPPORTED
+    operator_sees: "Provider {name} does not support model {model} — pick a supported one"
+    forbidden: "silently downgrading to a different model"
+    severity: HIGH
+
+observability:
+  required_spans:
+    - name: interactive.turn
+      required_metadata: [turn_index, input_len, duration_ms, model, provider]
+      parent_relationship: child_of_named
+      parent_span_name: interactive.session
+    - name: llm.call
+      required_metadata: [model, stop_reason, parent_id, provider]
+      parent_relationship: child_of_named
+      parent_span_name: interactive.turn
+    - name: assistant.response
+      required_metadata: [build_id, duration_s, response_preview, model, provider]
+      parent_relationship: child_of_named
+      parent_span_name: llm.call
+  first_token_budget_ms: 5000
+  duration_budget_ms: 60000
+  trace_context_propagation: true
+
+persistence:
+  - path: ~/lightarchitects/cli/turnlog/active/<webshell_session>.ndjson
+    schema_ref: state.store.turnlog-ndjson
+    ttl: forever
+    hmac_chained: true
+    redaction_policy: HelixSessionMemory::SECRET_PATTERNS
+
+hitl_boundaries:
+  - none
+
+forbidden_behaviors:
+  - "Routing to a different provider than the operator selected (silent fallback)"
+  - "Spawning a `claude` CLI subprocess as the implementation when provider != anthropic_claude_code"
+  - "Requiring a `soul chat inject` daemon to be running"
+  - "Requiring a co-located Claude Code session to resume"
+  - "Hiding the active model on assistant turns — operator must be able to attribute responses"
+  - "Persisting credentials in plain text anywhere on disk"
+
+conformance_test:
+  given: "Provider <P> configured via /api/litellm/config with valid credentials; webshell open"
+  when: |
+    Operator types "Reply with the literal token PROOF_<random_hex_8>." then presses Send
+  then:
+    - assertion: "Within first_token_budget_ms, the first streamed token appears in the chat log"
+      span_witness: llm.call
+      evidence_tier_required: VERIFIED
+    - assertion: "Within duration_budget_ms, an assistant message appears containing 'PROOF_<the_exact_hex>'"
+      filesystem_witness: ~/lightarchitects/cli/turnlog/active/<session>.ndjson
+      evidence_tier_required: VERIFIED
+    - assertion: "AYIN trace assistant.response has metadata.model equal to <expected_for_P>"
+      span_witness: assistant.response
+      evidence_tier_required: VERIFIED
+    - assertion: "AYIN trace assistant.response has metadata.provider equal to <P>"
+      span_witness: assistant.response
+      evidence_tier_required: VERIFIED
+  fixtures:
+    - hex_seed.txt
+  timeout_seconds: 90
+
+status_per_provider:
+  anthropic_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  openai_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  ollama_cloud:
+    result: FAIL
+    evidence_tier: VERIFIED
+    evidence_path: helix:webshell-copilot-provider-coupling-2026-06-03
+    failure_reason: "Bridge implementation hardcodes `claude --resume`; provider pill ignored for global copilot path"
+  ollama_local:
+    result: FAIL
+    evidence_tier: VERIFIED
+    evidence_path: helix:webshell-copilot-provider-coupling-2026-06-03
+    failure_reason: "Same bridge coupling as ollama_cloud"
+  mistral_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  groq_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  openrouter_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+
+alpha_gate:
+  verdict: fail
+  reason: "Bridge implementation hardcodes claude --resume — 0 of 7 providers verified PASS. Must replace bridge with provider-agnostic streaming dispatcher before alpha."
+  blocker_contract_ids:
+    - code.trait.runner
+    - operator.surface.provider-select
+
+operator_surface:
+  ui_locator: Copilot left-panel chat input + Send button (also Enter key)
+  screen_key: Dispatch
+  keyboard_shortcut: Enter
+  test_id: copilot-chat-input
+  history_continuity_on_provider_switch: replay_to_new_provider
+  render_safety:
+    monaco_read_only_only: true
+    html_injection_blocked: true
+    markdown_renderer_sanitization: dompurify
+    iframe_blocked: true
+    script_blocked: true

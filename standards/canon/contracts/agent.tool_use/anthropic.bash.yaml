@@ -1,0 +1,167 @@
+schema_version: la-contracts/v1
+id: agent.tool_use.anthropic-bash
+kind: agent.tool_use
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P3]
+
+operator_intent: |
+  When an LLM running under the Anthropic tool_use protocol emits a tool_use block for the bash tool,
+  execute the command against the bash_policy allowlist and return a tool_result the LLM can act on,
+  with operator-wins supersession + indirect-injection scanning fail-closed.
+
+prior_art:
+  - name: Anthropic tool_use docs (v1/messages)
+    url: https://docs.anthropic.com/en/docs/agents-and-tools/tool-use
+    what_we_adopt: tool_use block + tool_result block + input_schema JSON Schema + tool_choice
+    what_we_extend: bash_policy.rs allowlist (fail-closed, not deny-list); SkillTrustLedger SHA-256 pin; operator-wins abort
+
+inherits_from: [provider.llm.anthropic-api]
+
+canon_refs:
+  - canon://builders-cookbook
+  - canon://security-guardrails
+
+memory_refs:
+  - feedback_bash_policy_allowlist_for_llm_tools.md
+  - feedback_tool_executor_failclosed_with_nullimpl.md
+  - feedback_indirect_injection_shield_pattern.md
+
+inputs:
+  - name: command
+    type: string
+    max_bytes: 8192
+    description: bash command to execute
+  - name: timeout_ms
+    type: integer
+    min: 100
+    max: 600000
+    default: 30000
+
+observable_outputs:
+  - "Allowlist hit → command runs; stdout + stderr + exit_code returned as tool_result content"
+  - "Allowlist miss → tool_result is_error=true with content='NotPermitted: command not on allowlist'"
+  - "Operator-wins fire → tool_use aborted with ToolError::SupersededByOperatorAction (LLM sees is_error=true, content='superseded by operator')"
+  - "IndirectInjectionShield triggers → tool_result is_error=true with content describing the injection pattern"
+  - "AYIN tool.call span emitted with {tool: bash, command_preview (first 80 chars), exit_code, duration_ms}"
+
+errors:
+  - condition: command not on bash_policy allowlist
+    code: E_BASH_NOT_PERMITTED
+    operator_sees: "Bash command rejected — not on allowlist (see bash_policy.rs)"
+    forbidden: "deny-list approach that silently misses unenumerated commands"
+    severity: HIGH
+    cwe_class: CWE-78
+  - condition: operator-wins skill invoked during in-flight tool_use
+    code: E_OPERATOR_SUPERSEDED
+    operator_sees: "Operator skill superseded the bash tool_use mid-flight"
+    forbidden: "completing the in-flight command and discarding the operator action"
+    severity: MEDIUM
+  - condition: IndirectInjectionShield detected an injection pattern in command
+    code: E_INDIRECT_INJECTION
+    operator_sees: "Command rejected — indirect injection pattern detected (e.g., $(curl attacker))"
+    forbidden: "executing the command after the shield fired (LLM must see is_error=true and re-plan)"
+    severity: BLOCKING
+    owasp_class: LLM01
+  - condition: command exceeded timeout_ms
+    code: E_BASH_TIMEOUT
+    http_status: 408
+    operator_sees: "Bash command exceeded {timeout_ms}ms budget; partial stdout buffered"
+    forbidden: "hanging the LLM iteration indefinitely on a runaway process"
+    severity: MEDIUM
+
+observability:
+  required_spans:
+    - name: agent.tool_use.invoke
+      required_metadata: [tool_name, provider, command_preview, exit_code, duration_ms]
+      parent_relationship: child_of_caller
+    - name: tool.call
+      required_metadata: [tool, actor, duration_ms]
+      parent_relationship: child_of_named
+      parent_span_name: agent.tool_use.invoke
+  duration_budget_ms: 30000
+  trace_context_propagation: true
+
+persistence:
+  - path: ~/lightarchitects/cli/turnlog/active/<session>.ndjson
+    schema_ref: state.store.turnlog-ndjson
+    ttl: forever
+    hmac_chained: true
+    redaction_policy: HelixSessionMemory::SECRET_PATTERNS
+
+hitl_boundaries:
+  - "Operator may abort via operator-wins (any skill invocation supersedes pending tool_use)"
+
+forbidden_behaviors:
+  - "Executing a command that fails the bash_policy allowlist"
+  - "Returning is_error=false when the command exited non-zero (LLM cannot self-correct)"
+  - "Returning raw stderr to the LLM without redaction (HelixSessionMemory::SECRET_PATTERNS)"
+  - "Ignoring operator-wins for the duration of a long-running command"
+  - "Bypassing IndirectInjectionShield by feeding command through a different code path"
+
+conformance_test:
+  given: "Anthropic claude-sonnet-4-6 configured; bash_policy.rs allowlist includes 'ls'; injection shield armed"
+  when: |
+    LLM emits tool_use { name: 'bash', input: { command: 'ls /Users/kft/Projects' } }
+  then:
+    - assertion: tool.call span fires with tool=bash and exit_code=0
+      span_witness: tool.call
+      evidence_tier_required: VERIFIED
+    - assertion: tool_result content contains a non-empty stdout
+      filesystem_witness: none
+      evidence_tier_required: VERIFIED
+    - assertion: tool_result is_error=false
+      span_witness: agent.tool_use.invoke
+      evidence_tier_required: VERIFIED
+  fixtures: [bash_allowlist_ls.example.json]
+  timeout_seconds: 30
+
+status_per_provider:
+  anthropic_api: { result: UNTESTED, evidence_tier: INFERRED }
+  openai_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "OpenAI uses function_calling format — see agent.tool_use.openai-bash contract" }
+  ollama_cloud: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Ollama uses native tool_calls — see agent.tool_use.ollama-bash contract" }
+  ollama_local: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Ollama uses native tool_calls — see agent.tool_use.ollama-bash contract" }
+  mistral_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Mistral uses OpenAI-compatible function_calling — see agent.tool_use.openai-bash contract" }
+  groq_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Groq uses OpenAI-compatible function_calling" }
+  openrouter_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "OpenRouter normalises to OpenAI function_calling" }
+
+alpha_gate:
+  verdict: deferred
+  reason: "Anthropic provider not yet exercised in conformance harness; sibling contracts (openai/ollama variants) must exist before alpha so the cross-provider matrix is complete."
+
+agent_tool_use:
+  provider_format: anthropic_tool_use
+  tool_name: bash
+  tool_schema:
+    type: object
+    required: [command]
+    properties:
+      command:
+        type: string
+        maxLength: 8192
+      timeout_ms:
+        type: integer
+        minimum: 100
+        maximum: 600000
+        default: 30000
+    additionalProperties: false
+  result_schema:
+    type: object
+    required: [stdout, stderr, exit_code]
+    properties:
+      stdout: { type: string }
+      stderr: { type: string }
+      exit_code: { type: integer, minimum: -255, maximum: 255 }
+      duration_ms: { type: integer, minimum: 0 }
+    additionalProperties: false
+  tool_choice_policy: auto
+  parallel_tool_use: false
+  streaming_partial_arguments: true
+  operator_wins_supersedes: true
+  side_effects:
+    - "process forked; stdout/stderr captured to in-memory buffers"
+    - "AYIN tool.call span written"
+    - "command preview redacted via SECRET_PATTERNS before persisting to turnlog"
+  abort_on_indirect_injection: true
+  trust_pin_required: false

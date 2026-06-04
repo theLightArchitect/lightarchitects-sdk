@@ -1,0 +1,189 @@
+schema_version: la-contracts/v1
+id: provider.llm.vertex-ai-gemini
+kind: provider.llm
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P3]
+
+operator_intent: |
+  Vertex AI Gemini path — production Google Cloud Vertex AI endpoint for Gemini 2.5 Pro / Gemini 3 Pro
+  family. Targets the regional aiplatform.googleapis.com endpoint with OAuth2 Bearer via GCP ADC; NOT
+  the generativelanguage.googleapis.com endpoint (that is Google AI Studio, a different product).
+
+prior_art:
+  - name: Vertex AI Gemini REST reference
+    url: https://cloud.google.com/vertex-ai/generative-ai/docs/model-reference/gemini
+    version: "2026-06-03 (accessed via QUANTUM research)"
+    what_we_adopt: generateContent + streamGenerateContent JSON shapes; SSE via alt=sse; tools.functionDeclarations
+    what_we_extend: SSRF guard on base_url + per-region routing + service-account JSON validation
+
+canon_refs:
+  - canon://platform-canon
+  - canon://security-guardrails
+  - canon://la-contracts-canon#§3.1
+
+memory_refs:
+  - feedback_alpha_provider_agnostic_contract_gate.md
+
+inputs:
+  - { name: project, type: string, pattern: "^[a-z][a-z0-9-]{4,29}$", description: "GCP project id" }
+  - { name: region, type: string, description: "Vertex AI region or 'global'" }
+  - { name: model, type: string, description: "e.g., gemini-2.5-pro, gemini-3-pro" }
+  - { name: messages, type: array, description: "Vertex content[] schema" }
+
+observable_outputs:
+  - "POST to {region}-aiplatform.googleapis.com/v1/projects/{project}/locations/{region}/publishers/google/models/{model}:generateContent returns GenerateContentResponse within budget"
+  - "Streaming variant uses :streamGenerateContent?alt=sse with SSE-delimited chunks"
+  - "Function-calling: model emits parts[].functionCall; caller responds via parts[].functionResponse"
+  - "AYIN llm.call span with metadata.provider=vertex_ai_gemini, metadata.region, metadata.model"
+
+errors:
+  - condition: GCP ADC credential missing or expired
+    code: E_PROVIDER_AUTH
+    http_status: 401
+    operator_sees: "Vertex AI rejected credential — run `gcloud auth application-default login` or refresh service-account JWT"
+    forbidden: "silent retry without surfacing the 401"
+    severity: HIGH
+    owasp_class: LLM06
+  - condition: region/model combination unavailable
+    code: E_PROVIDER_MODEL_UNAVAILABLE
+    http_status: 404
+    operator_sees: "Model {model} not deployed in region {region} — check Vertex AI model garden"
+    forbidden: "silently routing to a different region or model"
+    severity: HIGH
+  - condition: quota exhausted for the project
+    code: E_PROVIDER_QUOTA
+    http_status: 429
+    operator_sees: "Vertex AI quota exhausted for project {project} — see GCP quota dashboard"
+    forbidden: "tight retry loop"
+    severity: MEDIUM
+  - condition: base_url resolves to private network or IMDS
+    code: E_PROVIDER_SSRF_BLOCKED
+    operator_sees: "Provider base_url rejected — private/metadata addresses are blocked"
+    forbidden: "honouring configured base_url without SSRF guard"
+    severity: BLOCKING
+    cwe_class: CWE-918
+
+observability:
+  required_spans:
+    - name: llm.call
+      required_metadata: [model, provider, stop_reason, parent_id, duration_ms, tokens_input, tokens_output, region]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 300000
+  first_token_budget_ms: 10000
+  trace_context_propagation: true
+
+persistence:
+  - path: ~/lightarchitects/cli/turnlog/active/<session>.ndjson
+    schema_ref: state.store.turnlog-ndjson
+    ttl: forever
+    hmac_chained: true
+    redaction_policy: HelixSessionMemory::SECRET_PATTERNS
+
+hitl_boundaries: [none]
+
+forbidden_behaviors:
+  - "Accepting base_url whose resolved A/AAAA record is in 169.254.169.254 IMDS or RFC1918 ranges"
+  - "Logging the OAuth2 Bearer token or service-account private key to disk or AYIN"
+  - "Calling generativelanguage.googleapis.com under the vertex_ai_gemini provider id (that is Google AI Studio, a DIFFERENT product — should use a separate provider contract)"
+  - "Buffering the entire response before streaming to the caller (Cookbook §78.3)"
+
+conformance_test:
+  given: "GCP project + service account JSON configured; region us-central1; model gemini-2.5-pro"
+  when: |
+    POST /v1/projects/<project>/locations/us-central1/publishers/google/models/gemini-2.5-pro:streamGenerateContent?alt=sse with body {contents: [{role: user, parts: [{text: 'Reply PROOF_<hex>.'}]}], generationConfig: {seed: 42}}
+  then:
+    - assertion: "first SSE chunk arrives within first_token_budget_ms (10000)"
+      span_witness: llm.call
+      evidence_tier_required: VERIFIED
+    - assertion: "accumulated parts[].text contains 'PROOF_<the_exact_hex>'"
+      span_witness: llm.call
+      evidence_tier_required: VERIFIED
+    - assertion: "AYIN llm.call span has metadata.provider == vertex_ai_gemini"
+      span_witness: llm.call
+      evidence_tier_required: VERIFIED
+  fixtures: [proof_hex_seed.txt, vertex_service_account.example.json]
+  timeout_seconds: 60
+
+status_per_provider:
+  vertex_ai_gemini: { result: UNTESTED, evidence_tier: INFERRED }
+  anthropic_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "This contract IS the vertex_ai_gemini provider; sibling contracts are separate." }
+  anthropic_http: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  claude_code_cli: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  openai_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  openai_compat_generic: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  ollama_cloud: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  ollama_local: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  litellm_proxy: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  mistral_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  groq_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  openrouter_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+  vertex_ai_claude: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Anthropic-on-Vertex; separate contract provider.llm.vertex-ai-claude" }
+  azure_openai: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
+
+alpha_gate:
+  verdict: deferred
+  reason: "Provider contract drafted from QUANTUM matrix 2026-06-03; awaits live PROOF_<hex> round-trip + service-account JWT round-trip + per-region availability verification in Phase 4 conformance harness. _audit pending_: GenerationConfig.seed direct REST-reference citation (page is JS-rendered; need direct fetch)."
+
+provider_llm:
+  provider_id: vertex_ai_gemini
+  category: managed_cloud_api
+  wire_protocol: openai_compat_http
+  base_url_pattern: "https://us-central1-aiplatform.googleapis.com"
+  base_url_validation:
+    scheme_allowlist: [https]
+    host_denylist:
+      - 169.254.169.254
+      - metadata.google.internal
+      - 0.0.0.0
+      - localhost
+      - 127.0.0.1
+    private_ranges_blocked: true
+    dns_rebinding_check: true
+  auth_scheme: oauth2
+  streaming_contract:
+    frame_format: sse_data_lines
+    first_token_max_ms: 10000
+    on_disconnect: abort
+    on_lag: drop_and_warn
+    supports_token_count_in_stream: true
+  tool_protocol: openai_function_calling
+  supported_capabilities:
+    - tool_use
+    - vision
+    - audio_input
+    - audio_output
+    - json_mode
+    - structured_outputs
+    - multimodal
+    - fine_tuning
+    - streaming
+    - multi_turn
+    - prompt_caching
+    - extended_thinking
+    - batch_api
+    - system_prompt
+  context_window_tokens: 1048576
+  max_output_tokens: 65536
+  error_mapping:
+    - { provider_status_or_code: '401', contract_error_code: E_PROVIDER_AUTH, retriable: false }
+    - { provider_status_or_code: '403', contract_error_code: E_PROVIDER_AUTH, retriable: false }
+    - { provider_status_or_code: '404', contract_error_code: E_PROVIDER_MODEL_UNAVAILABLE, retriable: false }
+    - { provider_status_or_code: '429', contract_error_code: E_PROVIDER_QUOTA, retriable: true }
+    - { provider_status_or_code: '500', contract_error_code: E_INTERNAL, retriable: true }
+    - { provider_status_or_code: '503', contract_error_code: E_UNAVAILABLE, retriable: true }
+    - { provider_status_or_code: 'connection_refused', contract_error_code: E_PROVIDER_UNREACHABLE, retriable: true }
+  timeout_ms: 300000
+  retry_policy:
+    max_attempts: 3
+    backoff: exponential_jittered
+    initial_delay_ms: 500
+    retriable_status_codes: [429, 500, 502, 503, 504]
+  cost_model:
+    currency: USD
+    input_per_million_tokens: 1.50
+    output_per_million_tokens: 9.00
+    cache_read_per_million_tokens: 0.15
+    free_tier: false
+    billing_mechanism: per_token

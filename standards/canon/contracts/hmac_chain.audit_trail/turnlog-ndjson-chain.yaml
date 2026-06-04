@@ -1,0 +1,126 @@
+schema_version: la-contracts/v1
+id: hmac_chain.audit_trail.turnlog-ndjson-chain
+kind: hmac_chain.audit_trail
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P3, P4]
+
+operator_intent: |
+  Every decision the platform makes is recorded as a turnlog NDJSON entry HMAC-chained to the prior entry.
+  prev_hmac + self_hmac per entry form a tamper-evident decision log. Genesis entry uses a KJV-verse-keyed
+  pepper (lightarchitects/src/crypto/verses.rs). Verification walks the chain from genesis; mismatch halts
+  the session and alerts the operator.
+
+prior_art:
+  - name: Forward-secure logging (Schneier-Kelsey 1999)
+    url: https://www.schneier.com/academic/paperfiles/paper-forward-secure-logging.pdf
+    what_we_adopt: tamper-evident chain via cryptographic forward-link
+    what_we_extend: KJV verse-keyed HKDF pepper + per-session genesis + on-chain canon promotion records
+
+canon_refs:
+  - canon://security-guardrails
+  - canon://builders-cookbook
+
+memory_refs: []
+
+inputs:
+  - { name: payload, type: object, description: the operation being recorded }
+  - { name: seq, type: integer, min: 0, description: monotonic sequence number per session }
+
+observable_outputs:
+  - "Each entry has {seq, timestamp, payload, hmac_prev, hmac_self}"
+  - "hmac_self = HMAC-SHA256(session_pepper, seq || prev_hmac || canonical(payload) || timestamp)"
+  - "Genesis entry hmac_prev = '0' * 64 (per turnlog/promotion.rs line 806)"
+  - "Chain verification walks from genesis; any tampering produces a self_hmac mismatch"
+  - "Tamper detection halts the session and writes an alert span"
+
+errors:
+  - condition: hmac_self mismatch during chain walk
+    code: E_HMAC_CHAIN_TAMPERED
+    operator_sees: "Turnlog chain integrity violation at seq=<N>; session halted for operator review"
+    forbidden: "continuing the session after tamper detection (silent corruption risk)"
+    severity: BLOCKING
+    cwe_class: CWE-345
+  - condition: hex decoding failure of hmac_prev or hmac_self
+    code: E_HMAC_HEX_INVALID
+    operator_sees: "Turnlog entry malformed at seq=<N>; chain verification cannot proceed"
+    forbidden: "skipping the malformed entry and continuing — must halt"
+    severity: BLOCKING
+
+observability:
+  required_spans:
+    - name: turnlog.entry.write
+      required_metadata: [seq, hmac_prev_preview, hmac_self_preview, payload_kind]
+      parent_relationship: child_of_caller
+    - name: turnlog.chain.verify
+      required_metadata: [from_seq, to_seq, verified_count, tamper_detected]
+      parent_relationship: root
+  duration_budget_ms: 100
+
+persistence:
+  - path: ~/lightarchitects/cli/turnlog/active/<session>.ndjson
+    contains_one_line: "{seq, timestamp, payload, hmac_prev, hmac_self}"
+    ttl: forever
+    hmac_chained: true
+  - path: ~/lightarchitects/cli/turnlog/genesis/<session>.json
+    contains_one_line: "Genesis fixed record with session pepper fingerprint"
+    ttl: forever
+
+hitl_boundaries:
+  - "Tamper detection halts session; operator decides resume vs investigate"
+
+forbidden_behaviors:
+  - "Writing entries without recomputing hmac_self after canonicalization"
+  - "Allowing parallel writers to the same chain (race-window allows malicious interleave)"
+  - "Exposing the session pepper in logs / spans / disk outside the genesis record"
+  - "Continuing after tamper without operator stamp"
+
+conformance_test:
+  given: "Fresh session; genesis entry written; pepper sealed in keychain"
+  when: "10 entries written sequentially; then entry 5 is mutated externally"
+  then:
+    - assertion: turnlog.chain.verify span fires with tamper_detected=true at seq=5
+      span_witness: turnlog.chain.verify
+      evidence_tier_required: VERIFIED
+    - assertion: session transitions to halted state
+      filesystem_witness: ~/lightarchitects/cli/turnlog/active/<session>.ndjson
+      evidence_tier_required: VERIFIED
+  fixtures: [turnlog_tamper_at_seq_5.example.ndjson]
+  timeout_seconds: 10
+
+status_per_provider:
+  anthropic_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "HMAC chain is below the provider layer; cryptographic integrity is provider-independent" }
+  anthropic_http: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  openai_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  openai_compat_generic: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  ollama_cloud: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  ollama_local: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  litellm_proxy: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  claude_code_cli: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  mistral_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  groq_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  openrouter_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+
+alpha_gate:
+  verdict: pass
+  reason: "HMAC chain primitive verified in source (lightarchitects/src/turnlog/promotion.rs:806); contract codifies what already runs."
+
+hmac_chain_audit_trail:
+  chain_target: turnlog_ndjson
+  hmac_algorithm: hmac_sha256
+  entry_schema:
+    type: object
+    required: [seq, timestamp, payload, hmac_prev, hmac_self]
+    properties:
+      seq: { type: integer, minimum: 0 }
+      timestamp: { type: string, format: date-time }
+      payload: { type: object }
+      hmac_prev: { type: string, pattern: "^[0-9a-f]{64}$" }
+      hmac_self: { type: string, pattern: "^[0-9a-f]{64}$" }
+  genesis_entry:
+    prev_hmac_value: "0000000000000000000000000000000000000000000000000000000000000000"
+    pepper_source: "HKDF-SHA256(KJV verse-keyed master, session_id)"
+  chain_verification_method: walk_from_genesis
+  tamper_response: halt_session
+  rotation_policy: "Per session — fresh pepper per genesis; old chains read-only"

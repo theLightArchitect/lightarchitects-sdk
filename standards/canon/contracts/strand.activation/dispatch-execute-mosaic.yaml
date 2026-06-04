@@ -1,0 +1,120 @@
+schema_version: la-contracts/v1
+id: strand.activation.dispatch-execute-mosaic
+kind: strand.activation
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P3, P4]
+
+operator_intent: |
+  Every dispatch execution declares its 10-strand mosaic activation per Canon XXX. A wave touching code,
+  security, tests, and ops without declaring it forfeits the right to claim quality coverage. The
+  intensity vector + coverage_requirement lets the gate decide whether the activation was actually realized.
+
+prior_art:
+  - name: Canon XXX (strand mosaic — every strand has a home)
+    url: canon://platform-canon
+    what_we_adopt: 10-dimensional mosaic [A][S][Q][C][O][P][K][D][T][R]
+    what_we_extend: typed activation vector as first-class span metadata + gate-composition consumer
+
+inherits_from: [wire.http.api-dispatch-execute]
+
+canon_refs:
+  - canon://platform-canon
+  - canon://gatekeeper-registry
+
+memory_refs: []
+
+inputs:
+  - name: declared_strands
+    type: array
+    description: "subset of [A,S,Q,C,O,P,K,D,T,R] the dispatcher claims to activate"
+  - name: intensity_vector_input
+    type: object
+    description: "0.0-1.0 per declared strand"
+
+observable_outputs:
+  - "AYIN dispatch span carries strand_activations[] array matching the activated_strands declaration"
+  - "Conformance asserts coverage_requirement: at_least_one observed strand fires"
+  - "If gate composition requires must_include_all_activated, every declared strand has ≥1 corresponding gate evaluation"
+  - "Operator-visible Mosaic chip shows the live activation vector during execution"
+
+errors:
+  - condition: declared strand has no corresponding gate evaluator
+    code: E_STRAND_UNGATED
+    operator_sees: "Strand <X> declared but no gate owner in gatekeeper-registry — Canon XXX violation"
+    forbidden: "shipping with declared strands that no sibling owns"
+    severity: BLOCKING
+  - condition: zero strands declared on a non-trivial dispatch
+    code: E_STRAND_EMPTY
+    operator_sees: "Dispatch declared zero strand activations — Canon XXX forbids implicit quality posture"
+    forbidden: "implicit activation by inferring strands post-hoc"
+    severity: HIGH
+
+observability:
+  required_spans:
+    - name: gateway.tool.dispatch
+      required_metadata: [tool, actor, strand_activations, intensity_vector]
+      parent_relationship: root
+  duration_budget_ms: 600000
+  trace_context_propagation: true
+
+persistence:
+  - path: ~/lightarchitects/cli/turnlog/active/<session>.ndjson
+    schema_ref: state.store.turnlog-ndjson
+    ttl: forever
+    hmac_chained: true
+
+hitl_boundaries: [none]
+
+forbidden_behaviors:
+  - "Implicit strand inference (post-hoc 'this looked like an A activation') — strands must be declared up-front"
+  - "Coverage gaps without explicit waiver"
+  - "Weighting intensity > 1.0 (vector is unit-normalised per strand)"
+
+conformance_test:
+  given: "Dispatch with declared_strands=[A,Q,T], intensity_vector={A:1.0, Q:0.7, T:0.5}, coverage_requirement=must_include_all_activated"
+  when: "Dispatch executes through wire.http.api-dispatch-execute and emits spans"
+  then:
+    - assertion: gateway.tool.dispatch span carries strand_activations including A, Q, T
+      span_witness: gateway.tool.dispatch
+      evidence_tier_required: VERIFIED
+    - assertion: per-strand gate evaluator fires for each of A (CORSO), Q (CORSO), T (CORSO)
+      span_witness: gateway.tool.dispatch
+      evidence_tier_required: MULTI_SOURCE
+  fixtures: []
+  timeout_seconds: 30
+
+status_per_provider:
+  anthropic_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "Strand activation is platform-doctrine, provider-independent" }
+  anthropic_http: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  openai_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  openai_compat_generic: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  ollama_cloud: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  ollama_local: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  litellm_proxy: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  claude_code_cli: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  mistral_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  groq_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  openrouter_api: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+
+alpha_gate:
+  verdict: deferred
+  reason: "Strand activation contract declared; runtime span emission requires StrandActivation field population in gateway dispatch handler (lightarchitects/src/ayin/span.rs has the type; emission sites need to fill it)."
+
+strand_activation:
+  activates_strands: [A, S, Q, C, T]
+  intensity_vector:
+    A: 1.0
+    S: 0.8
+    Q: 0.9
+    C: 0.6
+    T: 0.7
+  coverage_requirement: must_include_all_activated
+  gate_owner_per_strand:
+    A: corso
+    S: seraph
+    Q: corso
+    C: laex
+    T: corso
+  activation_witness_span: gateway.tool.dispatch

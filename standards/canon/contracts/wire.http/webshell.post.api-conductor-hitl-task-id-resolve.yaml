@@ -1,0 +1,189 @@
+# AUTO-GENERATED v3 — quality tier: SINGLE_SOURCE (prose=False, doc=True, req_struct=ResolveRequest, resp_struct=ResolveResponse)
+# Source: lightarchitects-webshell/src/server/mod.rs:1263
+# Handler: conductor_routes::resolve_hitl_handler
+
+schema_version: la-contracts/v1
+id: wire.http.api-conductor-hitl-task-id-resolve.post
+kind: wire.http
+version: 0.1.0
+status: draft
+northstar_pillars:
+- P2
+operator_intent: Approve or reject a blocked task.
+observable_outputs:
+- Response status 201 (or one of the documented errors) within the duration budget
+- 'Response body conforms to the ResolveResponse schema (key fields: ok, new_status)'
+- 'Operator-visible effect: Approve or reject a blocked task.'
+- AYIN platform.http.request span emitted with {method, path, status, duration_ms}
+errors:
+- http_status: 404
+  condition: requested resource not found
+  code: E_NOT_FOUND
+  operator_sees: Requested resource not found
+  forbidden: returning 200 with an empty body in place of 404
+  severity: MEDIUM
+- http_status: 409
+  condition: resource state conflicts with the requested mutation
+  code: E_CONFLICT
+  operator_sees: Conflicting state — refresh and retry or resolve explicitly
+  forbidden: overwriting concurrent operator changes silently
+  severity: HIGH
+- http_status: 422
+  condition: request well-formed but semantically invalid
+  code: E_UNPROCESSABLE
+  operator_sees: Request semantically invalid — see field-level error
+  forbidden: returning 400 for semantic errors
+  severity: MEDIUM
+- http_status: 500
+  condition: internal server error
+  code: E_INTERNAL
+  operator_sees: Internal error — message references the request id
+  forbidden: returning a stack trace or stderr in the response body
+  severity: HIGH
+- http_status: 503
+  condition: service temporarily unavailable
+  code: E_UNAVAILABLE
+  operator_sees: Service unavailable — retry after a short delay
+  forbidden: returning 200 with empty data instead of 503
+  severity: HIGH
+observability:
+  required_spans:
+  - name: webshell.http.request
+    required_metadata:
+    - method
+    - path
+    - status
+    - duration_ms
+    parent_relationship: root
+  trace_context_propagation: true
+  duration_budget_ms: 30000
+hitl_boundaries:
+- none
+conformance_test:
+  given: webshell running; auth=none; provider-independent for this layer
+  when: POST /api/conductor/hitl/{task_id}/resolve with body conforming to ResolveRequest
+  then:
+  - assertion: response status is 2xx (or one of the documented errors)
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  fixtures:
+  - ResolveRequest.example.json
+  timeout_seconds: 30
+status_per_provider:
+  anthropic_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  openai_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  ollama_cloud:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  ollama_local:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  mistral_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  groq_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  openrouter_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+alpha_gate:
+  verdict: pass
+  reason: Provider-agnostic wire endpoint with intent, error specs, and observability fully declared. Conformance harness
+    wiring upgrades verdict from declared-pass to runtime-verified at Phase 4.
+wire_http:
+  path: /api/conductor/hitl/{task_id}/resolve
+  method: POST
+  auth_required: none
+  idempotency: non_idempotent
+  cors_class: same_origin
+  sse_streaming: false
+  request_schema:
+    type: object
+    properties:
+      action:
+        type: string
+    required:
+    - action
+  response_schemas:
+    '401':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '404':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '409':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '422':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '500':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '503':
+      type: object
+      description: 'error envelope: {error: string, code: string, request_id?: string}'
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+    '201':
+      type: object
+      properties:
+        ok:
+          type: boolean
+        new_status:
+          type: string
+      required:
+      - ok
+      - new_status

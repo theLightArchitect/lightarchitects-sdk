@@ -48,16 +48,24 @@ pub fn resolve_anthropic_key() -> Result<SecretString, ProviderError> {
     ))
 }
 
-/// Resolve the Vertex AI / Gemini API key.
+/// Resolve the Google AI Studio (Gemini) API key.
 ///
-/// Follows the same Keychain-only policy as [`resolve_anthropic_key`] with
-/// key `"vertex-api-key"`.
+/// Follows the same Keychain-only policy as [`resolve_anthropic_key`].
+///
+/// # Naming note
+///
+/// Keychain key + env var are still named `vertex-api-key` / `VERTEX_API_KEY`
+/// to preserve operator state from before the 2026-06-04 rename (the function
+/// was previously `resolve_vertex_key`; the provider was `VertexHttpProvider`
+/// but actually targeted `generativelanguage.googleapis.com` — Google AI Studio,
+/// not production Vertex AI). A future migration may rename the keychain entry
+/// once a real Vertex AI provider lands and the two need distinct credentials.
 ///
 /// # Errors
 ///
 /// Returns [`ProviderError::AuthFailure`] when no key can be located.
 #[allow(clippy::missing_errors_doc)]
-pub fn resolve_vertex_key() -> Result<SecretString, ProviderError> {
+pub fn resolve_google_ai_studio_key() -> Result<SecretString, ProviderError> {
     let store = KeychainStore::with_service(SERVICE);
     if let Ok(Some(key)) = store.get("vertex-api-key") {
         return Ok(key);
@@ -71,7 +79,7 @@ pub fn resolve_vertex_key() -> Result<SecretString, ProviderError> {
     }
 
     Err(ProviderError::AuthFailure(
-        "Vertex API key not found; store in Keychain \
+        "Google AI Studio (Gemini) API key not found; store in Keychain \
          (service=\"lightarchitects\", key=\"vertex-api-key\")"
             .into(),
     ))
@@ -97,7 +105,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_vertex_key_does_not_panic() {
-        let _ = resolve_vertex_key();
+    fn resolve_google_ai_studio_key_does_not_panic() {
+        let _ = resolve_google_ai_studio_key();
     }
 }

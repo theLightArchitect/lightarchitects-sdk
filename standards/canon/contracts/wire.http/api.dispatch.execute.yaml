@@ -1,0 +1,194 @@
+schema_version: la-contracts/v1
+id: wire.http.api-dispatch-execute
+kind: wire.http
+version: 0.1.0
+status: draft
+
+northstar_pillars:
+  - P1
+  - P3
+
+operator_intent: |
+  Run a wave of domain agents against a free-form task and stream their progress as SSE events.
+
+prior_art:
+  - name: OpenAPI 3.1 Operation Object
+    url: https://spec.openapis.org/oas/v3.1.0.html
+    version: "3.1.0"
+    what_we_adopt: response status schemas + rate-limit headers
+    what_we_extend: forbidden_behaviors block + per-provider conformance matrix
+
+canon_refs:
+  - canon://webshell-api-surface-v1#§2.7
+  - canon://builders-cookbook#§78.3
+
+memory_refs:
+  - feedback_alpha_provider_agnostic_contract_gate.md
+  - feedback_webshell_copilot_provider_coupling.md
+
+inputs:
+  - name: task
+    type: string
+    max_bytes: 8192
+    description: Free-form task description for the squad
+  - name: agents
+    type: array
+    items_schema: { type: string, enum: [engineer, knowledge, quality, security, ops, researcher, testing, squad] }
+    description: Operator-selected domain agents
+  - name: dry
+    type: boolean
+    default: false
+  - name: attachments
+    type: array
+    description: Optional file/folder attachments
+  - name: tool_config
+    type: object
+    description: Per-agent tool configuration
+
+observable_outputs:
+  - "POST returns 200 with {dispatch_id: SQD-<CALLSIGN>-<seq>} within 500ms"
+  - "DISPATCH state machine transitions: IDLE → ARMED → LIVE → COMPLETE (or FAILED / CANCELLED)"
+  - "Each selected agent emits state events visible per row in EXECUTION STAGE"
+  - "Each agent's mailbox messages stream as the underlying model produces them"
+  - "Total elapsed wall-clock is reported (T-Ns)"
+  - "Per-agent token count + cost is reported"
+
+errors:
+  - condition: task_too_large
+    code: E_TASK_TOO_LARGE
+    http_status: 413
+    operator_sees: "Task exceeds 8192-byte limit — trim and retry"
+    forbidden: "silently truncating the task without telling the operator"
+    severity: HIGH
+  - condition: provider_unreachable
+    code: E_PROVIDER_UNREACHABLE
+    http_status: 502
+    operator_sees: "Provider {name} unreachable — check {actionable_hint}"
+    recovery: "Open provider config and verify base_url"
+    forbidden: "generic 'Agent bridge connecting…' that hides which provider failed"
+    severity: HIGH
+    owasp_class: LLM02
+  - condition: claude_binary_missing
+    code: E_RUNNER_MISSING
+    http_status: 503
+    operator_sees: "Runner binary not found on PATH — install or configure runner"
+    forbidden: "marking the agent COMPLETE on a failed spawn"
+    severity: HIGH
+
+observability:
+  required_spans:
+    - name: gateway.tool.dispatch
+      required_metadata: [tool, actor]
+      parent_relationship: root
+    - name: squad.task.started
+      required_metadata: [agent, dispatch_id]
+      parent_relationship: child_of_named
+      parent_span_name: gateway.tool.dispatch
+    - name: assistant.response
+      required_metadata: [build_id, duration_s, response_preview]
+      parent_relationship: child_of_named
+      parent_span_name: squad.task.started
+  duration_budget_ms: 300000
+  trace_context_propagation: true
+
+persistence:
+  - path: $PROJECT_ROOT/.tmp/dispatch-<id>/agent-<name>.md
+    ttl: until-make-clean
+    contains_one_line: "Full agent stdout buffer concatenated"
+  - path: ~/lightarchitects/cli/turnlog/active/<dispatch_session>.ndjson
+    schema_ref: state.store.turnlog-ndjson
+    ttl: forever
+    hmac_chained: true
+
+hitl_boundaries:
+  - "Initial Dispatch click is the consent — once armed, wave runs without per-step HITL"
+  - "CANCEL is an explicit operator-initiated abort"
+  - "Filesystem writes outside $PROJECT_ROOT/.tmp/dispatch-<id>/ require /api/dispatch/{id}/fs-approve"
+
+forbidden_behaviors:
+  - "Hardcoding `claude --print -p` as the only implementation; executor must dispatch via Runner trait"
+  - "Routing wave to a provider different from the one the operator selected"
+  - "Discarding per-agent stdout on COMPLETE without writing the artifact file"
+  - "Returning 200 with a dispatch_id when no spawn actually occurred"
+
+conformance_test:
+  given: "Provider <P> configured; $PROJECT_ROOT/.tmp/ does not exist"
+  when: "POST /api/dispatch/execute with task='Read CLAUDE.md and list the MSRV' agents=[engineer,knowledge] dry=false"
+  then:
+    - assertion: "Response 200 with dispatch_id within 500ms"
+      span_witness: gateway.tool.dispatch
+      evidence_tier_required: VERIFIED
+    - assertion: "Within 60s, $PROJECT_ROOT/.tmp/dispatch-<id>/agent-engineer.md exists and contains '1.87'"
+      filesystem_witness: "$PROJECT_ROOT/.tmp/dispatch-<id>/agent-engineer.md"
+      evidence_tier_required: VERIFIED
+    - assertion: "AYIN trace contains assistant.response with parent_id of squad.task.started"
+      span_witness: assistant.response
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 90
+
+status_per_provider:
+  anthropic_api:
+    result: PASS
+    evidence_tier: VERIFIED
+    evidence_path: ~/lightarchitects/soul/helix/corso/contracts/evidence/wire-http-dispatch-execute/anthropic-2026-06-03.json
+    last_run_at: "2026-06-03T18:47:00Z"
+  openai_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  ollama_cloud:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  ollama_local:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  mistral_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  groq_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  openrouter_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+
+alpha_gate:
+  verdict: deferred
+  reason: "Implementation hardcodes claude --print -p subprocess; passes via Claude Code path only. Refactor to Runner trait + persistence into executor before alpha."
+  blocker_contract_ids:
+    - code.trait.runner
+    - wire.http.api-dispatch-artifacts
+
+wire_http:
+  path: /api/dispatch/execute
+  method: POST
+  auth_required: bearer_token
+  idempotency: non_idempotent
+  cors_class: same_origin
+  request_schema:
+    type: object
+    required: [task, agents]
+    properties:
+      task: { type: string, maxLength: 8192 }
+      agents: { type: array, items: { type: string }, minItems: 1, maxItems: 8 }
+      dry: { type: boolean }
+      attachments: { type: array }
+      tool_config: { type: object }
+    additionalProperties: false
+  response_schemas:
+    "200":
+      type: object
+      required: [dispatch_id]
+      properties:
+        dispatch_id: { type: string, pattern: "^SQD-[A-Z]+-[0-9]+$" }
+      additionalProperties: false
+    "400":
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    "401": { type: object }
+    "413": { type: object }
+    "502": { type: object }
+  sse_streaming: false
+  max_request_bytes: 10240
+  max_response_bytes: 1024

@@ -1,0 +1,165 @@
+schema_version: la-contracts/v1
+id: agent.a2a.wave-complete
+kind: agent.a2a
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P2, P4]
+
+operator_intent: |
+  When an autonomous wave finishes, the producing agent emits a WAVE_COMPLETE envelope on the A2A bus
+  so the supervisor + conductor + webshell UI can advance the build state machine.
+
+prior_art:
+  - name: Agents Playbook §III A2A envelope schema
+    url: canon://agents-playbook
+    what_we_adopt: JSONL envelope with v + agent_id + session_id + build_codename + worktree_path + branch + commit_sha + phase + wave + task_id + timestamp + type + payload
+    what_we_extend: HMAC-signed payload + idempotency_key per Cookbook §50.5c emission discipline
+
+canon_refs:
+  - canon://agents-playbook
+
+memory_refs:
+  - feedback_sse_emission_vs_type_declaration.md
+  - feedback_shared_sse_build_id_type_mismatch.md
+
+inputs:
+  - { name: build_codename, type: string, pattern: "^[a-z][a-z0-9-]{0,79}$" }
+  - { name: wave_index, type: integer, min: 1 }
+  - { name: task_count, type: integer, min: 1 }
+  - { name: tasks_completed, type: integer, min: 0 }
+  - { name: tasks_failed, type: integer, min: 0 }
+  - { name: deviations, type: array, description: "list of {task_id, deviation_kind, note} for tasks that diverged from plan" }
+
+observable_outputs:
+  - "WAVE_COMPLETE envelope visible on the global event SSE stream within 250ms of last task close"
+  - "Supervisor advances build_state from WAVE_LIVE → WAVE_CLOSED on receipt"
+  - "Conductor decrements active_waves counter"
+  - "Webshell UI advances the wave row to COMPLETE state"
+  - "Envelope idempotency_key prevents duplicate processing if re-broadcast"
+  - "AYIN supervisor.task.envelope span emitted with {type, build_codename, wave_index}"
+
+errors:
+  - condition: envelope received with unknown build_codename
+    code: E_A2A_UNKNOWN_BUILD
+    operator_sees: "Envelope for unknown build_codename dropped"
+    forbidden: "spawning a synthetic build to accept the envelope"
+    severity: HIGH
+  - condition: HMAC signature verification failed
+    code: E_A2A_HMAC_INVALID
+    operator_sees: "Envelope rejected: HMAC signature invalid"
+    forbidden: "accepting the envelope and logging a warning instead of dropping"
+    severity: BLOCKING
+    cwe_class: CWE-345
+  - condition: duplicate envelope with same idempotency_key
+    code: E_A2A_DUPLICATE
+    operator_sees: "Duplicate envelope ignored (idempotency_key already seen)"
+    forbidden: "re-processing the envelope and double-incrementing counters"
+    severity: LOW
+
+observability:
+  required_spans:
+    - name: supervisor.task.envelope
+      required_metadata: [type, build_codename, wave_index, agent_id, idempotency_key]
+      parent_relationship: root
+  duration_budget_ms: 500
+  trace_context_propagation: true
+
+persistence:
+  - path: ~/lightarchitects/cli/turnlog/active/<session>.ndjson
+    schema_ref: state.store.turnlog-ndjson
+    ttl: forever
+    hmac_chained: true
+  - path: ~/lightarchitects/soul/helix/corso/builds/<codename>/manifest.yaml
+    contains_one_line: "wave_completions[<wave_id>] entry per Cookbook §15.5.7 PC-SYNC-3"
+    ttl: forever
+
+hitl_boundaries:
+  - none
+
+forbidden_behaviors:
+  - "Emitting WAVE_COMPLETE before all in-flight tasks have closed"
+  - "Re-emitting without bumping idempotency_key"
+  - "Dropping HMAC signature in trusted-LAN deployments (security must not degrade by topology)"
+  - "Coupling the envelope shape to the producing agent's runtime — schema is canonical, not best-effort"
+
+conformance_test:
+  given: "Build 'demo-build' running with 3 tasks all complete"
+  when: |
+    Agent emits WAVE_COMPLETE envelope on the A2A bus
+  then:
+    - assertion: supervisor.task.envelope span fires within 250ms
+      span_witness: supervisor.task.envelope
+      evidence_tier_required: VERIFIED
+    - assertion: webshell UI wave row advances to COMPLETE
+      filesystem_witness: ~/lightarchitects/soul/helix/corso/builds/demo-build/manifest.yaml
+      evidence_tier_required: VERIFIED
+    - assertion: re-emitting the same envelope results in zero state change (idempotent)
+      span_witness: supervisor.task.envelope
+      evidence_tier_required: VERIFIED
+  fixtures: [wave_complete_envelope.example.json]
+  timeout_seconds: 5
+
+status_per_provider:
+  anthropic_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "A2A is below the provider layer — envelopes flow regardless of which provider an agent uses." }
+  openai_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "A2A is below the provider layer." }
+  ollama_cloud: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "A2A is below the provider layer." }
+  ollama_local: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "A2A is below the provider layer." }
+  mistral_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "A2A is below the provider layer." }
+  groq_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "A2A is below the provider layer." }
+  openrouter_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "A2A is below the provider layer." }
+
+alpha_gate:
+  verdict: pass
+  reason: "Provider-agnostic A2A envelope contract; conformance test wires through supervisor + UI without depending on any LLM provider."
+
+agent_a2a:
+  message_type: WAVE_COMPLETE
+  envelope_schema:
+    type: object
+    required: [v, agent_id, session_id, build_codename, worktree_path, branch, commit_sha, phase, wave, task_id, timestamp, type, payload]
+    properties:
+      v: { type: integer, const: 1 }
+      agent_id: { type: string, description: "issuing agent identifier" }
+      session_id: { type: string, format: uuid }
+      build_codename: { type: string, pattern: "^[a-z][a-z0-9-]{0,79}$" }
+      worktree_path: { type: string }
+      branch: { type: string }
+      commit_sha: { type: string, pattern: "^[0-9a-f]{40}$" }
+      phase: { type: integer, minimum: 0 }
+      wave: { type: integer, minimum: 1 }
+      task_id: { type: string }
+      timestamp: { type: string, format: date-time }
+      type: { type: string, const: WAVE_COMPLETE }
+      idempotency_key: { type: string }
+      hmac: { type: string, pattern: "^[0-9a-f]{64}$" }
+      payload:
+        type: object
+        required: [task_count, tasks_completed, tasks_failed]
+        properties:
+          task_count: { type: integer, minimum: 1 }
+          tasks_completed: { type: integer, minimum: 0 }
+          tasks_failed: { type: integer, minimum: 0 }
+          deviations:
+            type: array
+            items:
+              type: object
+              required: [task_id, deviation_kind]
+              properties:
+                task_id: { type: string }
+                deviation_kind: { type: string, enum: [scope_expanded, scope_reduced, retry_after_failure, dependency_added] }
+                note: { type: string }
+        additionalProperties: false
+    additionalProperties: false
+  addressing: build_scoped
+  ordering: per_build
+  idempotency_key: "{build_codename}:{wave}"
+  delivery_guarantee: at_least_once
+  hmac_signed: true
+  fires_on:
+    - "All wave tasks transition to Complete or Failed"
+    - "Wave's GATE phase completes its plan-sync write"
+  consumed_by:
+    - supervisor
+    - conductor
+    - webshell UI
