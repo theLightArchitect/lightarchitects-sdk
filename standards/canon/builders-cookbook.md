@@ -667,6 +667,31 @@ let _ = session.event_tx.send(ev);  // discard the Result, not the binding
 
 Use `_` prefix **only** when the binding is never read after the `let`. To suppress a specific unused warning on a value you do need later, restructure the code so the value is actually consumed — or discard with `let _ = expr;` at the exact site of discard.
 
+#### 4.1.2 Borrow-release predicate pattern (predicate-then-details APIs)
+
+**Rule:** When an API offers both a `bool` predicate variant (`is_valid`, `contains`, `matches`) and a borrowing details variant (`iter_errors`, `find_all`, `captures`), call the predicate first to release the borrow before moving the input on the happy path. Only re-borrow with the details variant on the failure branch.
+
+**Why:** Iterator-returning details variants tie their items to the input's lifetime (`Item = T<'_>`). Holding the iterator alive blocks moving the input — the borrow checker rejects code that would otherwise be valid. The predicate variant returns an owned value (typically `bool`), holds no borrow, and frees the input for downstream ownership transfer.
+
+```rust
+// WRONG — iter_errors borrows json_value; cannot move it into instances afterward
+let errors: Vec<_> = validator.iter_errors(&json_value).collect();
+if errors.is_empty() {
+    instances.push(ContractInstance { raw: json_value, .. });  // E0505: cannot move
+}
+
+// CORRECT — is_valid releases the borrow before the move
+if validator.is_valid(&json_value) {
+    instances.push(ContractInstance { raw: json_value, .. });  // free to move
+} else {
+    for err in validator.iter_errors(&json_value) {  // re-borrow only for reporting
+        report_failure(err);
+    }
+}
+```
+
+The pattern generalizes: `Regex::is_match` before `Regex::captures`, `HashMap::contains_key` before `HashMap::get` when the borrow conflicts, any API that exposes both a "yes/no" check and a "tell me which" inspector.
+
 ### 4.2 Unsafe Code Isolation
 
 **Rule:** `unsafe` is a "break glass in case of emergency" tool.
@@ -743,6 +768,33 @@ unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"
 ```
+
+#### 4.5.1 Lint thresholds vs Cookbook standards — design to the stricter limit
+
+Several `clippy::pedantic` lints have ceilings *laxer* than the Cookbook §3 universal rules. If you draft to the clippy ceiling, you pass the compile but fail Cookbook review at SCRUM and refactor twice.
+
+| Cookbook rule | Cookbook ceiling | clippy fires at |
+|---|---|---|
+| §3 Rule 4 — "One Page" function limit | **60 lines** | `too_many_lines` at 100 |
+| §3 Rule 3 — Cyclomatic complexity | **≤10** | `cognitive_complexity` at 25 |
+| §3 Rule 7 — Nesting depth | **≤4** | no clippy lint — Cookbook-only |
+
+**Rule:** Design helpers, extractions, and decompositions to the Cookbook ceiling from the first draft. When a function approaches 50 lines or 4 nested blocks, plan a helper extraction proactively — don't wait for clippy to shout at line 101. A function that compiles clean and survives the next SCRUM review without refactor is the floor; clippy passing is necessary but insufficient.
+
+#### 4.5.2 Test-module clippy exemption
+
+Tests legitimately use `.unwrap()` / `.expect()` / `panic!()` for setup paths where a failure aborts the test rather than corrupting downstream state. Exempt them at the module boundary, not per call-site:
+
+```rust
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    // tests freely use .unwrap() etc.
+}
+```
+
+Per-line `#[allow]` attributes bloat test bodies and obscure intent — apply once at the `mod tests` boundary instead.
 
 ### 4.6 Workspace Organization
 
