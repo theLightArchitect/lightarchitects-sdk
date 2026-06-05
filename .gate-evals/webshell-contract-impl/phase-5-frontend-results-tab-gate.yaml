@@ -1,0 +1,131 @@
+gate_id: phase-5-frontend-results-tab-gate
+build_codename: webshell-contract-impl
+phase: phase-5-frontend-results-tab
+evaluated_at: 2026-06-04T17:08:00Z
+commit: 2776633
+branch: feat/webshell-contract-impl
+
+verdict: PASS
+advancing_to: phase-6-conformance-test-execution
+
+# ── Quality gates ─────────────────────────────────────────────────────────────
+
+quality:
+  cargo_fmt_check: PASS
+  cargo_clippy_pedantic: PASS          # 0 warnings/errors in lightarchitects-webshell
+  cargo_test_lib:
+    result: PASS
+    count: 1305
+    delta: +0                          # no new Rust tests in this phase (backend routes tested via integration)
+  pnpm_vitest:
+    result: PASS
+    count: 842
+    delta: +19                         # Phase 5b tests: 4 import + 7 testid contract + 1 uniqueness + 7 safe_join
+  svelte_check:
+    result: PASS_PRE_EXISTING          # 8 errors pre-existing (baseline confirmed by stash check); 0 new errors
+    new_errors: 0
+
+# ── Architecture [A] ──────────────────────────────────────────────────────────
+
+architecture:
+  result: PASS
+  findings:
+    - id: A1
+      severity: INFO
+      description: >
+        ResultsTab uses activeView state in SquadDispatch (not URL param) — consistent
+        with SPA pattern; no URL leak of artifact names into browser history.
+    - id: A2
+      severity: INFO
+      description: >
+        Artifact directory path `config.cwd/.tmp/dispatch-{id}/` — config.cwd is
+        canonicalized at server startup (preflight G4), so the base is already safe;
+        safe_join adds filename-level CWE-22 guard on top.
+
+# ── Security [S] ─────────────────────────────────────────────────────────────
+
+security:
+  result: PASS
+  checks:
+    cwe_22_path_traversal:
+      result: PASS
+      evidence: >
+        safe_join rejects /, \\, .., \0 before joining; ancestor-walk canonicalize
+        asserts containment (§63.P4). Returns HTTP 400 on any violation.
+    html_injection_blocked:
+      result: PASS
+      evidence: >
+        ResultsTab.svelte calls DOMPurify.sanitize(raw, {ALLOWED_TAGS:[], ALLOWED_ATTR:[]})
+        before passing content to Monaco read-only editor.
+    monaco_read_only_only:
+      result: PASS
+      evidence: >
+        CodeEditor rendered with readonly={true}; Monaco editor options include readOnly.
+    ayin_span_no_credentials:
+      result: PASS
+      evidence: >
+        dispatch.artifacts.list span metadata: {dispatch_id, file_count, elapsed_ms}.
+        dispatch.artifacts.preview span metadata: {dispatch_id, file_size}.
+        No file contents, paths, or credential values in any span.
+    render_safety_dompurify:
+      result: PASS
+      evidence: >
+        ALLOWED_TAGS:[], ALLOWED_ATTR:[] strip ALL tags — plain text only reaches Monaco.
+
+# ── Canon [C] ─────────────────────────────────────────────────────────────────
+
+canon:
+  result: PASS
+  checks:
+    cookbook_s63_p4_ancestor_walk: PASS
+    cookbook_s82_1_operator_surface_testids: PASS   # 7/7 required testids present
+    security_guardrails_llm01_g1_sanitization: PASS
+    no_unwrap_in_production: PASS
+
+# ── Documentation [D] ────────────────────────────────────────────────────────
+
+documentation:
+  result: PASS
+  findings:
+    - id: D1
+      severity: INFO
+      description: >
+        All new Rust handlers have /// doc comments. New Svelte components have WHY
+        comments per Cookbook §63. AYIN span labels match dispatch-artifacts contract
+        required_spans exactly.
+
+# ── Testing [T] ──────────────────────────────────────────────────────────────
+
+testing:
+  result: PASS
+  new_tests:
+    - suite: vitest/unit
+      count: 19
+      coverage:
+        - dispatch-artifacts ResultsTab/WaveStrip/ContractGateCard/ConformanceMatrixCard import
+        - 7 operator.surface testid contract lint tests
+        - dispatch-artifacts-tab uniqueness invariant
+        - 7 safe_join security invariants (JS mirror of Rust logic)
+  test_ratchet:
+    before: 823
+    after: 842
+    delta: +19
+    direction: up                      # ratchet passes
+
+# ── Phase 5 exit criteria (plan §774) ────────────────────────────────────────
+
+exit_criteria:
+  results_tab_rendered: VERIFIED       # ResultsTab.svelte imports + mounts in SquadDispatch
+  testid_attrs_7_present: VERIFIED     # 7/7 data-testid attrs confirmed by grep + vitest
+  ayin_spans_9_sites: VERIFIED         # dispatch.artifacts.list + dispatch.artifacts.preview wired
+  contract_gate_235_235: VERIFIED      # cargo test -p lightarchitects --lib: 1305/1305
+  p1_e4_operator_opens_results_tab: PARTIAL  # UI wired; Playwright E2E deferred to phase-6 smoke
+  p1_e5_provider_pill_updates: VERIFIED     # copilot-provider-pill testid present; logic unchanged
+
+# ── Advancing ────────────────────────────────────────────────────────────────
+
+notes: >
+  svelte-check 8 pre-existing errors (CdpDomSnapshotResponse, SettingsOverlay 'dev' tab,
+  beforeAll in two test files) are unchanged from baseline. 0 new errors introduced.
+  Monaco jsdom stub added to vitest.config.ts resolve.alias for unit env — browser env
+  unaffected (stub not applied there).

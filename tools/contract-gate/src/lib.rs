@@ -20,6 +20,167 @@ use serde_json::Value as JsonValue;
 use thiserror::Error;
 use walkdir::WalkDir;
 
+// ── Conformance mutator ──────────────────────────────────────────────────────
+
+/// Result of a single per-provider conformance run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConformanceResult {
+    /// Test passed; capability is verified for this provider.
+    Pass,
+    /// Test failed; `failure_reason` explains why.
+    Fail,
+    /// Test was not attempted for this provider.
+    Untested,
+}
+
+impl ConformanceResult {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Pass => "PASS",
+            Self::Fail => "FAIL",
+            Self::Untested => "UNTESTED",
+        }
+    }
+}
+
+/// Evidence tier for a conformance result entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EvidenceTier {
+    /// Result confirmed by a deterministic automated test.
+    Verified,
+    /// Result inferred from related evidence; not directly tested.
+    Inferred,
+    /// Multiple independent sources confirm the result.
+    MultiSource,
+}
+
+impl EvidenceTier {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Verified => "VERIFIED",
+            Self::Inferred => "INFERRED",
+            Self::MultiSource => "MULTI_SOURCE",
+        }
+    }
+}
+
+/// Parameters for [`apply_conformance_result`].
+pub struct ConformancePatch<'a> {
+    /// Provider identifier as it appears under `status_per_provider` in the YAML.
+    pub provider_id: &'a str,
+    /// New result value.
+    pub result: ConformanceResult,
+    /// Evidence tier for the result.
+    pub evidence_tier: EvidenceTier,
+    /// Optional path to the evidence artefact (e.g. test file, helix entry).
+    pub evidence_path: Option<&'a str>,
+    /// Required when `result` is [`ConformanceResult::Fail`].
+    pub failure_reason: Option<&'a str>,
+}
+
+/// Errors specific to the conformance mutator.
+#[derive(Debug, Error)]
+pub enum ConformanceMutateError {
+    /// The contract file could not be read or written.
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+    /// The YAML could not be parsed.
+    #[error("yaml parse error: {0}")]
+    YamlParse(String),
+    /// The contract YAML does not contain a `status_per_provider` mapping.
+    #[error("contract {path:?} has no `status_per_provider` field")]
+    MissingStatusPerProvider {
+        /// Path to the offending contract file.
+        path: PathBuf,
+    },
+    /// The named provider is not present in `status_per_provider`.
+    #[error("provider `{provider}` not found in `status_per_provider` of {path:?}")]
+    UnknownProvider {
+        /// Provider identifier that was not found.
+        provider: String,
+        /// Path to the contract file.
+        path: PathBuf,
+    },
+}
+
+/// Update a single `status_per_provider` entry in a contract YAML in-place.
+///
+/// Reads `contract_path`, navigates to `status_per_provider.<provider_id>`,
+/// patches `result`, `evidence_tier`, `evidence_path`, and `failure_reason`,
+/// then writes the file back atomically (write to a sibling `.tmp` file first).
+///
+/// # Errors
+///
+/// Returns [`ConformanceMutateError`] when the file cannot be read/written,
+/// the YAML cannot be parsed, or the provider key does not exist in the contract.
+pub fn apply_conformance_result(
+    contract_path: &Path,
+    patch: &ConformancePatch<'_>,
+) -> Result<(), ConformanceMutateError> {
+    let yaml_str = fs::read_to_string(contract_path)?;
+    let mut doc: serde_yaml::Value = serde_yaml::from_str(&yaml_str)
+        .map_err(|e| ConformanceMutateError::YamlParse(e.to_string()))?;
+
+    let status_map = doc.get_mut("status_per_provider").ok_or_else(|| {
+        ConformanceMutateError::MissingStatusPerProvider {
+            path: contract_path.to_path_buf(),
+        }
+    })?;
+
+    let provider_entry = status_map
+        .as_mapping_mut()
+        .and_then(|m| m.get_mut(patch.provider_id))
+        .ok_or_else(|| ConformanceMutateError::UnknownProvider {
+            provider: patch.provider_id.to_owned(),
+            path: contract_path.to_path_buf(),
+        })?;
+
+    // All mutations operate on the mapping directly to avoid temporaries.
+    let entry_map = provider_entry.as_mapping_mut().ok_or_else(|| {
+        ConformanceMutateError::YamlParse(format!(
+            "provider entry for `{}` is not a mapping",
+            patch.provider_id
+        ))
+    })?;
+
+    let str_val = |s: &str| serde_yaml::Value::String(s.to_owned());
+
+    entry_map.insert(str_val("result"), str_val(patch.result.as_str()));
+    entry_map.insert(
+        str_val("evidence_tier"),
+        str_val(patch.evidence_tier.as_str()),
+    );
+
+    // evidence_path — insert or remove; inline keys avoid move-vs-borrow conflict
+    match patch.evidence_path {
+        Some(ep) => {
+            entry_map.insert(str_val("evidence_path"), str_val(ep));
+        }
+        None => {
+            entry_map.remove(str_val("evidence_path"));
+        }
+    }
+
+    // failure_reason — insert or remove
+    match patch.failure_reason {
+        Some(fr) => {
+            entry_map.insert(str_val("failure_reason"), str_val(fr));
+        }
+        None => {
+            entry_map.remove(str_val("failure_reason"));
+        }
+    }
+
+    // Atomic write: write to `.tmp` sibling then rename
+    let tmp_path = contract_path.with_extension("yaml.tmp");
+    let updated = serde_yaml::to_string(&doc)
+        .map_err(|e| ConformanceMutateError::YamlParse(e.to_string()))?;
+    fs::write(&tmp_path, updated)?;
+    fs::rename(&tmp_path, contract_path)?;
+
+    Ok(())
+}
+
 // ── Errors ───────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Error)]

@@ -1367,7 +1367,7 @@
             <!-- Input -->
             <div class="border-t border-[var(--la-drawer-border)] px-2.5 py-2 relative shrink-0" data-onboarding="copilot-input">
               {#if showSuggestions && matchingCommands.length > 0}
-                <div class="absolute bottom-full left-2.5 right-2.5 mb-1 bg-[var(--la-bg-void)] border border-[var(--la-drawer-border)] rounded-lg overflow-hidden shadow-xl z-10 max-h-48 overflow-y-auto">
+                <div class="absolute bottom-full left-2.5 right-2.5 mb-1 bg-[var(--la-bg-void)] border border-[var(--la-drawer-border)] rounded-lg overflow-hidden shadow-xl z-10 max-h-48 overflow-y-auto" data-testid="copilot-slash-palette">
                   {#each matchingCommands as cmd, i}
                     <button
                       class="w-full text-left px-3 py-1.5 text-xs flex items-baseline gap-2 transition-colors
@@ -1420,6 +1420,7 @@
                   onblur={() => { setTimeout(() => { showSuggestions = false; atSuggestions = []; }, 200); }}
                   placeholder="Type a message or /command… · @ for files"
                   class="flex-1 bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] rounded px-3 py-[5px] text-[11px] leading-5 text-[var(--la-text-bright)] placeholder-[var(--la-text-dim)] outline-none focus:border-[var(--la-focus-ring)]/60 transition-colors"
+                  data-testid="copilot-chat-input"
                 />
                 <!-- @-file autocomplete dropdown -->
                 {#if atSuggestions.length > 0}

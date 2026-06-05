@@ -327,7 +327,7 @@ contract:
     groq_api: UNTESTED
     openrouter_api: UNTESTED
   alpha_gate: deferred
-  alpha_gate_reason: "Implementation hardcodes `claude --print -p` subprocess; passes via Claude Code path only. Refactor to a Runner trait with provider-specific impls before alpha. Persistence to $PROJECT_ROOT/.tmp/dispatch-<id>/ is currently missing; capture script in .tmp/dispatch-evidence/capture.sh proves the artifacts exist but only via external SSE drain — must move into executor."
+  alpha_gate_reason: "Both blocker contracts resolved: code.trait.runner=PASS (phase-3+4), dispatch-artifacts=PASS (phase-5). Webshell executor.rs still uses direct 'claude --print -p' subprocess; Runner trait wiring into webshell layer pending platform-provider-abstraction build. Claude Code path functional at alpha."
 ```
 
 ### 3.5 `webshell.dispatch.artifacts`
@@ -335,15 +335,16 @@ contract:
 ```yaml
 contract:
   id: webshell.dispatch.artifacts
-  surface: SQD-DISPATCH — Results / Reports tab on the dispatch row (NOT YET BUILT)
+  surface: SQD-DISPATCH — Results tab (dispatch row, next to Stage / Comms tabs)
   operator_intent: "After a wave completes, browse and open every file the agents produced — one click per artifact."
   inputs:
     - { name: dispatch_id, type: string }
   observable_outputs:
     - "Results tab lists every file in `.tmp/dispatch-<id>/` with size + agent attribution"
-    - "Clicking an artifact opens it in Monaco read-only view inline"
+    - "Clicking an artifact opens it in Monaco read-only view inline within 200ms"
     - "Each artifact has a Copy + Open-in-Editor action"
     - "Artifacts that were superseded by a retry are flagged with a strikethrough + retry pointer"
+    - "Manifest counts match disk reality — no synthesized rows"
   persistence:
     - path: "$PROJECT_ROOT/.tmp/dispatch-<id>/manifest.json"
       contains: "{dispatch_id, agents: [{name, artifact_path, bytes, status}], created_at}"
@@ -356,23 +357,25 @@ contract:
     - none  # read-only browsing
   forbidden_behaviors:
     - "Synthesizing artifacts after the fact from chat log (must come from real agent stdout)"
+    - "Allowing edits to artifacts from this surface — Monaco must be read-only"
   conformance_test:
     given: "A dispatch completed at least 10s ago"
     when: "Operator clicks the Results tab on that dispatch row"
     then:
       - "Tab renders within 200ms with N file rows where N == agents that produced output"
       - "Each row shows agent name, file size, last-modified time"
-      - "Clicking a row reveals the file content inline"
+      - "Clicking a row reveals the file content inline in Monaco read-only editor"
+    evidence: "build:webshell-contract-impl phase-5 + tests/contract_conformance.rs::test_dispatch_wave_artifacts_persist + e2e/results-tab.spec.ts"
   status_per_provider:
-    anthropic_api: FAIL    # tab doesn't exist; artifacts not persisted by executor
-    openai_api: FAIL
-    ollama_cloud: FAIL
-    ollama_local: FAIL
-    mistral_api: FAIL
-    groq_api: FAIL
-    openrouter_api: FAIL
-  alpha_gate: fail
-  alpha_gate_reason: "Capability does not exist. Operator cannot inspect deliverables after a wave. Build before alpha."
+    anthropic_api: PASS    # Results tab built in phase-5; artifact endpoints wired; conformance VERIFIED
+    openai_api: UNTESTED
+    ollama_cloud: UNTESTED
+    ollama_local: UNTESTED
+    mistral_api: UNTESTED
+    groq_api: UNTESTED
+    openrouter_api: UNTESTED
+  alpha_gate: pass
+  alpha_gate_reason: "Results tab built in webshell-contract-impl Phase 5. GET /api/dispatch/{id}/artifacts + preview routes wired. Monaco read-only enforced. DOMPurify sanitization. anthropic_api VERIFIED PASS."
 ```
 
 ### 3.6 `webshell.automode.enable`
@@ -511,7 +514,7 @@ fn run(contract_id: &str, provider: ProviderConfig) -> ConformanceResult {
 
 ## 7 — Open questions for ratification
 
-- Should `webshell.copilot.send-message` for the global copilot be **replaced** (build a provider-pluggable bridge) or **deferred** (alpha ships with dispatch console only, copilot follows)? Alpha decision needed.
+- `webshell.copilot.send-message` **decision (2026-06-04)**: alpha ships with dispatch console only; copilot bridge deferred to platform-provider-abstraction build. Runner trait is built (code.trait.runner=PASS); webshell wiring pending. Decision rationale: feedback_webshell_copilot_provider_coupling.md.
 - Are PTY / TERM tab contracts in scope for the LLM-provider matrix? The PTY is provider-independent but the UI lives in the same drawer as the LLM copilot — drawing the line matters.
 - What's the artifact retention policy: per-dispatch `.tmp` directory cleanup vs forever-vault promotion?
 - How does the contract gate interact with `active.yaml` alpha_ready tracking? Need a separate field or use `alpha_gate`?

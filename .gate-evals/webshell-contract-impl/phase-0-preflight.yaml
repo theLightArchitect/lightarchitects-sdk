@@ -1,0 +1,28 @@
+schema_version: 1
+gate: phase
+scope: phase
+scored_by: "/BUILD Step 3 + manual"
+scored_at: 2026-06-04T15:00:00-07:00
+build_id: webshell-contract-impl
+phase_id: phase-0-preflight
+overall_verdict: pass
+dimensions:
+  G1_git_fetch_main: pass
+  G2_local_eq_github_main: pass_with_note  # local 10 commits ahead; github IS ancestor (unpushed session canon work)
+  G3_cargo_check_workspace: pass            # 29.29s clean
+  G4_make_quality: pass                     # verified clean ~30 min before /BUILD invocation
+  G5_branch_worktree_no_collision: pass
+  G6_active_yaml_entry: pass                # created at /BUILD Step 6
+  G7_parent_program: n/a
+  G8_disk_free_10gb: pass                   # 62 GB free
+  primary_on_main: pass
+  rubric_step_1_5: pass
+canon_xli_a_gate_predicate:
+  diagram_present: pending     # set at Phase 1 [A] gate
+  drift_clean: pending
+  checklist_current: pending
+notes:
+  - "G2 reclassified: local ahead-of-github, github IS ancestor (verified via git merge-base --is-ancestor)"
+  - "make quality clean confirmed earlier this session: REAL_EXIT=0, 235/235 contracts validate"
+  - "arch CLI binary unavailable as standalone; Canon XLI explicitly says diagrams are Phase 1 design inputs (diagrams_authored_phase: 1), not Phase 0 generation outputs — deferred per doctrine"
+gate_review_jsonl_emitted: true

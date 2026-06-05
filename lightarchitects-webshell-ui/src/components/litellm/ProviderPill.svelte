@@ -28,7 +28,7 @@
   class:hdr-provider-pill--live={display().configured}
   {onclick}
   title="Provider: {$providerConfig?.model ?? 'not configured'} · click to configure"
-  data-testid="provider-pill"
+  data-testid="copilot-provider-pill"
 >
   <span class="pp-dot" class:pp-dot--live={display().configured}></span>
   <span class="pp-text">

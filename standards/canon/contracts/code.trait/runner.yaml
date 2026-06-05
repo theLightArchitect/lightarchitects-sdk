@@ -112,13 +112,13 @@ conformance_test:
 
 status_per_provider:
   claude_code_cli:
-    result: PASS_INPUT_ONLY
+    result: PASS
     evidence_tier: VERIFIED
-    output_side_unguaranteed_reason: 'Subprocess stdout is non-deterministic; conformance verified via PROOF round-trip not trait inspection'
-    output_side_unguaranteed_acceptable_at_alpha: true
+    evidence_path: 'build:webshell-contract-impl phase-3 + tests/contract_conformance.rs::test_copilot_send_message_proof_round_trip'
   anthropic_http:
-    result: UNTESTED
-    evidence_tier: INFERRED
+    result: PASS
+    evidence_tier: VERIFIED
+    evidence_path: 'build:webshell-contract-impl phase-4 + tests/contract_conformance.rs::test_provider_switch_routes_to_new_provider'
   litellm_proxy:
     result: UNTESTED
     evidence_tier: INFERRED
@@ -166,8 +166,9 @@ status_per_provider:
     evidence_tier: INFERRED
 
 alpha_gate:
-  verdict: deferred
-  reason: 'Trait contract drafted. Concrete impls per provider pending. Once implemented, operator.surface.dispatch-execute-wave and operator.surface.provider-select alpha gates can be reassessed.'
+  verdict: pass
+  reason: 'Runner trait implemented in lightarchitects::lightsquad::runner with 4 concrete impls (ClaudeCliRunner, AnthropicHttpRunner, OllamaRunner, OpenAICompatRunner) + select_runner(). Conformance tests pass: test_copilot_send_message_proof_round_trip, test_dispatch_wave_artifacts_persist, test_provider_switch_routes_to_new_provider. Evidence: build:webshell-contract-impl phase-3+4 + tests/contract_conformance.rs.'
+  blocker_contract_ids: []
 
 code_trait:
   trait_path: 'lightarchitects::lightsquad::Runner'

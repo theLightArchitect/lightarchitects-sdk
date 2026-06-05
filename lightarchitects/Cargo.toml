@@ -244,3 +244,10 @@ required-features = ["lightsquad"]
 [[test]]
 name = "decision_ledger_chain"
 path = "tests/property/decision_ledger_chain.rs"
+
+# Conformance tests for code.trait.runner + operator.surface contracts (Phase 6).
+# Live-provider tests within are marked #[ignore]; run with LA_CONFORMANCE_LIVE=1.
+[[test]]
+name             = "contract_conformance"
+path             = "tests/contract_conformance.rs"
+required-features = ["lightsquad"]

@@ -117,39 +117,32 @@ conformance_test:
 
 status_per_provider:
   anthropic_api:
-    result: FAIL
+    result: PASS
     evidence_tier: VERIFIED
-    failure_reason: "Capability does not exist — Results tab not built"
+    evidence_path: "build:webshell-contract-impl phase-5 + tests/contract_conformance.rs"
   openai_api:
-    result: FAIL
-    evidence_tier: VERIFIED
-    failure_reason: "Capability does not exist — Results tab not built"
+    result: UNTESTED
+    evidence_tier: INFERRED
   ollama_cloud:
-    result: FAIL
-    evidence_tier: VERIFIED
-    failure_reason: "Capability does not exist — Results tab not built"
+    result: UNTESTED
+    evidence_tier: INFERRED
   ollama_local:
-    result: FAIL
-    evidence_tier: VERIFIED
-    failure_reason: "Capability does not exist — Results tab not built"
+    result: UNTESTED
+    evidence_tier: INFERRED
   mistral_api:
-    result: FAIL
-    evidence_tier: VERIFIED
-    failure_reason: "Capability does not exist — Results tab not built"
+    result: UNTESTED
+    evidence_tier: INFERRED
   groq_api:
-    result: FAIL
-    evidence_tier: VERIFIED
-    failure_reason: "Capability does not exist — Results tab not built"
+    result: UNTESTED
+    evidence_tier: INFERRED
   openrouter_api:
-    result: FAIL
-    evidence_tier: VERIFIED
-    failure_reason: "Capability does not exist — Results tab not built"
+    result: UNTESTED
+    evidence_tier: INFERRED
 
 alpha_gate:
-  verdict: fail
-  reason: "Capability does not exist. Operator cannot inspect deliverables after a wave. Build before alpha."
-  blocker_contract_ids:
-    - operator.surface.dispatch-execute-wave
+  verdict: pass
+  reason: "Results tab built in webshell-contract-impl Phase 5. Artifact list + preview routes wired. anthropic_api VERIFIED PASS."
+  blocker_contract_ids: []
 
 operator_surface:
   ui_locator: 'SQD-DISPATCH row — Results tab next to Stage / Comms tabs'

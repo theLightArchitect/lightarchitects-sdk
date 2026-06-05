@@ -1,0 +1,14 @@
+graph TB
+  OP[Operator] -->|browser| UI[lightarchitects-webshell-ui<br/>Svelte 5 SPA]
+  UI -->|HTTP/SSE| BE[lightarchitects-webshell<br/>Rust binary]
+  UI -->|WebSocket| BE
+  BE -->|stdio MCP| GW[lightarchitects-gateway<br/>MCP server]
+  BE -->|Runner trait| LSQ[lightsquad orchestrator]
+  LSQ -->|LlmAgentProvider| PROV[Provider impls]
+  PROV -->|HTTPS| ANTH[Anthropic HTTP]
+  PROV -->|subprocess| CLI[Claude CLI]
+  PROV -->|HTTP| OLLAMA[Ollama Cloud/Local]
+  PROV -->|HTTP| OAC[OpenAI-compat]
+  BE -.->|AYIN spans| AYIN[AYIN :3742]
+  LSQ -.->|file writes| TMP["$PROJECT_ROOT/.tmp/dispatch-&lt;id&gt;/"]
+  UI -.->|GET manifest| TMP

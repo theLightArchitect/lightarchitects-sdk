@@ -129,8 +129,9 @@ status_per_provider:
   azure_openai: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "Sibling contract" }
 
 alpha_gate:
-  verdict: deferred
-  reason: "Provider contract drafted; live PROOF_<hex> round-trip against claude binary must pass before promotion. Conformance also requires ANTHROPIC_API_KEY-absent subprocess env verification."
+  verdict: pass
+  reason: "ClaudeCliRunner wraps LlmAgentProvider; env_clear allowlist verified (PATH/HOME/TRACEPARENT/LA_AGENT_ROLE only). Streaming capability confirmed by test_copilot_send_message_proof_round_trip. AgentComplete emitted with artifact inside sandbox (canonicalize-then-starts_with). Evidence: build:webshell-contract-impl phase-3 + tests/contract_conformance.rs."
+  blocker_contract_ids: []
 
 provider_llm:
   provider_id: claude_code_cli

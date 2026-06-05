@@ -31,6 +31,7 @@
   import EventStream, { type StreamRow } from '$lib/../components/EventStream.svelte';
   import DispatchCLI from '$lib/../components/cli/DispatchCLI.svelte';
   import HistoryRail from '$lib/../components/dispatch/HistoryRail.svelte';
+  import ResultsTab from '$lib/../components/exec/ResultsTab.svelte';
 
   // ── Props (forwarded from Dispatch.svelte route shell) ─────────────────────
 
@@ -57,6 +58,8 @@
   let elapsedMs = $state<number | undefined>(undefined);
   let selectedAgent = $state<DomainAgent | null>(null);
   let showAgentValidation = $state(false);
+  // Tab view within the Execution Stage — 'stage' | 'comms' | 'results'
+  let activeView = $state<'stage' | 'comms' | 'results'>('stage');
 
   let stopStream: (() => void) | null = null;
   let classifyTimer: ReturnType<typeof setTimeout> | null = null;
@@ -439,7 +442,7 @@
       />
 
       {#if classification && task.trim().length >= 8}
-        <div class="classifier-badge">
+        <div class="classifier-badge" data-testid="dispatch-classify-chip-row">
           {#each classification.agents as agent}
             <span
               class="cls-pill"
@@ -535,6 +538,7 @@
           class:dispatch-armed={selectedAgents.length > 0 && task.trim().length > 0 && !isLive}
           disabled={selectedAgents.length === 0 || !task.trim()}
           onclick={() => dispatch(task, dry, attachments, toolConfig)}
+          data-testid="dispatch-execute-button"
         >
           <span>DISPATCH</span>
           {#if selectedAgents.length > 0 && task.trim().length > 0 && !isLive}
@@ -560,6 +564,32 @@
         <button class="vt-btn vt-active" disabled title="RAILS — horizontal timeline view; one row per agent (current)">RAILS</button>
         <button class="vt-btn" disabled title="+ DAG — dependency graph overlay; shows inter-agent task edges (Sprint 3)">+ DAG</button>
       </div>
+      {#if isTerminalPhase}
+        <div class="stage-tabs" role="tablist" aria-label="Stage views">
+          <button
+            role="tab"
+            class="stage-tab"
+            class:stage-tab-active={activeView === 'stage'}
+            aria-selected={activeView === 'stage'}
+            onclick={() => { activeView = 'stage'; }}
+          >STAGE</button>
+          <button
+            role="tab"
+            class="stage-tab"
+            class:stage-tab-active={activeView === 'comms'}
+            aria-selected={activeView === 'comms'}
+            onclick={() => { activeView = 'comms'; }}
+          >COMMS</button>
+          <button
+            role="tab"
+            class="stage-tab"
+            class:stage-tab-active={activeView === 'results'}
+            aria-selected={activeView === 'results'}
+            onclick={() => { activeView = 'results'; }}
+            data-testid="dispatch-artifacts-tab"
+          >RESULTS</button>
+        </div>
+      {/if}
     </div>
 
     {#if scanlineActive}
@@ -568,23 +598,29 @@
       {/key}
     {/if}
 
-    <div class="rails-wrap" data-onboarding="dispatch-live-grid">
-      <LiveAgentGrid
-        agents={selectedAgents}
-        {agentStates}
-        selectedAgent={selectedAgent}
-        onRetry={(agent) => { /* retry wired via dispatch */ void agent; }}
-        onSelect={(agent) => { selectedAgent = agent; }}
-      />
-      {#if selectedAgent !== null}
-        <AgentDetail
-          agent={selectedAgent}
-          live={agentStates.get(selectedAgent)}
-          onClose={() => { selectedAgent = null; }}
-          onRetry={(agent) => { selectedAgent = null; void agent; }}
+    {#if activeView === 'results' && dispatchId}
+      <div class="results-wrap">
+        <ResultsTab {dispatchId} />
+      </div>
+    {:else}
+      <div class="rails-wrap" data-onboarding="dispatch-live-grid">
+        <LiveAgentGrid
+          agents={selectedAgents}
+          {agentStates}
+          selectedAgent={selectedAgent}
+          onRetry={(agent) => { /* retry wired via dispatch */ void agent; }}
+          onSelect={(agent) => { selectedAgent = agent; }}
         />
-      {/if}
-    </div>
+        {#if selectedAgent !== null}
+          <AgentDetail
+            agent={selectedAgent}
+            live={agentStates.get(selectedAgent)}
+            onClose={() => { selectedAgent = null; }}
+            onRetry={(agent) => { selectedAgent = null; void agent; }}
+          />
+        {/if}
+      </div>
+    {/if}
   </section>
 
   <!-- ── Row 5: CLI quick-dispatch ── -->
@@ -607,6 +643,43 @@
     color: var(--la-text-bright);
     overflow: hidden;
     font-family: var(--la-font-chrome);
+  }
+
+  /* ── Stage tabs (STAGE / COMMS / RESULTS) ── */
+  .stage-tabs {
+    display: flex;
+    gap: 2px;
+    align-items: center;
+  }
+
+  .stage-tab {
+    background: none;
+    border: 1px solid var(--la-border-dim, #222);
+    color: var(--la-text-mute, #555);
+    font-family: var(--la-font-chrome, monospace);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    padding: 2px 8px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: color 80ms, border-color 80ms;
+  }
+
+  .stage-tab:hover { color: var(--la-text-dim, #888); border-color: var(--la-border, #333); }
+
+  .stage-tab-active {
+    color: var(--la-text-bright);
+    border-color: var(--la-focus-ring, #FFD700);
+    background: rgba(255, 215, 0, 0.06);
+  }
+
+  /* Results panel — fills the rail-stage row exactly like rails-wrap */
+  .results-wrap {
+    flex: 1;
+    overflow: hidden;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
 
   /* ── Row 1: header ── */

@@ -1,0 +1,30 @@
+sequenceDiagram
+  participant OP as Operator
+  participant UI as Dispatch.svelte
+  participant BE as webshell binary
+  participant LSQ as lightsquad
+  participant RT as Runner trait
+  participant PROV as Provider
+  participant AYIN as AYIN
+  OP->>UI: Click provider pill
+  UI->>UI: Open drawer (provider-select)
+  OP->>UI: Save anthropic-http + model
+  UI->>BE: POST /api/copilot/provider {base_url, model, api_key}
+  BE->>BE: SSRF guard + keychain store
+  BE-->>UI: 200 OK
+  OP->>UI: Type task + Dispatch
+  UI->>BE: POST /api/build/{id}/dispatch
+  BE->>LSQ: dispatch_wave(spec)
+  LSQ->>RT: Runner::run(agent_spec)
+  RT->>PROV: LlmAgentProvider::spawn
+  PROV-->>RT: AgentResponse
+  RT->>AYIN: span dispatch.agent
+  RT-->>LSQ: AgentArtifact{path}
+  LSQ-->>BE: WaveOutcome
+  BE->>BE: write .tmp/dispatch-<id>/agent-*.md
+  BE-->>UI: SSE event wave.complete
+  UI->>UI: Switch to Results tab
+  OP->>UI: Click artifact row
+  UI->>BE: GET /api/dispatch/{id}/artifacts/agent-engineer.md
+  BE-->>UI: file content
+  UI->>UI: Render in Monaco read-only

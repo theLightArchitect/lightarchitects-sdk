@@ -53,6 +53,13 @@ const SONNET_OUTPUT_USD_PER_M: f64 = 15.0;
 
 // ── Provider struct ─────────────────────────────────────────────────────────────
 
+/// Default binary name resolved via `$PATH` for [`ClaudeCliProvider`].
+///
+/// Defined here (not in `lightsquad/`) so supervisors can reference it without
+/// introducing a string literal binary-path default inside the lightsquad module
+/// boundary (Phase 4 exit criterion).
+pub const CLAUDE_CLI_DEFAULT_BINARY: &str = "claude";
+
 /// Spawns `claude -p` as a subprocess.
 ///
 /// Authentication is inherited from the host session (OAuth / Claude Max or
@@ -141,7 +148,7 @@ impl Default for ClaudeCliProvider {
     fn default() -> Self {
         Self {
             default_model: "claude-sonnet-4-6".to_owned(),
-            claude_binary: PathBuf::from("claude"),
+            claude_binary: PathBuf::from(CLAUDE_CLI_DEFAULT_BINARY),
             rate_table_version: "2026-05-14".to_owned(),
             api_key: None,
             permission_matrix: None,

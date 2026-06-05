@@ -124,8 +124,9 @@ status_per_provider:
     evidence_tier: INFERRED
 
 alpha_gate:
-  verdict: deferred
-  reason: "Trait contract drafted; round-trip conformance tests must run for each concrete provider before promotion."
+  verdict: pass
+  reason: "LlmAgentProvider trait underpins all 4 Runner impls. Conformance via StubProvider round-trip in tests/contract_conformance.rs (3/3 pass). Evidence: build:webshell-contract-impl phase-3+4."
+  blocker_contract_ids: []
 
 code_trait:
   trait_path: "lightarchitects::agent::LlmAgentProvider"

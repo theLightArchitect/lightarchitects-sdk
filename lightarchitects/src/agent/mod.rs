@@ -116,7 +116,7 @@ pub mod http;
 #[cfg(feature = "agent-cli")]
 mod claude;
 #[cfg(feature = "agent-cli")]
-pub use claude::ClaudeCliProvider;
+pub use claude::{CLAUDE_CLI_DEFAULT_BINARY, ClaudeCliProvider};
 
 #[cfg(feature = "agent-cli")]
 pub mod permissions;
