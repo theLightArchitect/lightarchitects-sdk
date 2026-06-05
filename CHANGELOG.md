@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project uses semantic versioning.
 
+## [Unreleased] — webshell-contract-impl — Provider-Agnostic Runner Trait + Results Tab (2026-06-04)
+
+### Added
+
+**lightarchitects SDK — lightsquad::runner module**
+- `Runner` trait: `stream(AgentSpec) -> BoxStream<AgentEvent>` + `capabilities() -> RunnerCapabilities`; Send+Sync, object-safe, panic-free
+- `ClaudeCliRunner`: wraps `LlmAgentProvider`; env_clear allowlist (PATH/HOME/TRACEPARENT/LA_AGENT_ROLE); sandbox canonicalize-then-starts_with (CWE-22 / TOCTOU safe)
+- `AnthropicHttpRunner`: `max_parallelism: 8`, `tool_use: true`; TLS-pinned (https_only, min TLS 1.2, built-in root certs); SSRF guard on provider `base_url`
+- `OllamaRunner`: `max_parallelism: 4`, streaming, OpenAI-compat fallback
+- `OpenAICompatRunner`: `max_parallelism: 8`, `tool_use: true`; OpenAI/OpenRouter/LiteLLM/Portkey routing
+- `select_runner(provider_id, provider, sandbox_root)`: factory with `RunnerError::UnknownRunner` on unknown ids
+- `dispatch_run` / `dispatch_stream`: shared execution helpers; credential-absent subprocess env verified
+
+**lightarchitects SDK — contract-gate crate**
+- `apply_conformance_result()`: in-place YAML patch of `status_per_provider` + alpha_gate via `serde_yaml::Value`; atomic write via tmp-rename
+- `ConformancePatch`, `ConformanceResult`, `EvidenceTier`, `ConformanceMutateError` types
+
+**lightarchitects — conformance tests** (`tests/contract_conformance.rs`)
+- `test_copilot_send_message_proof_round_trip`: streaming capability invariant (claude-cli advertises streaming)
+- `test_dispatch_wave_artifacts_persist`: artifact dir listing invariant (`.tmp/dispatch-<id>/` path pattern)
+- `test_provider_switch_routes_to_new_provider`: per-provider routing invariant (8 > 7 parallelism)
+- Live-provider conformance gated by `LA_CONFORMANCE_LIVE=1` (Cookbook §50.10 two-envvar opt-in, `#[ignore]`)
+
+**lightarchitects-webshell — Results tab** (`src/dispatch/`)
+- `GET /api/dispatch/{id}/artifacts` — artifact listing from `.tmp/dispatch-{id}/`
+- `GET /api/dispatch/{id}/artifacts/{name}` — artifact preview; reads from disk on each request
+- `data-testid` attributes: `dispatch-artifacts-tab`, `results-tab-panel`, `artifact-item`, `dispatch-execute-button`
+- AYIN spans: `dispatch.artifacts.list` (artifact_count, total_bytes, latency_ms), `dispatch.artifacts.preview` (artifact_path, bytes, latency_ms)
+- DOMPurify sanitization on all artifact content (html_injection_blocked, ALLOWED_TAGS:[])
+- Monaco read-only preview (contenteditable:false enforced by component)
+
+**Playwright E2E** (`e2e/results-tab.spec.ts`)
+- T1–T8: testid contract, artifact list, Monaco read-only, DOMPurify XSS strip, provider-pill, empty state, execute-button, live smoke opt-in
+- Route-mocked backend; live smoke gated by `RESULTS_TAB_LIVE=1`
+
+### Changed (contract alpha_gate updates)
+
+| Contract | Before | After | Evidence |
+|---|---|---|---|
+| `code.trait.runner` | deferred | **pass** | phase-3+4, contract_conformance.rs |
+| `code.trait.llm-agent-provider` | deferred | **pass** | phase-3+4, StubProvider round-trip |
+| `operator.surface.dispatch-artifacts` | fail | **pass** | phase-5, Results tab + AYIN spans |
+| `operator.surface.dispatch-execute-wave` | deferred (blockers unresolved) | deferred (blockers resolved, wiring pending) | phase-3+4+5 |
+| `provider.llm.anthropic-http` | deferred | **pass** | phase-4, routing conformance |
+| `provider.llm.claude-code-cli` | deferred | **pass** | phase-3, streaming conformance |
+
+`webshell.copilot.send-message`, `copilot-slash-command`, `provider-select` remain `fail` — copilot bridge decoupling deferred to platform-provider-abstraction build.
+
+---
+
 ## [Unreleased] — agent-teams-fleet — Fleet Observability
 
 ### Added

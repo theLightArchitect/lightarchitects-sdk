@@ -164,10 +164,8 @@ status_per_provider:
 
 alpha_gate:
   verdict: deferred
-  reason: "Implementation hardcodes 'claude --print -p' subprocess; passes via Claude Code path only. Refactor to Runner trait with provider-specific impls before alpha. Per-agent artifact persistence currently provided via external capture script; must move into executor."
-  blocker_contract_ids:
-    - code.trait.runner
-    - operator.surface.dispatch-artifacts
+  reason: "Both blocker contracts resolved (code.trait.runner=PASS phase-3+4, dispatch-artifacts=PASS phase-5). Webshell dispatch/executor.rs still uses direct 'claude --print -p' subprocess — Runner trait wiring into webshell layer pending platform-provider-abstraction build. Claude Code path functional; multi-provider dispatch remains deferred."
+  blocker_contract_ids: []
 
 operator_surface:
   ui_locator: 'SQD-DISPATCH panel — Dispatch button + Cmd+Enter shortcut'
