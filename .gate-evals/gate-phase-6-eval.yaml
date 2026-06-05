@@ -1,0 +1,141 @@
+gate: "phase-6"
+codename: webshell-contract-impl
+phase: phase-6-conformance-tests-status-mutations
+dimensions: [A, S, Q, C, O, P, K, D, T, R]
+evaluated_at: "2026-06-04"
+evaluator: "Claude (BUILD orchestrator)"
+verdict: PASS
+
+dimension_results:
+  A_architecture:
+    result: PASS
+    notes: >
+      apply_conformance_result() follows the existing contract-gate architecture:
+      in-place YAML patch via serde_yaml::Value::as_mapping_mut(), atomic write
+      via .yaml.tmp rename. StubProvider in contract_conformance.rs correctly
+      reproduces the minimum interface (name/spawn/capabilities/estimate_cost)
+      without #[cfg(test)] — integration test crates compile as separate units.
+      ConformancePatch / ConformanceResult / EvidenceTier types are correctly
+      scoped to the contract-gate crate (not leaked into lightarchitects SDK).
+      dispatch-artifacts.yaml status_per_provider mutations are structurally
+      correct: anthropic_api=PASS/VERIFIED (claude-cli bridge is the only tested
+      path); all others=UNTESTED/INFERRED (artifact endpoints are provider-agnostic
+      but live testing has not been performed with those providers).
+
+  S_security:
+    result: PASS
+    notes: >
+      No new attack surface introduced in Phase 6. apply_conformance_result()
+      operates on local YAML files (contract schema), not user-facing endpoints.
+      Atomic write (tmp-rename) prevents partial YAML corruption.
+      StubProvider is test-only (lives in tests/); does not expose credentials.
+      Playwright E2E spec uses route-mocking (no live provider credential needed).
+      AYIN span metadata constraints unchanged — artifact_path logged as relative
+      path (not absolute), no credential values in span metadata.
+      Security constraint invariants from Phase 3-5 remain: G1 sanitization,
+      SSRF guards on AnthropicHttpRunner, env_clear allowlist in ClaudeCliRunner,
+      monaco_read_only_only enforcement unchanged.
+
+  Q_quality:
+    result: PASS
+    notes: >
+      cargo fmt --check: PASS (pre-commit hook). cargo clippy -D warnings: PASS.
+      Clippy fixes applied: #[allow(clippy::panic)] on test panic! arm,
+      uninlined_format_args corrected to {path:?} inline form.
+      required-features = ["lightsquad"] added to [[test]] entry — consistent
+      with ollama_* tests; prevents default-feature-set compile error.
+      cargo test --features lightsquad --test contract_conformance: 3 passed, 1 ignored.
+      cargo test -p lightarchitects --lib: 1305 passed.
+      cargo test -p lightarchitects-webshell --lib: 880 passed (Phase 5 baseline).
+      pnpm test:run: 842 passed (48 test files).
+      cargo run -p contract-gate -- --contracts-dir standards/canon/contracts: 235/235.
+
+  C_canon:
+    result: PASS
+    notes: >
+      No .unwrap()/.expect() in production code paths.
+      Cookbook §50.10 two-envvar opt-in pattern: live conformance test gated by
+      LA_CONFORMANCE_LIVE=1 + ANTHROPIC_API_KEY, marked #[ignore]. Consistent
+      with existing ollama_real_codegen.rs pattern.
+      No panic!() in production paths; panic! in test arm is annotated
+      #[allow(clippy::panic)] with WHY implied by test context.
+      No nested worktrees or feat/ branches. Pre-commit hook passed on eb8e921.
+      dispatch-artifacts.yaml alpha_gate.verdict=pass correctly reflects that
+      anthropic_api path is VERIFIED (conformance tests + Phase 5 Results tab).
+
+  O_operations:
+    result: PASS
+    notes: >
+      No operational changes in Phase 6. No new binary, no new endpoint,
+      no deploy step required. Contract YAML mutation is a file-level operation.
+      Playwright E2E spec runs in mock-layer mode by default (no live webshell
+      binary required); live smoke (T8) gated by RESULTS_TAB_LIVE=1.
+
+  P_performance:
+    result: PASS
+    notes: >
+      cargo test --test contract_conformance: "finished in 0.00s" (stub-provider
+      path, no I/O beyond tempdir). No performance regression in existing suites.
+      Playwright E2E spec uses route-mocking — all tests complete without network.
+
+  K_knowledge:
+    result: PASS
+    notes: >
+      Gate eval YAML committed (.gate-evals/gate-phase-6-eval.yaml).
+      Inline comments in contract_conformance.rs document: StubProvider
+      reproduction rationale (#[cfg(test)] visibility constraint), macOS
+      /var→/private/var canonicalization requirement, dispatch dir pattern
+      mirroring dispatch/routes.rs contract.
+      results-tab.spec.ts header comment documents contract test_id, render_safety
+      constraints, required_spans, and mock-vs-live execution modes.
+
+  D_documentation:
+    result: PASS
+    notes: >
+      Public items added to contract-gate/src/lib.rs carry /// doc comments:
+      ConformancePatch struct + all fields, ConformanceResult enum, EvidenceTier enum,
+      ConformanceMutateError enum variants (MissingStatusPerProvider.path,
+      UnknownProvider.provider + path). apply_conformance_result() has doc comment.
+      missing_docs = deny enforced via pre-commit clippy gate.
+
+  T_testing:
+    result: PASS
+    notes: >
+      Phase 6 new tests:
+        Rust conformance (3 new, 1 ignored):
+          test_copilot_send_message_proof_round_trip — streaming capability invariant
+          test_dispatch_wave_artifacts_persist — artifact dir listing invariant
+          test_provider_switch_routes_to_new_provider — per-provider runner routing
+          test_anthropic_http_live_conformance — #[ignore], opt-in only
+        Playwright E2E (8 mock-layer tests, T1-T8):
+          T1 dispatch-artifacts-tab testid present in DOM
+          T2 clicking RESULTS tab fetches artifact list
+          T3 artifact preview renders in read-only Monaco editor
+          T4 DOMPurify strips HTML tags from artifact preview content
+          T5 copilot-provider-pill testid present
+          T6 Results tab handles empty artifact list gracefully
+          T7 dispatch-execute-button testid present
+          T8 live smoke (opt-in, RESULTS_TAB_LIVE=1)
+      Canon XXVII suites: unit ✓ | integration ✓ (conformance) | E2E ✓ (Playwright).
+      Total test count delta: +3 Rust conformance, +8 Playwright E2E mock-layer.
+
+  R_research_risk:
+    result: PASS
+    notes: >
+      dispatch-artifacts.yaml status_per_provider accurately represents the
+      evidence tier: anthropic_api=PASS/VERIFIED backed by Phase 5 Results tab
+      + contract_conformance tests; all other providers=UNTESTED/INFERRED because
+      artifact serving is provider-agnostic (reads from .tmp/dispatch-{id}/)
+      but no live cross-provider testing has been executed.
+      No new dependencies introduced. No supply chain risk delta.
+
+commits:
+  - sha: eb8e921
+    desc: "wave 6.1 — conformance tests + status_per_provider mutations"
+
+test_count_delta: "+3 Rust conformance (1 ignored), +8 Playwright E2E mock-layer"
+rust_lib_tests: 1305
+webshell_lib_tests: 880
+vitest: 842
+contract_gate: "235/235"
+next_phase: phase-7-close-out
