@@ -1,3 +1,4 @@
+import path from 'path';
 import { mergeConfig } from 'vitest/config';
 import { playwright } from '@vitest/browser-playwright';
 import viteConfig from './vite.config';
@@ -7,6 +8,12 @@ export default mergeConfig(viteConfig, {
     projects: [
       {
         extends: true,
+        resolve: {
+          alias: {
+            // Monaco has no jsdom-compatible entry point; stub it for unit tests.
+            'monaco-editor': path.resolve(__dirname, 'src/__mocks__/monaco-editor.ts'),
+          },
+        },
         test: {
           name: 'unit',
           environment: 'jsdom',

@@ -56,7 +56,7 @@ session and after 1 hour of idle. Keyboard: Alt-A.
   onclick={handleToggle}
   title="{$autoModeActive ? 'Auto Mode on — Alt-A or click to disable' : 'Auto Mode off — Alt-A or click to enable'}"
   aria-pressed={$autoModeActive ? 'true' : 'false'}
-  data-testid="auto-mode-chip"
+  data-testid="navbar-automode-chip"
 >
   <span class="chip-dot" class:chip-dot--pulse={$autoModeActive} aria-hidden="true"></span>
   <span class="chip-label">AUTO</span>

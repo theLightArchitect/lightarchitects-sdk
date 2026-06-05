@@ -12,6 +12,8 @@
 //! - `POST /api/dispatch/retry/:id/:agent` — retry a failed agent
 //! - `POST /api/dispatch/:id/fs-approve` — approve a pending FS-mutation permission
 //! - `POST /api/dispatch/:id/fs-reject`  — reject a pending FS-mutation permission
+//! - `GET  /api/dispatch/:id/artifacts`          — list artifacts produced by a dispatch
+//! - `GET  /api/dispatch/:id/artifacts/:name`    — fetch a single artifact by filename
 //!
 //! # Input validation (HIGH H-2)
 //!
@@ -22,9 +24,12 @@
 //! - rejects non-UTF-8
 
 use std::convert::Infallible;
+use std::path::PathBuf;
+use std::time::SystemTime;
 
 use axum::{
     Json, Router,
+    body::Bytes,
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::{
@@ -34,6 +39,7 @@ use axum::{
     routing::{get, post},
 };
 use futures_util::stream;
+use lightarchitects::ayin::span::{Actor, TraceContext, TraceOutcome};
 use serde::Serialize;
 
 use uuid::Uuid;
@@ -109,6 +115,11 @@ pub fn dispatch_router() -> Router<AppState> {
         .route("/api/dispatch/retry/{id}/{agent}", post(retry_handler))
         .route("/api/dispatch/{id}/fs-approve", post(fs_approve_handler))
         .route("/api/dispatch/{id}/fs-reject", post(fs_reject_handler))
+        .route("/api/dispatch/{id}/artifacts", get(artifacts_list_handler))
+        .route(
+            "/api/dispatch/{id}/artifacts/{name}",
+            get(artifacts_fetch_handler),
+        )
 }
 
 // ── Response helpers ──────────────────────────────────────────────────────────
@@ -520,6 +531,215 @@ fn parse_agent(s: &str) -> Option<DomainAgent> {
         "squad" => Some(DomainAgent::Squad),
         _ => None,
     }
+}
+
+// ── Artifact routes ───────────────────────────────────────────────────────────
+
+/// Row returned by `GET /api/dispatch/:id/artifacts`.
+#[derive(Serialize)]
+struct ArtifactMeta {
+    name: String,
+    agent: String,
+    size: u64,
+    modified: String,
+}
+
+/// Validate a filename is safe to join under a base directory (CWE-22).
+///
+/// Rejects names containing path separators, `..`, or NUL bytes before
+/// constructing the joined path.  After joining, ancestor-walks to the nearest
+/// existing path component and asserts the canonicalized result is still under
+/// the base directory (§63.P4).
+fn safe_join(base: &std::path::Path, name: &str) -> Result<PathBuf, ()> {
+    if name.is_empty()
+        || name.contains('/')
+        || name.contains('\\')
+        || name.contains("..")
+        || name.contains('\0')
+    {
+        return Err(());
+    }
+    let candidate = base.join(name);
+    // Ancestor-walk: find the nearest existing ancestor for canonicalize.
+    let canon_base = {
+        let mut p = base.to_path_buf();
+        while !p.exists() {
+            if !p.pop() {
+                return Err(());
+            }
+        }
+        p.canonicalize().map_err(|_| ())?
+    };
+    let canon_candidate = {
+        let mut p = candidate.clone();
+        while !p.exists() {
+            if !p.pop() {
+                return Err(());
+            }
+        }
+        p.canonicalize().map_err(|_| ())?
+    };
+    if !canon_candidate.starts_with(&canon_base) {
+        return Err(());
+    }
+    Ok(candidate)
+}
+
+/// ISO-8601 formatted mtime for display in the artifact list.
+fn format_mtime(meta: &std::fs::Metadata) -> String {
+    meta.modified()
+        .ok()
+        .and_then(|t| {
+            t.duration_since(SystemTime::UNIX_EPOCH)
+                .ok()
+                .map(|d| d.as_secs())
+        })
+        .map_or_else(
+            || "unknown".to_owned(),
+            |s| {
+                let secs = s % 60;
+                let mins = (s / 60) % 60;
+                let hours = (s / 3600) % 24;
+                let days_since_epoch = s / 86_400;
+                // Simple ISO-8601 approximation — wall-clock display only (not TZ-aware).
+                format!("{days_since_epoch}d {hours:02}:{mins:02}:{secs:02}Z")
+            },
+        )
+}
+
+/// Agent name inferred from artifact filename convention: `agent-<name>.md`
+/// or `<name>-output.md`.  Falls back to the stem.
+fn infer_agent(name: &str) -> String {
+    let stem = name.trim_end_matches(".md");
+    if let Some(s) = stem.strip_prefix("agent-") {
+        return s.to_owned();
+    }
+    if let Some(s) = stem.strip_suffix("-output") {
+        return s.to_owned();
+    }
+    stem.to_owned()
+}
+
+/// `GET /api/dispatch/:id/artifacts` — list artifacts in the dispatch scratch dir.
+///
+/// # Spans (dispatch.artifacts.list)
+///
+/// Emits one AYIN span per call with `file_count` metadata.  Credential values
+/// are never included in span metadata — Security Guardrails §LLM01.
+///
+/// # Errors
+///
+/// Returns 404 if the scratch directory does not exist (`E_ARTIFACTS_DIR_MISSING`
+/// is forwarded as the body so the UI can render a contextual message).
+#[tracing::instrument(skip(headers, state), fields(dispatch_id = %id))]
+async fn artifacts_list_handler(
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    State(state): State<AppState>,
+) -> Response {
+    if !is_authorised(&headers, &state) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    let base = state.config.cwd.join(".tmp").join(format!("dispatch-{id}"));
+
+    let span_start = std::time::Instant::now();
+
+    let Ok(entries) = std::fs::read_dir(&base) else {
+        let _ = TraceContext::new(Actor::new("webshell"), "dispatch.artifacts.list")
+            .metadata(serde_json::json!({ "dispatch_id": id, "outcome": "dir_missing" }))
+            .outcome(TraceOutcome::Block)
+            .finish();
+        return (StatusCode::NOT_FOUND, "E_ARTIFACTS_DIR_MISSING").into_response();
+    };
+
+    let mut rows: Vec<ArtifactMeta> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let meta = std::fs::metadata(&path);
+            let (size, modified) = meta
+                .as_ref()
+                .map(|m| (m.len(), format_mtime(m)))
+                .unwrap_or((0, "unknown".to_owned()));
+            let agent = infer_agent(&name);
+            rows.push(ArtifactMeta {
+                name,
+                agent,
+                size,
+                modified,
+            });
+        }
+    }
+    rows.sort_by(|a, b| a.name.cmp(&b.name));
+
+    let elapsed_ms = u64::try_from(span_start.elapsed().as_millis()).unwrap_or(u64::MAX);
+    let _ = TraceContext::new(Actor::new("webshell"), "dispatch.artifacts.list")
+        .metadata(serde_json::json!({
+            "dispatch_id": id,
+            "file_count": rows.len(),
+            "elapsed_ms": elapsed_ms,
+        }))
+        .outcome(TraceOutcome::Continue)
+        .finish();
+
+    Json(rows).into_response()
+}
+
+/// `GET /api/dispatch/:id/artifacts/:name` — fetch a single artifact file.
+///
+/// # Security
+///
+/// Filename is validated by [`safe_join`] (CWE-22, §63.P4).  Returns 400 on
+/// any path-traversal attempt.
+///
+/// # Spans (dispatch.artifacts.preview)
+///
+/// Emits one AYIN span per call with `file_size` (never file contents).
+#[tracing::instrument(skip(headers, state), fields(dispatch_id = %id, file_name = %name))]
+async fn artifacts_fetch_handler(
+    headers: HeaderMap,
+    Path((id, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> Response {
+    if !is_authorised(&headers, &state) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    let base = state.config.cwd.join(".tmp").join(format!("dispatch-{id}"));
+
+    let Ok(path) = safe_join(&base, &name) else {
+        return (StatusCode::BAD_REQUEST, "invalid artifact name").into_response();
+    };
+
+    let content = match tokio::fs::read(&path).await {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return StatusCode::NOT_FOUND.into_response();
+        }
+        Err(_) => {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let _ = TraceContext::new(Actor::new("webshell"), "dispatch.artifacts.preview")
+        .metadata(serde_json::json!({
+            "dispatch_id": id,
+            "file_size": content.len(),
+        }))
+        .outcome(TraceOutcome::Continue)
+        .finish();
+
+    (
+        StatusCode::OK,
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; charset=utf-8",
+        )],
+        Bytes::from(content),
+    )
+        .into_response()
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
