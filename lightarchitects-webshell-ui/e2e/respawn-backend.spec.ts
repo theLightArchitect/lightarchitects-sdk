@@ -26,17 +26,31 @@ const MOCK_RESPAWN_RESPONSE = {
 async function setupBaseMocks(page: Page) {
   await page.route('**/api/health', r => r.fulfill({ status: 200, body: 'ok' }));
   await page.route('**/api/auth-check', r => r.fulfill({ status: 200 }));
-  // backend: 'lightarchitects' causes applyPersistedConfig to set authProfile →
-  // 'lightarchitects', which renders profileLabel = 'Claude Code'.
+  // setup_complete:true + config.backend:'lightarchitects' causes applyPersistedConfig
+  // to set authProfile → 'lightarchitects', rendering profileLabel = 'Claude Code'.
   await page.route('**/api/setup/info', r =>
     r.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        configured: true,
-        backend: 'lightarchitects',
-        model: 'claude-sonnet-4-6',
-        agent: 'claude',
+        setup_complete: true,
+        config: {
+          agent: 'claude',
+          backend: 'lightarchitects',
+          model: 'claude-sonnet-4-6',
+          ollama_base_url: null,
+          api_key_stored: true,
+        },
+        auth_status: {
+          claude: { has_keychain_auth: true, has_api_key: false, login_method: 'keychain' },
+          codex: { has_keychain_auth: false, has_api_key: false, login_method: 'none' },
+          ollama: { base_url: 'http://localhost:11434', reachable: false },
+          mistral: { has_api_key: false },
+          ollama_cloud: { has_api_key: false },
+          deepseek: { has_api_key: false },
+          google_vertex: { has_service_account: false },
+        },
+        cwd: '/tmp',
       }),
     }),
   );
@@ -48,13 +62,13 @@ async function setupBaseMocks(page: Page) {
       body: JSON.stringify({ builds: [] }),
     }),
   );
+  // coordination/sessions/start is called on mount — stub it so it doesn't hang.
+  await page.route('**/api/coordination/sessions/start', r => r.fulfill({ status: 200, body: '{}' }));
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 test.describe('respawn-backend — BackendPicker + RespawnConfirmModal flow', () => {
-  test.use({ launchOptions: { headless: false } });
-
   test('profile chip is a clickable button that opens BackendPicker', async ({ page }) => {
     await setupBaseMocks(page);
     await page.route('**/api/pty/respawn', r =>

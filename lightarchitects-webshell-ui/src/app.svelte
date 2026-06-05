@@ -29,6 +29,7 @@
   import AutoModeChip from './components/AutoModeChip.svelte';
   import GlobalEventsOverlay from './components/GlobalEventsOverlay.svelte';
   import StatsTopbar from './components/StatsTopbar.svelte';
+  import StatusBar from './components/StatusBar.svelte';
   import {
     ayinStatus, startWaveTick, stopWaveTick, initializeStores, drawerHeightPx, drawerWidthPx, memoryDrawerOpen,
     builds, currentBuildId, findings, logEntries, artifacts, conductorTasks, arenaStatus, alerts,
@@ -585,6 +586,8 @@
           <ActiveScreen params={screenParams} />
         {/key}
       {/if}
+      <!-- Status bar — PTY status · active backend chip · credential indicators -->
+      <StatusBar />
       <!-- Corner-button zone: 56px reserved so screens never hide beneath the polytope buttons -->
       <div class="shrink-0" style="height: 56px;" aria-hidden="true"></div>
     </div>
