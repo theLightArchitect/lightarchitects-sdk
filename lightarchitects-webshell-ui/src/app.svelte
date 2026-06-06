@@ -302,6 +302,15 @@
         handler: () => window.dispatchEvent(new CustomEvent('la:toggle-keymap-legend')),
       }),
       registerHotkey({
+        id: 'global-keymap-legend-question',
+        keys: ['?'],
+        label: 'Open keyboard shortcuts (? alias)',
+        group: 'Navigation',
+        scope: 'global',
+        matches: e => e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
+        handler: () => window.dispatchEvent(new CustomEvent('la:toggle-keymap-legend')),
+      }),
+      registerHotkey({
         id: 'global-tab-1',
         keys: ['1'],
         label: 'Dashboard: Overview',

@@ -32,3 +32,22 @@
 [data-scope-depth="1"] { --scope-accent: var(--scope-d1); }
 [data-scope-depth="2"] { --scope-accent: var(--scope-d2); }
 [data-scope-depth="3"] { --scope-accent: var(--scope-d3); }
+
+/* ── Reduced-motion ───────────────────────────────────────────────────────── */
+/* WCAG 2.1 Success Criterion 2.3.3 (AAA) + 2.3.1 (AA) compliance.
+   When the user has requested reduced motion at the OS level, strip
+   all cockpit-specific transitions and animations. The --motion-scope
+   tokens are set to 0ms so consumers don't need individual overrides. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-scope:      0ms;
+    --motion-scope-fade: 0ms;
+  }
+
+  [data-area="cockpit"],
+  [data-scope-depth],
+  [data-card-role] {
+    transition: none !important;
+    animation:  none !important;
+  }
+}

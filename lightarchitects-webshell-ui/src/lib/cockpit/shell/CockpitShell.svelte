@@ -19,6 +19,15 @@
     currentScope;          // reactive dependency
     clearOnScopeChange();
   });
+
+  // AYIN latency instrumentation — cockpit scope transition marks.
+  // performance.mark() is a no-op in environments without Performance API.
+  $effect(() => {
+    const s = currentScope;
+    if (typeof performance !== 'undefined') {
+      performance.mark(`cockpit-scope-${s?.kind ?? 'none'}-enter`);
+    }
+  });
 </script>
 
 <div
