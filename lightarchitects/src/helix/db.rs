@@ -2378,7 +2378,8 @@ impl HelixNeo4j {
         let cypher = "MATCH (s:Step) \
                       WHERE s.embedding IS NOT NULL \
                       RETURN s.id AS step_id, s.helix_id AS helix_id, \
-                             s.embedding AS embedding";
+                             s.embedding AS embedding \
+                      ORDER BY s.helix_id ASC";
         let records = self
             .timed_execute("fetch_all_embeddings", cypher, BTreeMap::new())
             .await?;

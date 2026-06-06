@@ -5,10 +5,19 @@
 //! cargo bench --bench turbovec_bench --features turbovec-semantic
 //! ```
 //!
+//! A/B comparison against saved baseline:
+//! ```
+//! cargo bench --bench turbovec_bench --features turbovec-semantic -- --baseline turbovec-v1
+//! ```
+//!
 //! Key numbers to watch:
 //! - **`bulk_insert/50000`**: should complete in < 10 s (4-bit, 768-dim)
 //! - **`global_search_k10/50000`**: < 5 ms per query (SIMD-accelerated HNSW)
 //! - **`helix_search_k10/500vecs`**: < 500 µs per query (masked SIMD scan)
+//!
+//! A/B groups (same `BenchmarkGroup` → side-by-side in HTML report):
+//! - **`global_search_ab`**: turbovec 4-bit SIMD vs brute-force f32 cosine
+//! - **`helix_search_ab`**: turbovec masked scan vs brute-force f32 filtered scan
 #![allow(
     missing_docs,
     clippy::cast_precision_loss,
@@ -42,6 +51,25 @@ fn l2_normalize(v: &mut [f32]) {
     if norm > 1e-9 {
         v.iter_mut().for_each(|x| *x /= norm);
     }
+}
+
+/// Dot product of two unit vectors = cosine similarity.
+/// This is the exact computation Neo4j runs for `vector.similarity.cosine`.
+fn dot(a: &[f32], b: &[f32]) -> f32 {
+    a.iter().zip(b).map(|(x, y)| x * y).sum()
+}
+
+/// Top-k by descending dot product — O(n log n) sort, no SIMD, no quantisation.
+/// Mirrors the Neo4j query planner path: scan all candidates, sort, limit.
+fn brute_force_topk(query: &[f32], corpus: &[Vec<f32>], k: usize) -> Vec<(f32, usize)> {
+    let mut scored: Vec<(f32, usize)> = corpus
+        .iter()
+        .enumerate()
+        .map(|(i, v)| (dot(query, v), i))
+        .collect();
+    scored.sort_unstable_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    scored.truncate(k);
+    scored
 }
 
 /// Build a populated + prepared index with `n` unit vectors across `n_helixes`.
@@ -198,11 +226,86 @@ fn bench_recall_at_5(c: &mut Criterion) {
     });
 }
 
+/// A/B: turbovec 4-bit SIMD ANN vs brute-force f32 cosine, global (no helix filter).
+///
+/// Both functions run inside the same `BenchmarkGroup` so Criterion renders them
+/// side-by-side in the violin/bar charts. The brute-force path is the exact
+/// computation Neo4j performs for `vector.similarity.cosine ORDER BY score DESC LIMIT k`
+/// — no network cost, no Bolt overhead, pure algorithmic comparison.
+fn bench_global_search_ab(c: &mut Criterion) {
+    let mut group = c.benchmark_group("turbovec/global_search_ab");
+
+    for n in [1_000usize, 10_000, 50_000] {
+        let corpus: Vec<Vec<f32>> = (0..n).map(pseudo_unit).collect();
+        let idx = {
+            let mut idx = TurboVecIndex::new().expect("new");
+            for (i, v) in corpus.iter().enumerate() {
+                idx.upsert(&format!("step-{i}"), &format!("helix-{}", i % 100), v);
+            }
+            idx.prepare();
+            idx
+        };
+        let query = pseudo_unit(999_999);
+
+        group.bench_with_input(BenchmarkId::new("turbovec", n), &n, |b, _| {
+            b.iter(|| black_box(idx.search(black_box(&query), 10)));
+        });
+
+        group.bench_with_input(BenchmarkId::new("brute_force", n), &n, |b, _| {
+            b.iter(|| black_box(brute_force_topk(black_box(&query), &corpus, 10)));
+        });
+    }
+    group.finish();
+}
+
+/// A/B: turbovec masked scan vs brute-force f32 filtered scan, helix-scoped.
+///
+/// Three helix sizes (500 / 1 K / 5 K vectors), all drawn from a 50 K-vector
+/// index so the global quantisation quality is held constant.  The brute-force
+/// path scans only the vectors that belong to the target helix — identical to
+/// Neo4j `MATCH (s:Step {helix_id: $id}) … vector.similarity.cosine … LIMIT k`.
+fn bench_helix_search_ab(c: &mut Criterion) {
+    let mut group = c.benchmark_group("turbovec/helix_search_ab");
+
+    for (n_helixes, helix_size) in [(100usize, 500usize), (50, 1_000), (10, 5_000)] {
+        const N_TOTAL: usize = 50_000;
+
+        // Brute-force corpus: only the vectors assigned to helix-0.
+        // pseudo_unit(i) with i % n_helixes == 0 → helix-0.
+        let helix_corpus: Vec<Vec<f32>> = (0..N_TOTAL)
+            .filter(|i| i % n_helixes == 0)
+            .map(pseudo_unit)
+            .collect();
+
+        let idx = build_index(N_TOTAL, n_helixes);
+        let query = pseudo_unit(42);
+
+        group.bench_with_input(
+            BenchmarkId::new("turbovec", helix_size),
+            &helix_size,
+            |b, _| {
+                b.iter(|| black_box(idx.search_helix(black_box(&query), 10, "helix-0")));
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("brute_force", helix_size),
+            &helix_size,
+            |b, _| {
+                b.iter(|| black_box(brute_force_topk(black_box(&query), &helix_corpus, 10)));
+            },
+        );
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_bulk_insert,
     bench_global_search,
     bench_helix_search,
     bench_recall_at_5,
+    bench_global_search_ab,
+    bench_helix_search_ab,
 );
 criterion_main!(benches);
