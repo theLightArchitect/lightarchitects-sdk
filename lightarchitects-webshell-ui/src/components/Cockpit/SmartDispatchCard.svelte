@@ -46,7 +46,7 @@
   }
 </script>
 
-<div class="sd-card" data-card-role="smart-dispatch">
+<div class="sd-card">
   {#if loading && suggestions.length === 0}
     <div class="sd-empty">loading suggestions…</div>
   {:else if error && suggestions.length === 0}

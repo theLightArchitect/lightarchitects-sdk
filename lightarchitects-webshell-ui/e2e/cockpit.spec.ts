@@ -18,7 +18,7 @@
  *   G5b: Copilot header chip shows preset × target label after target selected (Phase 6)
  *
  * Run (headed, required — Playwright needs browser installed):
- *   PLAYWRIGHT_BASE_URL=http://localhost:5174 pnpm exec playwright test e2e/cockpit.spec.ts
+ *   PLAYWRIGHT_BASE_URL=http://localhost:5176 pnpm exec playwright test e2e/cockpit.spec.ts
  *
  * HAR: test-results/cockpit-*.har
  */
@@ -27,7 +27,7 @@ import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { ALL_COCKPIT_CARD_ROLES } from '../src/lib/cockpit/cardRoles';
 
-const BASE  = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5174';
+const BASE  = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5176';
 const TOKEN = process.env.WEBSHELL_TOKEN ?? '63308ab0-d024-4f7d-a459-936744aa255f';
 
 const MOCK_BUILD = {
@@ -165,7 +165,8 @@ test('G1: all always-present CARD_ROLES render in DOM within 5s', async ({ page 
   }
 
   // Verify registry size — exhaustiveness sanity check in E2E context
-  expect(ALL_COCKPIT_CARD_ROLES).toHaveLength(19);
+  // focus-drawer + focus-router added in Phase 5 Wave C → 21 total
+  expect(ALL_COCKPIT_CARD_ROLES).toHaveLength(21);
 });
 
 // ── G2: Preset switch ─────────────────────────────────────────────────────────
@@ -291,7 +292,8 @@ test('G6: hitl-inbox card renders within 60s of cockpit navigation (P6-N1)', asy
 
 test('G7: la:permission-request event renders perm-card; APPROVE removes it', async ({ page }) => {
   await setupCockpit(page);
-  await page.goto(`${BASE}/#/cockpit/platform`);
+  // hitl-escalations is scoped to d1/d2 — navigate to the build scope
+  await page.goto(`${BASE}/#/cockpit/build/${MOCK_BUILD.codename}`);
 
   await expect(page.locator('[data-card-role="hitl-escalations"]')).toBeAttached({ timeout: 5000 });
 

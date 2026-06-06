@@ -143,7 +143,16 @@ export function matchRoute(hash: string): RouteMatch {
 export function applyRedirects(): void {
   const hash = window.location.hash.slice(1).split('?')[0];
   for (const [from, to] of REDIRECTS) {
-    if (hash === from || hash.startsWith(`${from}/`)) {
+    if (hash === from) {
+      // Exact match — redirect without suffix forwarding.
+      history.replaceState(null, '', `#${to}`);
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      return;
+    }
+    // Prefix match with suffix forwarding — only when `to` is not under the same
+    // path namespace as `from` (prevents /cockpit → /cockpit/platform from firing
+    // on /cockpit/platform and producing /cockpit/platform/platform).
+    if (!to.startsWith(`${from}/`) && hash.startsWith(`${from}/`)) {
       const suffix = hash.slice(from.length);
       history.replaceState(null, '', `#${to}${suffix}`);
       window.dispatchEvent(new HashChangeEvent('hashchange'));

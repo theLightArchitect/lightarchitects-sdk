@@ -53,6 +53,7 @@
   import { saveSettingsDebounced } from '$lib/settings-persistence';
   import { registerHotkey, dispatchHotkey } from '$lib/hotkeyRegistry';
   import { matchRoute, applyRedirects, navigate } from '$lib/routes';
+  import { scope, scopeFromParams } from '$lib/cockpit/stores/scope';
   import { startLayoutSync } from '$lib/layout-sync';
 
   // Track persisted stores — save on any change after initial load.
@@ -107,6 +108,7 @@
     screenLoading = true;
     const { screen: key, params } = matchRoute(path);
     screenParams = params;
+    scope.set(scopeFromParams(key, params));
     try {
       const mod: ScreenModule = await screenModules[key]();
       if (gen !== loadGen) return; // superseded by a newer navigation

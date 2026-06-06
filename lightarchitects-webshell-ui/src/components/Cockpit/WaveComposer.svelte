@@ -114,7 +114,7 @@
   }
 </script>
 
-<div class="wc-card" data-area="wave-composer" data-card-role="wave-composer">
+<div class="wc-card" data-area="wave-composer">
   <button
     class="wc-header card-label"
     onclick={() => waveComposerOpen.update(v => !v)}

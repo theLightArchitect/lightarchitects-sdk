@@ -41,7 +41,7 @@
   const focusPillar = $derived(pillars.find((p) => p.focus) ?? null);
 </script>
 
-<div class="np-card" data-card-role="northstar-pulse">
+<div class="np-card">
   {#if loading && pillars.length === 0}
     <div class="np-empty">loading northstar pulse…</div>
   {:else if error && pillars.length === 0}
