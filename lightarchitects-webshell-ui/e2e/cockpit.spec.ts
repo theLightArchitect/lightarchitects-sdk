@@ -139,42 +139,47 @@ test('G1: all always-present CARD_ROLES render in DOM within 5s', async ({ page 
   await setupCockpit(page);
   await page.goto(`${BASE}/#/cockpit/platform`);
 
-  // Cards always in DOM (not conditionally rendered)
-  const ALWAYS_PRESENT: string[] = [
+  // d0 cards always in DOM on /cockpit/platform (scope-keyed Wave B)
+  // d1/d2 cards (build-health, worker-fleet, etc.) live on /cockpit/project and /cockpit/build
+  const ALWAYS_PRESENT_D0: string[] = [
     'preset-chips',
     'target-breadcrumb',
-    'build-health',
-    'hitl-escalations',
-    'worker-fleet',
-    'decision-feed',
-    'git-state',
-    'builds-rail',
-    'hitl-inbox',
     'copilot-drawer',
+    'hitl-inbox',
     'strategy-catalogue',
-    'wave-composer',
+    'northstar-pulse',
+    'strand-mosaic',
+    'smart-dispatch',
+    'squad-constellation',
   ];
 
-  for (const role of ALWAYS_PRESENT) {
+  for (const role of ALWAYS_PRESENT_D0) {
     const el = page.locator(`[data-card-role="${role}"]`);
-    await expect(el, `data-card-role="${role}" must be in DOM`).toBeAttached({ timeout: 5000 });
+    await expect(el, `data-card-role="${role}" must be in DOM on /cockpit/platform`).toBeAttached({ timeout: 5000 });
+  }
+
+  // d1/d2 cards must NOT appear on the d0 platform screen (scope-leak guard)
+  const D1_D2_ABSENT_ON_D0: string[] = ['build-health', 'hitl-escalations', 'worker-fleet', 'decision-feed', 'git-state', 'wave-composer', 'builds-rail'];
+  for (const role of D1_D2_ABSENT_ON_D0) {
+    await expect(page.locator(`[data-card-role="${role}"]`), `${role} must NOT be on d0`).not.toBeAttached({ timeout: 1000 });
   }
 
   // Verify registry size — exhaustiveness sanity check in E2E context
-  // scope-keyed-cockpit-routes Wave A: northstar-pulse/strand-mosaic/smart-dispatch/squad-constellation: 15 → 19
   expect(ALL_COCKPIT_CARD_ROLES).toHaveLength(19);
 });
 
 // ── G2: Preset switch ─────────────────────────────────────────────────────────
 
-test('G2: switching to security preset hides engineer-zones; switching back shows them', async ({ page }) => {
+test('G2: on /cockpit/build, switching to security preset hides engineer-zones; switching back shows them', async ({ page }) => {
   await setupCockpit(page);
-  await page.goto(`${BASE}/#/cockpit/platform`);
+  // engineer-zones lives on CockpitBuild (d2), not CockpitPlatform (d0) — Wave B scope split
+  await page.goto(`${BASE}/#/cockpit/build/${MOCK_BUILD.codename}`);
 
-  // Start on engineer preset — engineer-zones should appear once preset loads
-  await expect(page.locator('[data-card-role="preset-chips"]')).toBeAttached({ timeout: 5000 });
+  // Wait for d2 screen to settle
+  await expect(page.locator('[data-card-role="wave-composer"]')).toBeAttached({ timeout: 5000 });
+  await expect(page.locator('[data-card-role="engineer-zones"]')).toBeAttached({ timeout: 3000 });
 
-  // Switch to security
+  // Switch to security preset
   const securityChip = page.locator('[data-card-role="preset-chips"] [aria-label="security"]')
     .or(page.locator('[data-card-role="preset-chips"] button').filter({ hasText: /security/i }));
   await securityChip.first().click();
