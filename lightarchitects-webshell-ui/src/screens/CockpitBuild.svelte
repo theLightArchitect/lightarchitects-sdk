@@ -16,6 +16,7 @@
   import { authHeaders } from '$lib/auth';
   import { activeBuild, workerSlots, conductorState, conductorTasks, gitStore, gitApi, gitforestTree } from '$lib/stores';
   import { selectedTarget, selectedPreset, lastWaveId } from '$lib/cockpit/stores';
+  import { select } from '$lib/cockpit/stores/selection';
   import type { WorktreeAssignment } from '$lib/gitforest';
   import type { DecisionEntry } from '$lib/types';
   import type { Polytope4DType } from '$lib/polytopes4d-canvas2d';
@@ -141,13 +142,21 @@
           <div class="slot-grid">
             {#each Array.from({ length: $workerSlots.capacity }, (_, i) => i) as i}
               {@const active = i < $workerSlots.active}
-              <div class="slot" class:slot-active={active} class:slot-idle={!active}>
+              {@const slotId = $workerSlots.slots?.[i]?.task_id ?? String(i)}
+              <button
+                class="slot"
+                class:slot-active={active}
+                class:slot-idle={!active}
+                disabled={!active}
+                onclick={() => active && select({ kind: 'worker', worker_id: slotId, build_codename: $activeBuild?.codename ?? $activeBuild?.id ?? '' }, $scope)}
+                title={active ? `Worker slot ${i}: ${slotId}` : `Slot ${i} idle`}
+              >
                 {#if active}
                   <PolytopeIcon type={SLOT_POLYTOPES[i % SLOT_POLYTOPES.length]} color="var(--la-agent-engineer)" size={36} />
                 {:else}
                   <div class="slot-empty-dot"></div>
                 {/if}
-              </div>
+              </button>
             {/each}
           </div>
         {:else}
@@ -192,12 +201,18 @@
               {#if i > 0 && d.level !== 'L4' && filteredDecisions[i - 1].level === 'L4'}
                 <div class="dec-divider"></div>
               {/if}
-              <div class="dec-row" class:dec-l4={d.level === 'L4'} class:dec-l3={d.level === 'L3'}>
+              <button
+                class="dec-row"
+                class:dec-l4={d.level === 'L4'}
+                class:dec-l3={d.level === 'L3'}
+                onclick={() => select({ kind: 'decision', decision_id: String(d.line_n), build_codename: $activeBuild?.codename ?? $activeBuild?.id ?? '' }, $scope)}
+                title="Focus decision #{d.line_n}"
+              >
                 <span class="dec-level" style="color: {LEVEL_COLOR[d.level] ?? '#666'}">{LEVEL_LABEL[d.level] ?? d.level}</span>
                 <span class="dec-text">{d.decision}</span>
                 {#if d.hmac_ok === false}<span class="dec-hmac-warn" title="HMAC chain broken">⚠</span>{/if}
                 {#if d.level === 'L4'}<span class="dec-esc-badge">ESC</span>{/if}
-              </div>
+              </button>
             {/each}
           </div>
         {/if}
@@ -318,8 +333,9 @@
   .fm-cap { color: var(--la-text-dim); }
   .fm-key { font-size: 9px; color: var(--la-text-mute); margin-left: 2px; }
   .slot-grid { display: flex; gap: 6px; flex-wrap: wrap; }
-  .slot { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--la-hair-base); }
-  .slot-active { border-color: var(--la-struct-primary); background: rgba(100,160,255,0.05); }
+  .slot { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--la-hair-base); background: none; padding: 0; cursor: default; }
+  .slot-active { border-color: var(--la-struct-primary); background: rgba(100,160,255,0.05); cursor: pointer; }
+  .slot-active:hover { background: rgba(100,160,255,0.1); }
   .slot-empty-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--la-hair-strong); }
   .conductor-row { display: flex; gap: 6px; align-items: center; font-size: 9px; }
   .c-key { color: var(--la-text-mute); }
@@ -336,7 +352,8 @@
   .dec-collapse-btn { background: none; border: none; color: var(--la-text-mute); cursor: pointer; font-size: 9px; padding: 0; }
   .dec-hidden-chip { color: var(--la-text-mute); font-size: 8px; }
   .dec-list { display: flex; flex-direction: column; gap: 4px; }
-  .dec-row { display: flex; gap: 6px; align-items: flex-start; font-size: 9px; }
+  .dec-row { display: flex; gap: 6px; align-items: flex-start; font-size: 9px; background: none; border: none; padding: 2px 0; text-align: left; width: 100%; cursor: pointer; }
+  .dec-row:hover { background: rgba(255,255,255,0.03); }
   .dec-l4 { border-left: 2px solid var(--la-semantic-error); padding-left: 4px; }
   .dec-l3 { border-left: 2px solid var(--la-semantic-warn); padding-left: 4px; }
   .dec-level { min-width: 28px; font-weight: 700; font-size: 8px; }

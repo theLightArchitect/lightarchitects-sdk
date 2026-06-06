@@ -11,6 +11,7 @@
   import { navigate } from '$lib/routes';
   import { builds } from '$lib/stores';
   import { selectedTarget } from '$lib/cockpit/stores';
+  import { select } from '$lib/cockpit/stores/selection';
 
   // d1 — /cockpit/project/:projectId
   const currentScope = $derived($scope as Extract<RouteScope, { kind: 'project' }> | null);
@@ -76,7 +77,7 @@
         {:else}
           <div class="builds-rail">
             {#each $builds.slice().sort((a, b) => b.updatedAt > a.updatedAt ? 1 : -1).slice(0, 12) as b (b.id)}
-              <button class="build-row" class:build-row-active={b.status === 'in_progress'} onclick={() => navigate('/cockpit/build/:codename', { codename: b.codename ?? b.id })}>
+              <button class="build-row" class:build-row-active={b.status === 'in_progress'} onclick={() => { select({ kind: 'build', codename: b.codename ?? b.id }, $scope); navigate('/cockpit/build/:codename', { codename: b.codename ?? b.id }); }}>
                 <span class="br-dot" style="background:{STATUS_COLOR[b.status] ?? 'var(--la-text-mute)'}"></span>
                 <span class="br-name">{b.codename ?? b.name}</span>
                 <span class="br-pillar">{b.currentPillar ?? ''}</span>
