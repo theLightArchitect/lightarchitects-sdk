@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { selection } from '$lib/cockpit/stores/selection';
+  import FocusRouter from '$lib/cockpit/focus/FocusRouter.svelte';
 
   interface Props { children?: Snippet; }
   let { children }: Props = $props();
@@ -9,7 +10,6 @@
   const hasSelection = $derived(sel.kind !== 'none');
 </script>
 
-<!-- Phase 5 Wave C: FocusRouter.svelte wires selection store → 9 focus components. -->
 <aside
   class="cockpit-right"
   class:has-selection={hasSelection}
@@ -19,11 +19,7 @@
   {#if children}
     {@render children()}
   {:else}
-    <div class="right-placeholder" aria-hidden="true">
-      {#if hasSelection}
-        <span class="placeholder-label">Focus: {sel.kind}</span>
-      {/if}
-    </div>
+    <FocusRouter />
   {/if}
 </aside>
 

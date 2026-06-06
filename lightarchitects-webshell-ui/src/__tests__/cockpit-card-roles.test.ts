@@ -35,6 +35,9 @@ const ANNOTATED_SOURCES: Record<CockpitCardRole, string[]> = {
   'strand-mosaic':       ['src/components/Cockpit/StrandMosaicCard.svelte',   'src/screens/CockpitPlatform.svelte', 'src/screens/CockpitProject.svelte'],
   'smart-dispatch':      ['src/components/Cockpit/SmartDispatchCard.svelte',  'src/screens/CockpitPlatform.svelte'],
   'squad-constellation': ['src/components/Cockpit/SquadConstellationCard.svelte', 'src/screens/CockpitPlatform.svelte'],
+  // right drawer — shell + inner router
+  'focus-drawer':        ['src/lib/cockpit/shell/RightDrawer.svelte'],
+  'focus-router':        ['src/lib/cockpit/focus/FocusRouter.svelte'],
 };
 
 describe('Cockpit card-role registry', () => {
@@ -135,6 +138,20 @@ describe('Cockpit card-role registry', () => {
     }
   });
 
+  it('every data-card-role attribute in RightDrawer.svelte is registered', () => {
+    const src = readSource('src/lib/cockpit/shell/RightDrawer.svelte');
+    for (const [, role] of src.matchAll(/data-card-role="([^"]+)"/g)) {
+      expect(ALL_COCKPIT_CARD_ROLES, `data-card-role="${role}" in RightDrawer.svelte but not registered`).toContain(role);
+    }
+  });
+
+  it('every data-card-role attribute in FocusRouter.svelte is registered', () => {
+    const src = readSource('src/lib/cockpit/focus/FocusRouter.svelte');
+    for (const [, role] of src.matchAll(/data-card-role="([^"]+)"/g)) {
+      expect(ALL_COCKPIT_CARD_ROLES, `data-card-role="${role}" in FocusRouter.svelte but not registered`).toContain(role);
+    }
+  });
+
   // Scope-leak: d0-only cards must not appear in d1/d2 screens
   it('d0-only cards (northstar-pulse, smart-dispatch, squad-constellation) do not leak into d1/d2 screens', () => {
     const d0Only = ['northstar-pulse', 'smart-dispatch', 'squad-constellation'];
@@ -155,7 +172,7 @@ describe('Cockpit card-role registry', () => {
     }
   });
 
-  it('registry has exactly 19 roles — adding a card requires updating this test', () => {
-    expect(ALL_COCKPIT_CARD_ROLES).toHaveLength(19);
+  it('registry has exactly 21 roles — adding a card requires updating this test', () => {
+    expect(ALL_COCKPIT_CARD_ROLES).toHaveLength(21);
   });
 });

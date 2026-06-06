@@ -32,7 +32,9 @@ export type CockpitCardRole =
   | 'northstar-pulse'
   | 'strand-mosaic'
   | 'smart-dispatch'
-  | 'squad-constellation';
+  | 'squad-constellation'
+  | 'focus-drawer'
+  | 'focus-router';
 
 /** Scope depths at which a card role is valid (0=platform, 1=project, 2=build, 3=file). */
 export type CardScopeDepth = 0 | 1 | 2 | 3;
@@ -64,6 +66,8 @@ export const COCKPIT_CARD_ROLES: Record<CockpitCardRole, CockpitCardRoleMeta> = 
   'strand-mosaic':       { description: 'status — project × gatekeeper risk matrix (Canon XXX strand mosaic — §2.52)',                          scope: [0, 1] },
   'smart-dispatch':      { description: 'action — reasons-aware dispatch suggestions composed from observable signals (§2.53)',                  scope: [0] },
   'squad-constellation': { description: 'status+stream — 7-sibling constellation with live A2A link edges (§2.54)',                             scope: [0] },
+  'focus-drawer':        { description: 'container — right-side focus drawer; hosts FocusRouter; border accent changes with scope depth',       scope: [] },
+  'focus-router':        { description: 'status+stream — polymorphic right-drawer router; dispatches selection.kind → 9 typed focus panels',    scope: [] },
 };
 
 /** All card role keys, derived from the registry for exhaustiveness checks. */
