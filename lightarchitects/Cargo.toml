@@ -225,6 +225,11 @@ required-features = ["soul-cache"]
 name    = "retrieval_queries"
 harness = false
 
+[[bench]]
+name             = "turbovec_bench"
+harness          = false
+required-features = ["turbovec-semantic"]
+
 # Real-Ollama smoke test — gated behind `lightsquad` (the only feature that
 # exports OllamaCloudCodingProvider) and marked `#[ignore]` so it only runs
 # when invoked explicitly with OLLAMA_API_KEY.

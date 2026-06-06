@@ -153,3 +153,287 @@ impl TurboVecIndex {
         self.inner.is_empty()
     }
 }
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation
+)]
+mod tests {
+    use super::*;
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /// L2-normalised one-hot vector. Cosine similarity between two one-hots
+    /// with different hot indices is 0.0; with the same index it is 1.0.
+    fn one_hot(hot: usize) -> Vec<f32> {
+        let mut v = vec![0.0f32; HELIX_DIM];
+        v[hot] = 1.0;
+        v
+    }
+
+    /// Deterministic pseudo-random unit vector — used for recall tests.
+    /// Uses a simple LCG so there are no external rand dependencies in tests.
+    fn pseudo_unit(seed: usize) -> Vec<f32> {
+        let mut v = Vec::with_capacity(HELIX_DIM);
+        let mut x = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+        for _ in 0..HELIX_DIM {
+            x = x
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            v.push(((x >> 33) as f32) / (u32::MAX as f32) * 2.0 - 1.0);
+        }
+        l2_normalize(&mut v);
+        v
+    }
+
+    fn l2_normalize(v: &mut [f32]) {
+        let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if norm > 1e-9 {
+            for x in v.iter_mut() {
+                *x /= norm;
+            }
+        }
+    }
+
+    /// Build a populated + prepared index with `n` pseudo-random vectors
+    /// distributed across `n_helixes` helixes round-robin.
+    fn populated(n: usize, n_helixes: usize) -> (TurboVecIndex, Vec<Vec<f32>>) {
+        let mut idx = TurboVecIndex::new().unwrap();
+        let mut vecs = Vec::with_capacity(n);
+        for i in 0..n {
+            let v = pseudo_unit(i);
+            idx.upsert(
+                &format!("step-{i}"),
+                &format!("helix-{}", i % n_helixes),
+                &v,
+            );
+            vecs.push(v);
+        }
+        idx.prepare();
+        (idx, vecs)
+    }
+
+    // ── Empty-index edge cases ────────────────────────────────────────────────
+
+    #[test]
+    fn empty_global_search_returns_empty() {
+        let idx = TurboVecIndex::new().unwrap();
+        assert!(idx.search(&one_hot(0), 10).is_empty());
+    }
+
+    #[test]
+    fn empty_helix_search_returns_empty() {
+        let idx = TurboVecIndex::new().unwrap();
+        assert!(idx.search_helix(&one_hot(0), 10, "helix-a").is_empty());
+    }
+
+    #[test]
+    fn is_empty_and_len_on_new_index() {
+        let idx = TurboVecIndex::new().unwrap();
+        assert!(idx.is_empty());
+        assert_eq!(idx.len(), 0);
+    }
+
+    // ── Upsert correctness ────────────────────────────────────────────────────
+
+    #[test]
+    fn upsert_increments_len() {
+        let mut idx = TurboVecIndex::new().unwrap();
+        idx.upsert("step-0", "h", &one_hot(0));
+        assert_eq!(idx.len(), 1);
+        assert!(!idx.is_empty());
+        idx.upsert("step-1", "h", &one_hot(1));
+        assert_eq!(idx.len(), 2);
+    }
+
+    #[test]
+    fn upsert_is_idempotent_same_step_id() {
+        let mut idx = TurboVecIndex::new().unwrap();
+        idx.upsert("step-0", "h", &one_hot(0));
+        idx.upsert("step-0", "h", &one_hot(0)); // duplicate
+        idx.upsert("step-0", "h", &one_hot(1)); // duplicate with different vec
+        assert_eq!(idx.len(), 1, "duplicate upserts must not grow the index");
+    }
+
+    #[test]
+    fn upsert_after_prepare_is_accepted() {
+        let mut idx = TurboVecIndex::new().unwrap();
+        idx.upsert("step-0", "h", &one_hot(0));
+        idx.prepare();
+        idx.upsert("step-1", "h", &one_hot(1));
+        assert_eq!(idx.len(), 2);
+        // Index is still searchable after post-prepare insertion.
+        let hits = idx.search(&one_hot(0), 2);
+        assert!(!hits.is_empty());
+    }
+
+    // ── Search ordering ───────────────────────────────────────────────────────
+
+    #[test]
+    fn global_search_scores_are_descending() {
+        let (idx, _) = populated(50, 1);
+        let q = pseudo_unit(99_999);
+        let hits = idx.search(&q, 20);
+        assert!(!hits.is_empty());
+        for w in hits.windows(2) {
+            assert!(
+                w[0].0 >= w[1].0,
+                "scores not descending: {} > {}",
+                w[0].0,
+                w[1].0
+            );
+        }
+    }
+
+    #[test]
+    fn exact_vector_ranks_first() {
+        let mut idx = TurboVecIndex::new().unwrap();
+        // Use one-hot vectors so cosine = 1.0 for exact match, 0.0 for others.
+        for i in 0..20 {
+            idx.upsert(&format!("step-{i}"), "h", &one_hot(i));
+        }
+        idx.prepare();
+
+        let hits = idx.search(&one_hot(5), 20);
+        assert_eq!(hits[0].1, "step-5", "exact match must be top-ranked");
+    }
+
+    #[test]
+    fn k_larger_than_n_returns_at_most_n_results() {
+        let mut idx = TurboVecIndex::new().unwrap();
+        idx.upsert("a", "h", &one_hot(0));
+        idx.upsert("b", "h", &one_hot(1));
+        idx.prepare();
+
+        let hits = idx.search(&one_hot(0), 1000);
+        assert!(hits.len() <= 2, "cannot return more results than vectors");
+    }
+
+    // ── Helix isolation ───────────────────────────────────────────────────────
+
+    #[test]
+    fn helix_search_returns_only_target_helix() {
+        let mut idx = TurboVecIndex::new().unwrap();
+        for i in 0..10 {
+            idx.upsert(&format!("a-{i}"), "helix-a", &one_hot(i));
+        }
+        for i in 10..20 {
+            idx.upsert(&format!("b-{i}"), "helix-b", &one_hot(i));
+        }
+        idx.prepare();
+
+        let hits = idx.search_helix(&one_hot(0), 20, "helix-a");
+        assert!(!hits.is_empty());
+        for (_, id) in &hits {
+            assert!(
+                id.starts_with("a-"),
+                "helix-b step leaked into helix-a results: {id}"
+            );
+        }
+
+        let hits_b = idx.search_helix(&one_hot(10), 20, "helix-b");
+        for (_, id) in &hits_b {
+            assert!(
+                id.starts_with("b-"),
+                "helix-a step leaked into helix-b results: {id}"
+            );
+        }
+    }
+
+    #[test]
+    fn helix_search_unknown_helix_returns_empty() {
+        let (idx, vecs) = populated(20, 2);
+        let hits = idx.search_helix(&vecs[0], 10, "helix-does-not-exist");
+        assert!(hits.is_empty());
+    }
+
+    #[test]
+    fn helix_search_scores_are_descending() {
+        let (idx, _) = populated(100, 4);
+        let q = pseudo_unit(12345);
+        let hits = idx.search_helix(&q, 25, "helix-0");
+        for w in hits.windows(2) {
+            assert!(w[0].0 >= w[1].0, "helix search scores not descending");
+        }
+    }
+
+    // ── Recall@5 property ─────────────────────────────────────────────────────
+    //
+    // Validates that TurboQuant 4-bit compression retains enough fidelity for
+    // clustered data — the regime that matches real SOUL helix workloads.
+    //
+    // WHY a structured corpus instead of random vectors:
+    // In 768-dim space, random unit vectors have cosine similarities in
+    // [-1/√768, 1/√768] ≈ ±0.036. The gap between rank-5 and rank-6 is
+    // ~0.01 — smaller than 4-bit quantisation noise. Text embeddings live in
+    // ~50–100 effective semantic dimensions; the top-5 gap is much larger and
+    // 4-bit TurboQuant achieves ≥ 96.2% recall (LongMemEval, 23 854 steps).
+    //
+    // The test uses 50 semantic clusters × 10 members each. Each cluster center
+    // is a one-hot basis vector; members are the center plus a small perturbation
+    // (cosine sim to center ≈ 0.995). Background vectors (400) occupy distinct
+    // one-hot directions far from any query, making the ranking gap large enough
+    // to survive quantisation. Expected recall@5: 100% for well-separated clusters.
+
+    /// Build a cluster member: center + `noise_scale` × pseudorandom perturbation.
+    fn make_cluster_member(center_dim: usize, member_idx: usize, noise_scale: f32) -> Vec<f32> {
+        let noise = pseudo_unit(center_dim * 10_000 + member_idx);
+        let mut v = vec![0.0f32; HELIX_DIM];
+        v[center_dim] = 1.0;
+        for (vi, ni) in v.iter_mut().zip(noise.iter()) {
+            *vi += noise_scale * ni;
+        }
+        l2_normalize(&mut v);
+        v
+    }
+
+    #[test]
+    fn recall_at_5_above_90_percent_clustered_corpus() {
+        const N_CLUSTERS: usize = 50; // 50 semantic topics
+        const MEMBERS_PER_CLUSTER: usize = 10; // 10 texts per topic
+        const N_BACKGROUND: usize = 400; // random background noise
+        const NOISE_SCALE: f32 = 0.05; // members stay within ~5° of center
+        const K: usize = 5;
+        const MIN_RECALL: f64 = 0.90;
+
+        let mut idx = TurboVecIndex::new().unwrap();
+
+        // Insert cluster members (cluster i uses basis vector at dim i).
+        for c in 0..N_CLUSTERS {
+            for m in 0..MEMBERS_PER_CLUSTER {
+                let v = make_cluster_member(c, m, NOISE_SCALE);
+                idx.upsert(&format!("c{c}-m{m}"), "helix-a", &v);
+            }
+        }
+        // Insert background vectors at dims N_CLUSTERS..N_CLUSTERS+N_BACKGROUND.
+        for b in 0..N_BACKGROUND {
+            let v = one_hot(N_CLUSTERS + b);
+            idx.upsert(&format!("bg-{b}"), "helix-a", &v);
+        }
+        idx.prepare();
+
+        // Query: exact cluster center (one-hot) — top-5 must be cluster members.
+        let mut total_recall = 0.0f64;
+        for c in 0..N_CLUSTERS {
+            let query = one_hot(c);
+            let ann = idx.search(&query, K);
+            let hits = ann
+                .iter()
+                .filter(|(_, id)| id.starts_with(&format!("c{c}-")))
+                .count();
+            total_recall += hits as f64 / K as f64;
+        }
+
+        let mean_recall = total_recall / N_CLUSTERS as f64;
+        assert!(
+            mean_recall >= MIN_RECALL,
+            "Recall@5 = {mean_recall:.3} on clustered corpus is below {MIN_RECALL}. \
+             This indicates 4-bit compression is scrambling well-separated neighbors."
+        );
+    }
+}
