@@ -12,6 +12,7 @@
   import InFlightZone from '$lib/../components/Cockpit/zones/InFlightZone.svelte';
   import QuickActionsZone from '$lib/../components/Cockpit/zones/QuickActionsZone.svelte';
   import InsightsZone from '$lib/../components/Cockpit/zones/InsightsZone.svelte';
+  import PresetChips from '$lib/../components/Cockpit/PresetChips.svelte';
   import { api } from '$lib/api';
   import { authHeaders } from '$lib/auth';
   import { activeBuild, workerSlots, conductorState, conductorTasks, gitStore, gitApi, gitforestTree } from '$lib/stores';
@@ -106,6 +107,9 @@
     <header class="build-hdr">
       <span class="build-title">{currentScope?.codename ?? '…'}</span>
       <span class="build-depth-badge">BUILD</span>
+      <div class="hdr-right">
+        <PresetChips />
+      </div>
     </header>
 
     <!-- Bento grid — d2 scope -->
@@ -294,6 +298,7 @@
   .build-hdr { display: flex; align-items: center; gap: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--la-hair-base); }
   .build-title { font-size: 13px; font-weight: 700; letter-spacing: var(--la-tk-mid); color: var(--scope-accent, var(--scope-d2)); }
   .build-depth-badge { font-size: 9px; font-weight: 700; letter-spacing: 0.1em; color: var(--scope-accent, var(--scope-d2)); padding: 1px 5px; border: 1px solid var(--scope-accent, var(--scope-d2)); }
+  .hdr-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 
   .bento-d2 {
     display: grid;
