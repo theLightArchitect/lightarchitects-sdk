@@ -13,22 +13,28 @@ const ANNOTATED_SOURCES: Record<CockpitCardRole, string[]> = {
   'preset-chips':        ['src/components/Cockpit/PresetChips.svelte'],
   'target-breadcrumb':   ['src/components/Cockpit/TargetBreadcrumb.svelte'],
   'quick-pick-palette':  ['src/components/Cockpit/QuickPickPalette.svelte'],
-  'build-health':        ['src/screens/CockpitPlatform.svelte'],
-  'hitl-escalations':    ['src/screens/CockpitPlatform.svelte'],
-  'worker-fleet':        ['src/screens/CockpitPlatform.svelte'],
-  'decision-feed':       ['src/screens/CockpitPlatform.svelte'],
-  'git-state':           ['src/screens/CockpitPlatform.svelte'],
-  'builds-rail':         ['src/screens/CockpitPlatform.svelte'],
-  'hitl-inbox':          ['src/screens/CockpitPlatform.svelte'],
-  'pr-detail-panel':     ['src/screens/CockpitPlatform.svelte'],
-  'engineer-zones':      ['src/screens/CockpitPlatform.svelte'],
+  // d1 cards — live in CockpitProject
+  'build-health':        ['src/screens/CockpitProject.svelte', 'src/screens/CockpitBuild.svelte'],
+  'hitl-escalations':    ['src/screens/CockpitProject.svelte', 'src/screens/CockpitBuild.svelte'],
+  'builds-rail':         ['src/screens/CockpitProject.svelte'],
+  // d2 cards — live in CockpitBuild
+  'worker-fleet':        ['src/screens/CockpitBuild.svelte'],
+  'decision-feed':       ['src/screens/CockpitBuild.svelte'],
+  'git-state':           ['src/screens/CockpitBuild.svelte'],
+  'engineer-zones':      ['src/screens/CockpitBuild.svelte'],
+  // multi-scope cards — d0 + d1
+  'hitl-inbox':          ['src/screens/CockpitPlatform.svelte', 'src/screens/CockpitProject.svelte'],
+  'strategy-catalogue':  ['src/screens/CockpitPlatform.svelte', 'src/screens/CockpitProject.svelte'],
+  // multi-scope — d1 + d2
+  'pr-detail-panel':     ['src/screens/CockpitProject.svelte', 'src/screens/CockpitBuild.svelte'],
+  // shared infrastructure
   'copilot-drawer':      ['src/components/CopilotDrawer.svelte'],
-  'strategy-catalogue':  ['src/screens/CockpitPlatform.svelte'],
-  'wave-composer':       ['src/components/Cockpit/WaveComposer.svelte'],
-  'northstar-pulse':     ['src/components/Cockpit/NorthstarPulseCard.svelte'],
-  'strand-mosaic':       ['src/components/Cockpit/StrandMosaicCard.svelte'],
-  'smart-dispatch':      ['src/components/Cockpit/SmartDispatchCard.svelte'],
-  'squad-constellation': ['src/components/Cockpit/SquadConstellationCard.svelte'],
+  'wave-composer':       ['src/components/Cockpit/WaveComposer.svelte', 'src/screens/CockpitBuild.svelte'],
+  // d0-only aggregator cards — self-annotated in component + wrapped in CockpitPlatform
+  'northstar-pulse':     ['src/components/Cockpit/NorthstarPulseCard.svelte', 'src/screens/CockpitPlatform.svelte'],
+  'strand-mosaic':       ['src/components/Cockpit/StrandMosaicCard.svelte',   'src/screens/CockpitPlatform.svelte', 'src/screens/CockpitProject.svelte'],
+  'smart-dispatch':      ['src/components/Cockpit/SmartDispatchCard.svelte',  'src/screens/CockpitPlatform.svelte'],
+  'squad-constellation': ['src/components/Cockpit/SquadConstellationCard.svelte', 'src/screens/CockpitPlatform.svelte'],
 };
 
 describe('Cockpit card-role registry', () => {
@@ -112,6 +118,40 @@ describe('Cockpit card-role registry', () => {
     const src = readSource('src/components/Cockpit/SquadConstellationCard.svelte');
     for (const [, role] of src.matchAll(/data-card-role="([^"]+)"/g)) {
       expect(ALL_COCKPIT_CARD_ROLES).toContain(role);
+    }
+  });
+
+  it('every data-card-role attribute in CockpitProject.svelte is registered', () => {
+    const src = readSource('src/screens/CockpitProject.svelte');
+    for (const [, role] of src.matchAll(/data-card-role="([^"]+)"/g)) {
+      expect(ALL_COCKPIT_CARD_ROLES, `data-card-role="${role}" in CockpitProject.svelte but not registered`).toContain(role);
+    }
+  });
+
+  it('every data-card-role attribute in CockpitBuild.svelte is registered', () => {
+    const src = readSource('src/screens/CockpitBuild.svelte');
+    for (const [, role] of src.matchAll(/data-card-role="([^"]+)"/g)) {
+      expect(ALL_COCKPIT_CARD_ROLES, `data-card-role="${role}" in CockpitBuild.svelte but not registered`).toContain(role);
+    }
+  });
+
+  // Scope-leak: d0-only cards must not appear in d1/d2 screens
+  it('d0-only cards (northstar-pulse, smart-dispatch, squad-constellation) do not leak into d1/d2 screens', () => {
+    const d0Only = ['northstar-pulse', 'smart-dispatch', 'squad-constellation'];
+    for (const screen of ['src/screens/CockpitProject.svelte', 'src/screens/CockpitBuild.svelte']) {
+      const src = readSource(screen);
+      for (const role of d0Only) {
+        expect(src, `d0-only card "${role}" leaked into ${screen}`).not.toContain(`data-card-role="${role}"`);
+      }
+    }
+  });
+
+  // Scope-leak: d2-only cards must not appear in d0 screen
+  it('d2-only cards (worker-fleet, decision-feed, git-state, engineer-zones) do not leak into CockpitPlatform', () => {
+    const d2Only = ['worker-fleet', 'decision-feed', 'git-state', 'engineer-zones'];
+    const src = readSource('src/screens/CockpitPlatform.svelte');
+    for (const role of d2Only) {
+      expect(src, `d2-only card "${role}" found in CockpitPlatform.svelte`).not.toContain(`data-card-role="${role}"`);
     }
   });
 
