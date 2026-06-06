@@ -1,16 +1,19 @@
 <script lang="ts">
   import { scope } from '$lib/cockpit/stores/scope';
   import type { RouteScope } from '$lib/cockpit/stores/scope';
+  import CockpitShell from '$lib/cockpit/shell/CockpitShell.svelte';
 
   // d2 — /cockpit/build/:codename
   // Phase 4 Wave B will mount the build-portal layout here.
   const currentScope = $derived($scope as Extract<RouteScope, { kind: 'build' }> | null);
 </script>
 
-<div class="cockpit-stub" data-scope="build">
-  <p class="stub-label">Build — {currentScope?.codename ?? '…'}</p>
-  <p class="stub-note">Phase 4 Wave B</p>
-</div>
+<CockpitShell>
+  <div class="cockpit-stub" data-scope="build">
+    <p class="stub-label">Build — {currentScope?.codename ?? '…'}</p>
+    <p class="stub-note">Phase 4 Wave B</p>
+  </div>
+</CockpitShell>
 
 <style>
   .cockpit-stub {

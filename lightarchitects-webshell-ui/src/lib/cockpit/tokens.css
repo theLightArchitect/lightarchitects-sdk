@@ -1,0 +1,34 @@
+/**
+ * Cockpit visual-system tokens — scope-keyed-cockpit-routes
+ *
+ * Consumed by CockpitShell via [data-scope-depth] attribute selector.
+ * All cockpit components use var(--scope-accent) for depth-aware accent color.
+ */
+
+/* ── Scope accent palette ─────────────────────────────────────────────────── */
+:root {
+  --scope-d0: #4da6ff;   /* d0 platform — cool blue   */
+  --scope-d1: #7ed321;   /* d1 project  — lime green  */
+  --scope-d2: #f5a623;   /* d2 build    — amber       */
+  --scope-d3: #e040fb;   /* d3 file     — magenta     */
+
+  /* Layout dimensions */
+  --cockpit-top-height:    56px;
+  --cockpit-left-width:    360px;
+  --cockpit-right-width:   480px;
+  --cockpit-bottom-height: 40px;
+
+  /* Motion — shared-element scope transition (AD-03) */
+  --motion-scope:          400ms cubic-bezier(0.4, 0, 0.2, 1);
+  --motion-scope-fade:     200ms ease-out;
+
+  /* Ambient strip */
+  --scope-strip-bg:   rgba(0, 0, 0, 0.72);
+  --scope-strip-border: rgba(255, 255, 255, 0.06);
+}
+
+/* ── Depth-keyed accent binding ───────────────────────────────────────────── */
+[data-scope-depth="0"] { --scope-accent: var(--scope-d0); }
+[data-scope-depth="1"] { --scope-accent: var(--scope-d1); }
+[data-scope-depth="2"] { --scope-accent: var(--scope-d2); }
+[data-scope-depth="3"] { --scope-accent: var(--scope-d3); }
