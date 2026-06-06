@@ -137,7 +137,7 @@ async function setupCockpit(page: Page): Promise<void> {
 
 test('G1: all always-present CARD_ROLES render in DOM within 5s', async ({ page }) => {
   await setupCockpit(page);
-  await page.goto(`${BASE}/#/activity`);
+  await page.goto(`${BASE}/#/cockpit/platform`);
 
   // Cards always in DOM (not conditionally rendered)
   const ALWAYS_PRESENT: string[] = [
@@ -161,15 +161,15 @@ test('G1: all always-present CARD_ROLES render in DOM within 5s', async ({ page 
   }
 
   // Verify registry size — exhaustiveness sanity check in E2E context
-  // Phase 3 (cockpit-wave-composer) added wave-composer: 14 → 15
-  expect(ALL_COCKPIT_CARD_ROLES).toHaveLength(15);
+  // scope-keyed-cockpit-routes Wave A: northstar-pulse/strand-mosaic/smart-dispatch/squad-constellation: 15 → 19
+  expect(ALL_COCKPIT_CARD_ROLES).toHaveLength(19);
 });
 
 // ── G2: Preset switch ─────────────────────────────────────────────────────────
 
 test('G2: switching to security preset hides engineer-zones; switching back shows them', async ({ page }) => {
   await setupCockpit(page);
-  await page.goto(`${BASE}/#/activity`);
+  await page.goto(`${BASE}/#/cockpit/platform`);
 
   // Start on engineer preset — engineer-zones should appear once preset loads
   await expect(page.locator('[data-card-role="preset-chips"]')).toBeAttached({ timeout: 5000 });
@@ -195,7 +195,7 @@ test('G2: switching to security preset hides engineer-zones; switching back show
 
 test('G3: ⌘T opens quick-pick palette; ESC closes it (P6-N2 target accessibility)', async ({ page }) => {
   await setupCockpit(page);
-  await page.goto(`${BASE}/#/activity`);
+  await page.goto(`${BASE}/#/cockpit/platform`);
 
   // Wait for cockpit to be ready
   await expect(page.locator('[data-card-role="preset-chips"]')).toBeAttached({ timeout: 5000 });
@@ -217,7 +217,7 @@ test('G3: ⌘T opens quick-pick palette; ESC closes it (P6-N2 target accessibili
 
 test('G4: selecting a target from quick-pick updates target-breadcrumb (P6-N2)', async ({ page }) => {
   await setupCockpit(page);
-  await page.goto(`${BASE}/#/activity`);
+  await page.goto(`${BASE}/#/cockpit/platform`);
 
   await expect(page.locator('[data-card-role="preset-chips"]')).toBeAttached({ timeout: 5000 });
 
@@ -244,7 +244,7 @@ test('G4: selecting a target from quick-pick updates target-breadcrumb (P6-N2)',
 
 test('G5: copilot drawer header shows active preset label (P6-N3 context injection)', async ({ page }) => {
   await setupCockpit(page);
-  await page.goto(`${BASE}/#/activity`);
+  await page.goto(`${BASE}/#/cockpit/platform`);
 
   await expect(page.locator('[data-card-role="preset-chips"]')).toBeAttached({ timeout: 5000 });
 
@@ -269,7 +269,7 @@ test('G6: hitl-inbox card renders within 60s of cockpit navigation (P6-N1)', asy
   await setupCockpit(page);
 
   const startMs = Date.now();
-  await page.goto(`${BASE}/#/activity`);
+  await page.goto(`${BASE}/#/cockpit/platform`);
 
   // P6 Northstar mechanical promise: HITL Inbox visible within 60s
   await expect(
@@ -286,7 +286,7 @@ test('G6: hitl-inbox card renders within 60s of cockpit navigation (P6-N1)', asy
 
 test('G7: la:permission-request event renders perm-card; APPROVE removes it', async ({ page }) => {
   await setupCockpit(page);
-  await page.goto(`${BASE}/#/activity`);
+  await page.goto(`${BASE}/#/cockpit/platform`);
 
   await expect(page.locator('[data-card-role="hitl-escalations"]')).toBeAttached({ timeout: 5000 });
 
@@ -335,7 +335,7 @@ test('G7: la:permission-request event renders perm-card; APPROVE removes it', as
 
 test('G8: strategy-catalogue renders all 10 tiles; L2 tiles toggle; L0 tiles are disabled', async ({ page }) => {
   await setupCockpit(page);
-  await page.goto(`${BASE}/#/activity`);
+  await page.goto(`${BASE}/#/cockpit/platform`);
 
   const catalogue = page.locator('[data-card-role="strategy-catalogue"]');
   await expect(catalogue).toBeAttached({ timeout: 5000 });
@@ -374,7 +374,7 @@ test('G8: strategy-catalogue renders all 10 tiles; L2 tiles toggle; L0 tiles are
 
 test('G9: cockpit screen has no critical axe-core violations (WCAG 2.1 AA)', async ({ page }) => {
   await setupCockpit(page);
-  await page.goto(`${BASE}/#/activity`);
+  await page.goto(`${BASE}/#/cockpit/platform`);
 
   // Wait for cockpit to stabilise
   await expect(page.locator('[data-card-role="preset-chips"]')).toBeAttached({ timeout: 5000 });
@@ -395,7 +395,7 @@ test('G9: cockpit screen has no critical axe-core violations (WCAG 2.1 AA)', asy
 
 test('G5b: copilot header shows preset × target chip after target selected', async ({ page }) => {
   await setupCockpit(page);
-  await page.goto(`${BASE}/#/activity`);
+  await page.goto(`${BASE}/#/cockpit/platform`);
 
   await expect(page.locator('[data-card-role="preset-chips"]')).toBeAttached({ timeout: 5000 });
 
@@ -430,7 +430,7 @@ test('G10: cockpit cold render ≤2000ms E2E; preset-switch DOM latency ≤16ms 
   // Dev-server budget: 2000ms (Vite on-demand compilation overhead).
   // Production-binary target: ≤500ms (embedded assets, no compilation).
   const t0 = Date.now();
-  await page.goto(`${BASE}/#/activity`);
+  await page.goto(`${BASE}/#/cockpit/platform`);
   await expect(page.locator('[data-card-role="preset-chips"]')).toBeAttached({ timeout: 5000 });
   const coldRenderMs = Date.now() - t0;
 

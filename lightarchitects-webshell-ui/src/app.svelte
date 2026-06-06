@@ -88,6 +88,11 @@
     AutonomousBuilds: () => import('./screens/AutonomousBuilds.svelte'),
     Chat:            () => import('./screens/Chat.svelte'),
     Supervision:     () => import('./screens/ProgramScreen.svelte'),
+    // ── Scope-keyed cockpit (scope-keyed-cockpit-routes) ──
+    CockpitPlatform: () => import('./screens/CockpitPlatform.svelte'),
+    CockpitProject:  () => import('./screens/CockpitProject.svelte'),
+    CockpitBuild:    () => import('./screens/CockpitBuild.svelte'),
+    CockpitFile:     () => import('./screens/CockpitFile.svelte'),
   };
 
   type ScreenModule = { default: any };

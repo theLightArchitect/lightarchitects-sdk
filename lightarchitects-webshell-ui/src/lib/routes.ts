@@ -23,7 +23,12 @@ export type ScreenKey =
   | 'Chat'            // Polished LiteLLM streaming chat panel
   | 'Security'        // Container spawn policy + isolation controls
   | 'Program'         // Alpha/public readiness program manifest
-  | 'Supervision';    // A2A supervisor envelope feed (webshell-a2a-supervisor-visibility)
+  | 'Supervision'     // A2A supervisor envelope feed (webshell-a2a-supervisor-visibility)
+  // ── Scope-keyed cockpit screens (scope-keyed-cockpit-routes) ──
+  | 'CockpitPlatform'  // d0 — /cockpit/platform
+  | 'CockpitProject'   // d1 — /cockpit/project/:projectId
+  | 'CockpitBuild'     // d2 — /cockpit/build/:codename
+  | 'CockpitFile';     // d3 — /cockpit/file/:codename/:filePath*
 
 export interface RouteMatch {
   screen: ScreenKey;
@@ -44,6 +49,8 @@ const REDIRECTS: [string, string][] = [
   ['/arch',           '/diagrams'],
   ['/architecture',   '/diagrams'],
   ['/manage',         '/builds'],
+  // /cockpit (bare) → canonical d0 platform scope
+  ['/cockpit',        '/cockpit/platform'],
 ];
 
 /**
@@ -110,6 +117,12 @@ const ROUTES: RouteEntry[] = [
   [/^\/tools$/,                                                             'Tools',         []],
   [/^\/autonomous$/,                                                        'AutonomousBuilds', []],
   [/^\/chat$/,                                                              'Chat',          []],
+  // ── Scope-keyed cockpit (scope-keyed-cockpit-routes) — most-specific first ──
+  // d3: file path is greedy (.+) — must precede shorter patterns
+  [/^\/cockpit\/file\/([^/]+)\/(.+)$/,                                     'CockpitFile',    ['codename', 'filePath']],
+  [/^\/cockpit\/build\/([^/]+)$/,                                          'CockpitBuild',   ['codename']],
+  [/^\/cockpit\/project\/([^/]+)$/,                                        'CockpitProject', ['projectId']],
+  [/^\/cockpit\/platform$/,                                                'CockpitPlatform', []],
 ];
 
 /** Matches a hash-fragment path (with or without leading #) to a screen + params. */
