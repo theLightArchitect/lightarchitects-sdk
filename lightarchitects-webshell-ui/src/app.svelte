@@ -53,6 +53,7 @@
   import { saveSettingsDebounced } from '$lib/settings-persistence';
   import { registerHotkey, dispatchHotkey } from '$lib/hotkeyRegistry';
   import { matchRoute, applyRedirects, navigate } from '$lib/routes';
+  import { scope, scopeFromParams } from '$lib/cockpit/stores/scope';
   import { startLayoutSync } from '$lib/layout-sync';
 
   // Track persisted stores — save on any change after initial load.
@@ -88,6 +89,11 @@
     AutonomousBuilds: () => import('./screens/AutonomousBuilds.svelte'),
     Chat:            () => import('./screens/Chat.svelte'),
     Supervision:     () => import('./screens/ProgramScreen.svelte'),
+    // ── Scope-keyed cockpit (scope-keyed-cockpit-routes) ──
+    CockpitPlatform: () => import('./screens/CockpitPlatform.svelte'),
+    CockpitProject:  () => import('./screens/CockpitProject.svelte'),
+    CockpitBuild:    () => import('./screens/CockpitBuild.svelte'),
+    CockpitFile:     () => import('./screens/CockpitFile.svelte'),
   };
 
   type ScreenModule = { default: any };
@@ -102,6 +108,7 @@
     screenLoading = true;
     const { screen: key, params } = matchRoute(path);
     screenParams = params;
+    scope.set(scopeFromParams(key, params));
     try {
       const mod: ScreenModule = await screenModules[key]();
       if (gen !== loadGen) return; // superseded by a newer navigation
@@ -292,6 +299,15 @@
         group: 'Navigation',
         scope: 'global',
         matches: e => (e.metaKey || e.ctrlKey) && e.key === '/',
+        handler: () => window.dispatchEvent(new CustomEvent('la:toggle-keymap-legend')),
+      }),
+      registerHotkey({
+        id: 'global-keymap-legend-question',
+        keys: ['?'],
+        label: 'Open keyboard shortcuts (? alias)',
+        group: 'Navigation',
+        scope: 'global',
+        matches: e => e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
         handler: () => window.dispatchEvent(new CustomEvent('la:toggle-keymap-legend')),
       }),
       registerHotkey({

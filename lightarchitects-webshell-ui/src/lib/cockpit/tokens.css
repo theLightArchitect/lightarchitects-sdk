@@ -1,0 +1,53 @@
+/**
+ * Cockpit visual-system tokens — scope-keyed-cockpit-routes
+ *
+ * Consumed by CockpitShell via [data-scope-depth] attribute selector.
+ * All cockpit components use var(--scope-accent) for depth-aware accent color.
+ */
+
+/* ── Scope accent palette ─────────────────────────────────────────────────── */
+:root {
+  --scope-d0: #4da6ff;   /* d0 platform — cool blue   */
+  --scope-d1: #7ed321;   /* d1 project  — lime green  */
+  --scope-d2: #f5a623;   /* d2 build    — amber       */
+  --scope-d3: #e040fb;   /* d3 file     — magenta     */
+
+  /* Layout dimensions */
+  --cockpit-top-height:    56px;
+  --cockpit-left-width:    360px;
+  --cockpit-right-width:   480px;
+  --cockpit-bottom-height: 40px;
+
+  /* Motion — shared-element scope transition (AD-03) */
+  --motion-scope:          400ms cubic-bezier(0.4, 0, 0.2, 1);
+  --motion-scope-fade:     200ms ease-out;
+
+  /* Ambient strip */
+  --scope-strip-bg:   rgba(0, 0, 0, 0.72);
+  --scope-strip-border: rgba(255, 255, 255, 0.06);
+}
+
+/* ── Depth-keyed accent binding ───────────────────────────────────────────── */
+[data-scope-depth="0"] { --scope-accent: var(--scope-d0); }
+[data-scope-depth="1"] { --scope-accent: var(--scope-d1); }
+[data-scope-depth="2"] { --scope-accent: var(--scope-d2); }
+[data-scope-depth="3"] { --scope-accent: var(--scope-d3); }
+
+/* ── Reduced-motion ───────────────────────────────────────────────────────── */
+/* WCAG 2.1 Success Criterion 2.3.3 (AAA) + 2.3.1 (AA) compliance.
+   When the user has requested reduced motion at the OS level, strip
+   all cockpit-specific transitions and animations. The --motion-scope
+   tokens are set to 0ms so consumers don't need individual overrides. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-scope:      0ms;
+    --motion-scope-fade: 0ms;
+  }
+
+  [data-area="cockpit"],
+  [data-scope-depth],
+  [data-card-role] {
+    transition: none !important;
+    animation:  none !important;
+  }
+}

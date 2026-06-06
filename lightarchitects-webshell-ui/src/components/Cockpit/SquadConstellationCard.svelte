@@ -134,7 +134,7 @@
   }));
 </script>
 
-<div class="sc-card" data-card-role="squad-constellation">
+<div class="sc-card">
   {#if loading && status.length === 0}
     <div class="sc-empty">loading squad…</div>
   {:else if error && status.length === 0}

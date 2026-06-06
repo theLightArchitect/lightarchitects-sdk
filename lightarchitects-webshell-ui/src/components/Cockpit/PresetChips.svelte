@@ -26,6 +26,7 @@
       <button
         role="tab"
         aria-selected={active}
+        aria-label={preset}
         class="chip"
         class:chip-active={active}
         style="--chip-color: {color}"

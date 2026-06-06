@@ -70,7 +70,7 @@
   });
 </script>
 
-<div class="sm-card" data-card-role="strand-mosaic">
+<div class="sm-card">
   {#if loading && rows.length === 0}
     <div class="sm-empty">loading mosaic…</div>
   {:else if error && rows.length === 0}

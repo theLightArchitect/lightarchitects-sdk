@@ -1,0 +1,79 @@
+schema: '1.0'
+codename: scope-keyed-cockpit-routes
+project: lightarchitects-sdk
+plan: ~/.claude/plans/scope-keyed-cockpit-routes.md
+worktree: ~/lightarchitects/worktrees/scope-keyed-cockpit-routes
+branch: feat/scope-keyed-cockpit-routes
+base_commit: 3eb6500
+started: 2026-06-05
+tier: LARGE
+phases: 7
+northstar: "P1+P6 primary (P2 secondary) — terminal_window_open_count→0; time_to_decision_p95≤30s"
+xea_aggregate: 91.7
+band: EXEMPLARY
+
+phase_0_preflight:
+  completed_at: 2026-06-05
+  g1_fetch: PASS
+  g2_sync: PASS
+  g3_cargo_check: PASS   # pre-commit hook ran clippy clean on WIP commit
+  g4_quality: PASS       # fmt fix applied (session_persistence.rs single-line), committed
+  g5_collision: PASS     # no feat/scope-keyed-cockpit-routes branch or worktree existed
+  g6_active_yaml: PASS   # entry created before phase-0 commit
+  g7_primary_on_main: PASS
+  g8_disk_free: PASS     # 89GB available
+
+  baseline_snapshots:
+    card_roles_ts: diagrams/cardRoles-baseline-2026-06-05.ts
+    svelte_check_errors: 8      # pre-existing (SettingsOverlay type drift + 2 test beforeAll)
+    svelte_check_warnings: 47
+    cockpit_svelte_loc: 1942
+
+  routing_discovery:
+    model: hash-based SPA (custom regex array in src/lib/routes.ts)
+    cockpit_route_exists: false  # NO /cockpit route; Cockpit.svelte not in ScreenKey or screenModules
+    cockpit_screen_wired: false
+    new_screen_keys_needed:
+      - CockpitPlatform   # /cockpit/platform
+      - CockpitProject    # /cockpit/project/:projectId
+      - CockpitBuild      # /cockpit/build/:codename
+      - CockpitFile       # /cockpit/file/:codename/:filePath*
+    redirect_needed: /cockpit → /cockpit/platform
+
+  backend_cockpit_routes_existing:
+    - POST /api/cockpit/wave             # cockpit_wave.rs (cockpit-wave-composer)
+    - GET  /api/squad/a2a (SSE)          # squad_routes.rs (d0 A2A)
+    - GET  /api/platform/northstar       # northstar_routes.rs (d0)
+    - GET  /api/platform/mosaic          # mosaic_routes.rs (d0)
+    - GET  /api/platform/squad           # squad_routes.rs (d0)
+    - GET  /api/platform/smart-dispatch  # wave_routes.rs (d0)
+  backend_cockpit_routes_needed:
+    - GET  /api/cockpit/project/:id/aggregate   # Phase 5 Wave C
+    - GET  /api/cockpit/project/:id/a2a (SSE)   # Phase 5 Wave C
+    - GET  /api/cockpit/project/:id/skills (SSE) # Phase 5 Wave C
+    - GET  /api/cockpit/slot-economy            # Phase 5 Wave C
+    - GET  /api/cockpit/sibling-availability     # Phase 5 Wave C
+
+  cockpit_components_existing:
+    d0_cards:
+      - NorthstarPulseCard.svelte
+      - StrandMosaicCard.svelte
+      - SmartDispatchCard.svelte
+      - SquadConstellationCard.svelte
+    d1_d2_candidates:  # exist in Cockpit.svelte but not scope-keyed
+      - HITLInbox.svelte         # → d1 hero
+      - ConductorHitlPanel.svelte # → d1 (fold into UnifiedHitlInbox)
+      - WaveComposer.svelte       # → d1 bottom bar
+      - PRMetadataBlock.svelte    # → d2 right drawer
+      - PRVerbSurface.svelte      # → d2 right drawer
+    zones:
+      - NeedsActionZone.svelte    # → d2 engineer-zones
+      - InFlightZone.svelte       # → d2 engineer-zones
+      - QuickActionsZone.svelte   # → d2 engineer-zones
+      - InsightsZone.svelte       # → d2 engineer-zones
+
+  wave_a_migration_strategy:
+    action: verbatim content move (zero visible UX change)
+    cockpit_svelte_becomes: thin ~10-line wrapper → redirects to /cockpit/platform
+    cockpit_platform_svelte: receives all current Cockpit.svelte content verbatim
+    regression_risk: low (no logic change, only file restructure)
