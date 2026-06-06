@@ -111,6 +111,7 @@ openssh = { version = "0.11", features = ["process-mux"] }
 
 # ── Helix graph backend (lightarchitects-helix + absorbed graph-engine) ──────
 neo4rs    = { version = "0.8", features = ["json"] }
+turbovec  = { version = "0.8.0" }
 walkdir   = "2"
 moka      = { version = "0.12", features = ["future"] }
 regex     = "1"

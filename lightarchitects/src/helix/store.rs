@@ -89,6 +89,27 @@ impl HelixStore {
             .await
             .map_err(|e| HelixStoreError::Helix(format!("schema migration failed: {e}")))?;
 
+        #[cfg(feature = "turbovec-semantic")]
+        {
+            use crate::helix::turbovec_index::TurboVecIndex;
+            let mut idx = TurboVecIndex::new()
+                .map_err(|e| HelixStoreError::Helix(format!("turbovec init failed: {e}")))?;
+            let rows = db
+                .fetch_all_embeddings()
+                .await
+                .map_err(|e| HelixStoreError::Helix(format!("turbovec bulk-load failed: {e}")))?;
+            let count = rows.len();
+            for (step_id, helix_id, embedding) in rows {
+                idx.upsert(&step_id, &helix_id, &embedding);
+            }
+            idx.prepare();
+            tracing::info!(
+                steps = count,
+                "turbovec semantic index ready (4-bit, 768-dim)"
+            );
+            *db.turbo.write().await = Some(idx);
+        }
+
         Ok(Self { db: Arc::new(db) })
     }
 

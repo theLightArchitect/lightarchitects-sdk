@@ -47,6 +47,8 @@ pub mod soul_search;
 pub mod sqlite_backend;
 pub mod storage;
 pub mod training;
+#[cfg(feature = "turbovec-semantic")]
+pub mod turbovec_index;
 pub mod types;
 
 // ── HelixStore — ergonomic entry point ───────────────────────────────────────

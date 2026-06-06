@@ -704,6 +704,13 @@ pub const HELIX_REL_TYPES: &[&str] = &[
 /// and helix-specific domain operations.
 pub struct HelixNeo4j {
     backend: Neo4jBackend,
+    /// In-process `TurboQuant` semantic index (4-bit, 768-dim).
+    ///
+    /// Populated once during [`HelixNeo4j::populate_turbovec`] by bulk-fetching
+    /// all step embeddings from Neo4j. Write-through on [`set_step_embedding`].
+    /// `None` until populated; falls back to the Neo4j HNSW path when `None`.
+    #[cfg(feature = "turbovec-semantic")]
+    pub(crate) turbo: tokio::sync::RwLock<Option<crate::helix::turbovec_index::TurboVecIndex>>,
 }
 
 impl std::fmt::Debug for HelixNeo4j {
@@ -763,7 +770,11 @@ impl HelixNeo4j {
                 .with_labels(HELIX_LABELS.iter().map(|&s| s.to_owned()).collect())
                 .with_rel_types(HELIX_REL_TYPES.iter().map(|&s| s.to_owned()).collect());
 
-        Ok(Self { backend })
+        Ok(Self {
+            backend,
+            #[cfg(feature = "turbovec-semantic")]
+            turbo: tokio::sync::RwLock::new(None),
+        })
     }
 
     /// Get a reference to the underlying graph backend.
@@ -1487,6 +1498,45 @@ impl HelixDb for HelixNeo4j {
             return Ok(Vec::new());
         }
 
+        // ── TurboQuant semantic path ──────────────────────────────────────────
+        //
+        // The turbovec index handles the `step-embeddings` semantic signal only.
+        // The structural signal (`step-struct-embeddings`) continues to use the
+        // Neo4j HNSW path below — it has its own embedding space and separate index.
+        //
+        // When populated, this replaces both Cypher paths (helix-scoped brute-force
+        // cosine and global HNSW). Neither requires a Bolt round-trip for the ANN
+        // step; Steps are hydrated from Neo4j by ID after the in-process SIMD scan.
+        #[cfg(feature = "turbovec-semantic")]
+        if index_name == index_names::STEP_EMBEDDINGS {
+            let guard = self.turbo.read().await;
+            if let Some(idx) = guard.as_ref() {
+                let k = (opts.limit as usize).max(1);
+                let hits = match &opts.helix_id {
+                    Some(hid) => idx.search_helix(embedding, k, hid),
+                    None => idx.search(embedding, k),
+                };
+                if !hits.is_empty() {
+                    let ids: Vec<String> = hits.iter().map(|(_, id)| id.clone()).collect();
+                    let steps = self.get_steps_by_ids(&ids).await?;
+                    let scored = hits
+                        .iter()
+                        .filter_map(|(score, id)| {
+                            steps.iter().find(|s| &s.id == id).map(|s| ScoredResult {
+                                score: f64::from(*score),
+                                item: s.clone(),
+                            })
+                        })
+                        .collect();
+                    return Ok(scored);
+                }
+                // Empty result from turbovec (new helix or index not yet warmed):
+                // fall through to the Neo4j path as a safety net.
+            }
+        }
+
+        // ── Neo4j fallback (structural signal + turbovec not yet populated) ───
+        //
         // When helix_id is specified, use brute-force cosine on just the helix's steps.
         // This avoids the global HNSW → post-filter problem where 498/500 helixes are
         // dropped, leaving ~1 result per helix. With ~50 steps per helix, brute-force
@@ -1530,7 +1580,6 @@ impl HelixDb for HelixNeo4j {
         };
 
         let mut params = Self::search_filter_params(opts);
-        // Convert embedding slice to JSON array of f64 (Neo4j expects float list).
         let embedding_json: Vec<serde_json::Value> = embedding
             .iter()
             .map(|&v| serde_json::json!(f64::from(v)))
@@ -1823,6 +1872,20 @@ impl HelixDb for HelixNeo4j {
 
         self.timed_execute("set_step_embedding", cypher, params)
             .await?;
+
+        // Write-through to the turbovec index so it stays current without a restart.
+        #[cfg(feature = "turbovec-semantic")]
+        {
+            let mut guard = self.turbo.write().await;
+            if let Some(idx) = guard.as_mut() {
+                // Look up helix_id: fast for existing steps (Neo4j indexed lookup).
+                // New steps (not in startup bulk-load) pay one extra Bolt round-trip.
+                if let Ok(helix_id) = self.fetch_step_helix_id(step_id).await {
+                    idx.upsert(step_id, &helix_id, embedding);
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -2297,6 +2360,82 @@ impl HelixDb for HelixNeo4j {
 // ============================================================================
 
 impl HelixNeo4j {
+    /// Bulk-fetch all step IDs, helix IDs, and 768-dim semantic embeddings.
+    ///
+    /// Used at startup to populate the in-process `TurboQuant` index. Only
+    /// steps with a non-null `embedding` property are returned.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HelixDbError::Graph`] on Bolt connection or query failure.
+    // f64→f32: intentional lossy narrowing when parsing Neo4j embedding arrays;
+    // embeddings lose ~7 decimal digits of precision, acceptable for ANN search.
+    #[allow(clippy::cast_possible_truncation)]
+    #[cfg(feature = "turbovec-semantic")]
+    pub async fn fetch_all_embeddings(
+        &self,
+    ) -> Result<Vec<(String, String, Vec<f32>)>, HelixDbError> {
+        let cypher = "MATCH (s:Step) \
+                      WHERE s.embedding IS NOT NULL \
+                      RETURN s.id AS step_id, s.helix_id AS helix_id, \
+                             s.embedding AS embedding";
+        let records = self
+            .timed_execute("fetch_all_embeddings", cypher, BTreeMap::new())
+            .await?;
+
+        let mut out = Vec::with_capacity(records.len());
+        for rec in &records {
+            let step_id = rec
+                .get("step_id")
+                .and_then(serde_json::Value::as_str)
+                .map(String::from);
+            let helix_id = rec
+                .get("helix_id")
+                .and_then(serde_json::Value::as_str)
+                .map(String::from);
+            let embedding: Option<Vec<f32>> = rec
+                .get("embedding")
+                .and_then(serde_json::Value::as_array)
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_f64().map(|f| f as f32))
+                        .collect()
+                });
+
+            if let (Some(sid), Some(hid), Some(emb)) = (step_id, helix_id, embedding) {
+                if emb.len() == crate::helix::turbovec_index::HELIX_DIM {
+                    out.push((sid, hid, emb));
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Fetch the `helix_id` for a single step by its primary key.
+    ///
+    /// Used by the turbovec write-through path in [`set_step_embedding`] to
+    /// look up the helix ID for new steps that weren't present at startup.
+    /// Step.id is an indexed property — this is a sub-millisecond Bolt call.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HelixDbError::NotFound`] if the step doesn't exist.
+    #[cfg(feature = "turbovec-semantic")]
+    pub(crate) async fn fetch_step_helix_id(&self, step_id: &str) -> Result<String, HelixDbError> {
+        let cypher = "MATCH (s:Step {id: $step_id}) RETURN s.helix_id AS helix_id";
+        let mut params = BTreeMap::new();
+        params.insert("step_id".into(), serde_json::json!(step_id));
+        let records = self
+            .timed_execute("fetch_step_helix_id", cypher, params)
+            .await?;
+        records
+            .first()
+            .and_then(|r| r.get("helix_id"))
+            .and_then(serde_json::Value::as_str)
+            .map(String::from)
+            .ok_or_else(|| HelixDbError::NotFound(format!("step {step_id} has no helix_id")))
+    }
+
     /// Compute SHA-256 hex digest of content for dedup.
     ///
     /// Public so that write-through callers (e.g., `soul-mcp`) can compute
