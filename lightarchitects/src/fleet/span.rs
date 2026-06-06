@@ -45,6 +45,37 @@ pub struct FleetSpan {
     pub spawned_at: DateTime<Utc>,
     /// When the agent completed — `None` while still running.
     pub completed_at: Option<DateTime<Utc>>,
+
+    // ── Wave/task focus context (Path A · F-1..F-3) ─────────────────────────
+    // Mutated via [`crate::fleet::tracker::FleetTracker::agent_focused_on`].
+    // All four default to `None`; agents not invoked via `/BUILD` (ad-hoc
+    // `/SCRUM`, `/RESEARCH`, etc.) never populate these.
+    /// Build codename (cross-ref to `$HELIX/corso/builds/<codename>/manifest.yaml`).
+    pub build_codename: Option<String>,
+    /// Wave ID within the build (cross-ref to `manifest.phases[i].waves[j].id`).
+    pub wave_id: Option<String>,
+    /// Task ID within the wave (cross-ref to `manifest.phases[i].waves[j].tasks[k].id`).
+    /// `None` when wave-bound but not focused on a specific task (per F-3).
+    pub task_id: Option<String>,
+    /// Symbol focus (e.g. `"fn handle_message"`). Plain string in V1 per F-1;
+    /// structured `{kind, name, file}` planned for V2.
+    pub focus_target_fn: Option<String>,
+}
+
+/// Wave/task focus context for [`FleetTracker::agent_focused_on`].
+///
+/// All four fields are `Option<String>` so the caller can clear individual
+/// dimensions by passing `None` (per F-3: no sentinel "idle" value).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentWaveContext {
+    /// See [`FleetSpan::build_codename`].
+    pub build_codename: Option<String>,
+    /// See [`FleetSpan::wave_id`].
+    pub wave_id: Option<String>,
+    /// See [`FleetSpan::task_id`].
+    pub task_id: Option<String>,
+    /// See [`FleetSpan::focus_target_fn`].
+    pub focus_target_fn: Option<String>,
 }
 
 impl FleetSpan {
@@ -73,6 +104,12 @@ impl FleetSpan {
             exit_path: None,
             spawned_at: Utc::now(),
             completed_at: None,
+            // Wave/task focus is attached after spawn via
+            // [`FleetTracker::agent_focused_on`]; default to `None`.
+            build_codename: None,
+            wave_id: None,
+            task_id: None,
+            focus_target_fn: None,
         }
     }
 }
@@ -190,5 +227,25 @@ mod tests {
         assert_eq!(json, r#""watchdog_stall""#);
         let back: ExitPath = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, ExitPath::WatchdogStall);
+    }
+
+    // ── Wave/task focus context (Path A · F-1..F-3) ────────────────────────
+
+    #[test]
+    fn new_span_defaults_wave_context_to_none() {
+        let span = FleetSpan::new("a1".into(), "eng".into(), "task".into(), None, false);
+        assert!(span.build_codename.is_none());
+        assert!(span.wave_id.is_none());
+        assert!(span.task_id.is_none());
+        assert!(span.focus_target_fn.is_none());
+    }
+
+    #[test]
+    fn agent_wave_context_default_is_all_none() {
+        let ctx = AgentWaveContext::default();
+        assert!(ctx.build_codename.is_none());
+        assert!(ctx.wave_id.is_none());
+        assert!(ctx.task_id.is_none());
+        assert!(ctx.focus_target_fn.is_none());
     }
 }

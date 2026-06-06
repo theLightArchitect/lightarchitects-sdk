@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LA Workspace Depth — Architecture Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Azeret+Mono:wght@300;400;500;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --d0: #00d4ff;  /* Platform */
+  --d1: #39ff8a;  /* Project  */
+  --d2: #ffad2e;  /* Build    */
+  --d3: #ff5c8a;  /* File     */
+  --bg: #07080f;
+  --s0: #0d0f18;
+  --s1: #12141f;
+  --s2: #181b28;
+  --border: rgba(255,255,255,0.06);
+  --tp: rgba(255,255,255,0.92);
+  --ts: rgba(255,255,255,0.45);
+  --tm: rgba(255,255,255,0.22);
+  --mono: 'Azeret Mono', monospace;
+  --display: 'Syne', sans-serif;
+  --ease: 0.22s cubic-bezier(0.4,0,0.2,1);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--tp);font-family:var(--mono);font-size:13px;line-height:1.6}
+body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");opacity:0.025;pointer-events:none;z-index:1000}
+
+.shell{display:grid;grid-template-rows:44px 1fr;grid-template-columns:220px 1fr 300px;height:100vh}
+
+/* ── Topbar ── */
+.topbar{grid-column:1/-1;display:flex;align-items:center;gap:0;border-bottom:1px solid var(--border);background:var(--s0);padding:0 16px;position:relative;z-index:10}
+.wordmark{font-family:var(--display);font-weight:800;font-size:14px;letter-spacing:0.14em;text-transform:uppercase;margin-right:20px;flex-shrink:0}
+.wordmark em{color:var(--dc,var(--d0));font-style:normal;transition:color 0.3s}
+.breadcrumb{display:flex;align-items:center;flex:1;overflow:hidden;height:44px}
+.crumb{display:flex;align-items:center;gap:8px;padding:0 14px;height:100%;cursor:pointer;border-right:1px solid var(--border);flex-shrink:0;transition:background var(--ease)}
+.crumb:hover{background:rgba(255,255,255,0.04)}
+.crumb-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;transition:box-shadow 0.3s}
+.crumb-label{font-size:11px;font-weight:500;letter-spacing:0.05em;color:var(--ts);transition:color var(--ease)}
+.crumb.active .crumb-label{color:var(--tp)}
+.crumb-sep{color:var(--tm);font-size:10px;padding:0 2px}
+.depth-meter{display:flex;align-items:center;gap:5px;margin-left:auto;padding-left:16px;flex-shrink:0}
+.dp{width:28px;height:3px;border-radius:2px;background:var(--border);transition:all 0.3s}
+.dp.on{height:3px}
+
+/* ── Sidebar ── */
+.sidebar{border-right:1px solid var(--border);background:var(--s0);overflow-y:auto;padding:12px 0;display:flex;flex-direction:column}
+.sb-section{border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:8px}
+.sb-section:last-child{border-bottom:none}
+.sb-lbl{font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:var(--tm);padding:6px 14px}
+.sb-item{display:flex;align-items:center;gap:9px;padding:6px 14px;cursor:pointer;transition:all var(--ease);position:relative}
+.sb-item:hover{background:rgba(255,255,255,0.04)}
+.sb-item.on{background:rgba(255,255,255,0.06)}
+.sb-item.on::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--dc,var(--d0));border-radius:0 2px 2px 0;transition:background 0.3s}
+.sb-ico{font-size:11px;opacity:0.5;width:14px;text-align:center;flex-shrink:0}
+.sb-txt{font-size:11.5px;color:var(--ts);transition:color var(--ease);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.sb-item.on .sb-txt{color:var(--tp)}
+.sb-badge{margin-left:auto;font-size:9px;padding:2px 6px;border-radius:3px;flex-shrink:0;font-weight:700;letter-spacing:0.06em}
+
+/* ── Workspace ── */
+.workspace{overflow:hidden;position:relative;background:var(--bg)}
+.level-stack{position:relative;width:100%;height:100%}
+.level{position:absolute;inset:0;padding:22px;overflow-y:auto;display:flex;flex-direction:column;gap:14px;transition:opacity 0.3s ease,transform 0.3s cubic-bezier(0.4,0,0.2,1);will-change:transform,opacity}
+.level:not(.active){opacity:0;pointer-events:none;transform:translateX(-12px) scale(0.99)}
+.level.entering{animation:lEnter 0.35s cubic-bezier(0.16,1,0.3,1) forwards}
+@keyframes lEnter{from{opacity:0;transform:translateX(18px) scale(1.01)}to{opacity:1;transform:none}}
+
+.lh{display:flex;align-items:center;gap:12px;margin-bottom:2px}
+.li{font-size:20px;opacity:0.6}
+.lt{font-family:var(--display);font-weight:700;font-size:19px;letter-spacing:-0.01em}
+.ls{font-size:11px;color:var(--tm);letter-spacing:0.03em;margin-top:1px}
+.back-btn{margin-left:auto;background:none;border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.55);padding:5px 12px;border-radius:4px;font-family:var(--mono);font-size:11px;cursor:pointer;transition:all var(--ease);flex-shrink:0}
+.back-btn:hover{border-color:rgba(255,255,255,0.3);color:var(--tp)}
+
+.grid{display:grid;gap:10px}
+.g2{grid-template-columns:1fr 1fr}
+.g3{grid-template-columns:1fr 1fr 1fr}
+.g4{grid-template-columns:repeat(4,1fr)}
+
+.card{background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:13px 15px;transition:all var(--ease);position:relative;overflow:hidden}
+.card::after{content:'';position:absolute;inset:0;background:linear-gradient(135deg,transparent 60%,rgba(255,255,255,0.015));pointer-events:none}
+.card.drill{cursor:pointer}
+.card.drill:hover{border-color:var(--dc,var(--d0));box-shadow:0 0 0 1px var(--dc,var(--d0)),0 4px 20px rgba(0,0,0,0.4);background:var(--s2);transform:translateY(-1px)}
+.card-lbl{font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--tm);margin-bottom:6px}
+.card-val{font-size:22px;font-weight:700;font-family:var(--display);color:var(--tp);line-height:1.1}
+.card-sub{font-size:11px;color:var(--tm);margin-top:3px}
+.card-bar{position:absolute;bottom:0;left:0;right:0;height:2px}
+.drill-hint{position:absolute;top:10px;right:10px;font-size:10px;color:var(--dc,var(--d0));opacity:0;transition:opacity var(--ease)}
+.card.drill:hover .drill-hint{opacity:1}
+
+.rows{display:flex;flex-direction:column;gap:7px}
+.row{background:var(--s1);border:1px solid var(--border);border-radius:5px;padding:10px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;transition:all var(--ease)}
+.row:hover{background:var(--s2)}
+.row.drill:hover{border-color:var(--dc,var(--d0));box-shadow:0 0 0 1px var(--dc,var(--d0))}
+.rdot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.rname{font-size:12px;font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rmeta{font-size:11px;color:var(--tm)}
+.phase-bar{display:flex;gap:3px;align-items:center}
+.ps{height:4px;flex:1;border-radius:2px;background:var(--border);transition:background var(--ease)}
+.ps.done{background:var(--d1)}
+.ps.act{background:var(--d2);animation:pp 1.4s ease-in-out infinite}
+@keyframes pp{0%,100%{opacity:1}50%{opacity:0.45}}
+
+.chip{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:3px;font-size:9px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase}
+
+.gate-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px}
+.gate{aspect-ratio:1;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;letter-spacing:0.04em;border:1px solid}
+
+.code-viewer{background:#0c0d12;border:1px solid var(--border);border-radius:6px;overflow:hidden;flex:1;min-height:200px;display:flex;flex-direction:column}
+.code-top{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--s0)}
+.code-fn{font-size:11px;color:var(--d3);flex:1}
+.code-body{padding:14px;overflow-y:auto;flex:1}
+.cline{display:flex;gap:14px;font-size:11.5px;line-height:1.72;color:rgba(255,255,255,0.72)}
+.cline .ln{color:var(--tm);user-select:none;min-width:30px;text-align:right;flex-shrink:0}
+.cline.hi{background:rgba(255,92,138,0.08);margin:0 -14px;padding:0 14px;border-left:2px solid var(--d3)}
+
+/* ── Copilot ── */
+.cop{border-left:1px solid var(--border);background:var(--s0);display:flex;flex-direction:column;overflow:hidden}
+.cop-hdr{padding:11px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:9px;flex-shrink:0}
+.cop-title{font-family:var(--display);font-weight:700;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;flex:1}
+.cop-scope{font-size:10px;padding:3px 8px;border-radius:3px;font-weight:700;letter-spacing:0.06em;border:1px solid;transition:all 0.35s}
+.cop-ctx{padding:10px 14px;border-bottom:1px solid var(--border);background:rgba(0,0,0,0.2);flex-shrink:0}
+.ctx-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--tm);margin-bottom:5px}
+.ctx-chips{display:flex;flex-direction:column;gap:3px}
+.cc{display:flex;align-items:center;gap:7px;font-size:10.5px;padding:4px 8px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:3px;overflow:hidden}
+.cc-k{color:var(--tm);font-size:10px;flex-shrink:0;min-width:56px}
+.cc-v{color:var(--tp);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cop-msgs{flex:1;overflow-y:auto;padding:13px;display:flex;flex-direction:column;gap:10px}
+.msg{display:flex;flex-direction:column;gap:3px}
+.msg-r{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--tm)}
+.msg-b{font-size:11.5px;line-height:1.65;color:var(--ts);background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:4px;padding:8px 10px}
+.msg.ass .msg-b{border-color:rgba(255,255,255,0.08);background:rgba(255,255,255,0.05);color:var(--tp)}
+.cop-in{padding:11px;border-top:1px solid var(--border);flex-shrink:0}
+.cop-in textarea{width:100%;background:var(--s1);border:1px solid var(--border);border-radius:4px;color:var(--tp);font-family:var(--mono);font-size:11.5px;resize:none;padding:8px 10px;height:68px;outline:none;transition:border-color var(--ease)}
+.cop-in textarea::placeholder{color:var(--tm)}
+.cop-in textarea:focus{border-color:rgba(255,255,255,0.2)}
+
+.flash{position:fixed;inset:0;pointer-events:none;z-index:500;opacity:0;transition:opacity 0.18s}
+.flash.on{opacity:1}
+
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
+</style>
+</head>
+<body>
+<div class="shell" id="app">
+  <header class="topbar">
+    <div class="wordmark">LIGHT<em id="wm-accent">ARCHITECTS</em></div>
+    <nav class="breadcrumb" id="breadcrumb"></nav>
+    <div class="depth-meter" id="dmeter"></div>
+  </header>
+
+  <aside class="sidebar" id="sidebar"></aside>
+
+  <main class="workspace">
+    <div class="level-stack">
+      <div class="level active" id="lv-0"></div>
+      <div class="level"        id="lv-1"></div>
+      <div class="level"        id="lv-2"></div>
+      <div class="level"        id="lv-3"></div>
+    </div>
+  </main>
+
+  <aside class="cop">
+    <div class="cop-hdr">
+      <span class="cop-title">Copilot</span>
+      <span class="cop-scope" id="cscope">Platform</span>
+    </div>
+    <div class="cop-ctx" id="cctx"></div>
+    <div class="cop-msgs" id="cmsgs"></div>
+    <div class="cop-in"><textarea id="cin" placeholder="Ask anything…"></textarea></div>
+  </aside>
+</div>
+<div class="flash" id="flash"></div>
+
+<script>
+const DC = ['#00d4ff','#39ff8a','#ffad2e','#ff5c8a'];
+const DL = ['Platform','lightarchitects-webshell','platform-provider-abstraction','copilot/mod.rs'];
+const DI = ['◈','◻','◉','◐'];
+
+let depth = 0;
+
+// ─ Data ─────────────────────────────────────────────────────────
+const DATA = {
+  0: {
+    sub: 'all projects · squad overview',
+    metrics: [
+      {l:'Active Builds',v:'7',s:'3 in progress',drill:true},
+      {l:'Squad Health',v:'98%',s:'all siblings up',drill:false},
+      {l:'HITL Queue',v:'2',s:'pending decisions',drill:false},
+      {l:'Gate Coverage',v:'94%',s:'÷ A+S+Q gates',drill:false},
+    ],
+    projects: [
+      {n:'lightarchitects-webshell',p:3,t:4,c:'#39ff8a',tag:'ACTIVE'},
+      {n:'lightarchitects-gateway',p:7,t:7,c:'#00d4ff',tag:'SHIPPED'},
+      {n:'SOUL-DEV',p:2,t:6,c:'#ffad2e',tag:'IN GATE'},
+      {n:'CORSO-DEV',p:4,t:4,c:'#00d4ff',tag:'IDLE'},
+      {n:'AYIN-DEV',p:2,t:4,c:'#ff5c8a',tag:'BLOCKED'},
+    ]
+  },
+  1: {
+    sub: 'Rust binary · 886 tests · 91% coverage',
+    stats: [{l:'Tests',v:'886',s:'passing'},{l:'Coverage',v:'91%',s:'gate pass'},{l:'Clippy',v:'0',s:'warnings'}],
+    builds: [
+      {n:'platform-provider-abstraction',p:3,t:4,c:'#ffad2e',s:'ACTIVE'},
+      {n:'copilot-ayin-instrumentation',p:7,t:7,c:'#39ff8a',s:'MERGED'},
+      {n:'webshell-copilot-core',p:4,t:4,c:'#39ff8a',s:'MERGED'},
+    ]
+  },
+  2: {
+    sub: 'SMALL tier · 4-phase · XEA 79.35 STRONG',
+    phases:[{l:'P1',n:'Research',s:'done'},{l:'P2',n:'Implement',s:'done'},{l:'P3',n:'Gate',s:'act'},{l:'P4',n:'Ship',s:'pend'}],
+    gates:[{g:'A',p:1},{g:'S',p:1},{g:'Q',p:1},{g:'C',p:0},{g:'O',p:1},{g:'P',p:1},{g:'K',p:0},{g:'D',p:1},{g:'T',p:1},{g:'R',p:1}],
+    files:[
+      {n:'src/copilot/mod.rs',d:'+125 −42'},
+      {n:'src/config.rs',d:'+88 −12'},
+      {n:'src/preflight/checks.rs',d:'+67 −8'},
+      {n:'src/session_fork.rs',d:'+18 −5'},
+    ]
+  },
+  3: {
+    sub: '1580 LOC · Rust 2024 · +125 −42 this build',
+    code: [
+      {n:1109,t:'async fn run_gemini_turn('},
+      {n:1110,t:'    message: &str,'},
+      {n:1111,t:'    session: &BuildSession,'},
+      {n:1112,t:'    prev_session_id: Option<&str>,'},
+      {n:1113,t:') -> Result<(String, Option<String>), String> {'},
+      {n:1114,t:'    let AgentSession::Gemini(cfg) = &session.agent else {'},
+      {n:1115,t:'        return Err("not a Gemini session".to_owned());'},
+      {n:1116,t:'    };'},
+      {n:1117,t:''},
+      {n:1118,t:'    let mut c = tokio::process::Command::new(resolve_binary("gemini"));'},
+      {n:1119,t:'    c.env("PATH", augmented_path());'},
+      {n:1120,t:'    c.arg("--prompt").arg(message)'},
+      {n:1121,t:'        .arg("--output-format").arg("stream-json")'},
+      {n:1122,t:'        .arg(format!("--model={}", &cfg.model));  // Fix 4 ←',hi:true},
+      {n:1123,t:'    c.env_remove("ANTHROPIC_API_KEY");             // Fix 5 ←',hi:true},
+      {n:1124,t:'    c.env_remove("OPENAI_API_KEY");'},
+      {n:1125,t:'    c.env_remove("MISTRAL_API_KEY");'},
+    ]
+  }
+};
+
+// ─ Copilot context per depth ─────────────────────────────────────
+const COP = [
+  {
+    scope:'Platform',
+    chips:[{k:'scope',v:'all projects'},{k:'session',v:'39b72c26-791e…'},{k:'preset',v:'engineer'}],
+    msgs:[
+      {r:'user',b:'How many builds are gated right now?'},
+      {r:'ass',b:'Platform-wide: 7 active builds. 2 are blocked at gate — AYIN-DEV at [C] Canon, SOUL-DEV at [K] Knowledge. Both need LÆX review before proceeding to Phase N+1.'},
+    ],
+    ph:'Ask anything… scope: platform'
+  },
+  {
+    scope:'Project',
+    chips:[{k:'project',v:'lightarchitects-webshell'},{k:'branch',v:'platform-provider-abs'},{k:'tests',v:'886 passing'}],
+    msgs:[
+      {r:'user',b:'What\'s the test coverage for this project?'},
+      {r:'ass',b:'lightarchitects-webshell: 886 tests passing, 91% coverage — above the 90% gate floor. Last clippy run: 0 warnings. 3 active builds, 1 in-flight at P3.'},
+    ],
+    ph:'Ask about lightarchitects-webshell…'
+  },
+  {
+    scope:'Build',
+    chips:[{k:'build',v:'platform-provider-abs'},{k:'phase',v:'P3 · Gate'},{k:'score',v:'79.35 STRONG'}],
+    msgs:[
+      {r:'user',b:'Which gates are failing?'},
+      {r:'ass',b:'Two gates open: [C] Canon — LÆX review pending on new AgentKind variants. [K] Knowledge — helix entry not yet written for the GhCopilot + Gemini design decisions. All other 8 gates pass.'},
+    ],
+    ph:'Ask about this build…'
+  },
+  {
+    scope:'File',
+    chips:[{k:'file',v:'src/copilot/mod.rs'},{k:'LOC',v:'1580'},{k:'diff',v:'+125 −42 (build)'}],
+    msgs:[
+      {r:'user',b:'Why is line 1122 highlighted?'},
+      {r:'ass',b:'That\'s Fix 4 from the security review — changed `--model VALUE` (two-arg form) to `--model=VALUE` (single-arg form). The two-arg form let a value beginning with `--` be misinterpreted as a flag by the Gemini CLI subprocess. Fix 5 on 1123–1125 strips cross-agent API keys from the subprocess environment.'},
+    ],
+    ph:'Ask about src/copilot/mod.rs…'
+  }
+];
+
+// ─ Helpers ──────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const dc = () => DC[depth];
+
+function setCSS(d) {
+  document.documentElement.style.setProperty('--dc', DC[d]);
+}
+
+function highlight(code) {
+  return code
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/(fn |let |mut |async |await|return |if |else |Some|None|Ok|Err|impl )/g,'<span style="color:#7ab4ff">$1</span>')
+    .replace(/(".*?")/g,'<span style="color:#88d47a">$1</span>')
+    .replace(/(\/\/.*$)/mg,'<span style="color:#4a5a7a;font-style:italic">$1</span>');
+}
+
+function chip(label, bg, fg, border) {
+  return `<span class="chip" style="background:${bg};color:${fg};border:1px solid ${border}">${label}</span>`;
+}
+
+// ─ Render breadcrumb ─────────────────────────────────────────────
+function renderBC() {
+  const bc = $('breadcrumb');
+  bc.innerHTML = '';
+  DL.slice(0, depth + 1).forEach((lbl, i) => {
+    if (i > 0) {
+      const sep = document.createElement('span');
+      sep.className = 'crumb-sep';
+      sep.textContent = '›';
+      bc.appendChild(sep);
+    }
+    const c = document.createElement('div');
+    c.className = 'crumb' + (i === depth ? ' active' : '');
+    c.innerHTML = `<span class="crumb-dot" style="background:${DC[i]};box-shadow:0 0 7px ${DC[i]}88"></span><span class="crumb-label">${i === 0 ? 'Platform' : lbl.split('/').pop()}</span>`;
+    if (i < depth) c.addEventListener('click', () => go(i));
+    bc.appendChild(c);
+  });
+}
+
+function renderDM() {
+  const dm = $('dmeter');
+  dm.innerHTML = Array.from({length:4}, (_,i) =>
+    `<div class="dp ${i<=depth?'on':''}" style="${i<=depth?`background:${DC[i]}`:''}"></div>`
+  ).join('');
+}
+
+// ─ Render sidebar ────────────────────────────────────────────────
+function renderSB() {
+  const d = depth;
+  let html = '';
+
+  if (d === 0) {
+    html += sbSection('Workspace', [
+      {ico:'◈',txt:'Platform Overview',on:true},
+      {ico:'⬡',txt:'Squad Health',bv:'ALL UP',bc:DC[0]},
+      {ico:'◉',txt:'Active Builds',bv:'7',bc:DC[0]},
+      {ico:'⚠',txt:'HITL Queue',bv:'2',bc:'#ffad2e'},
+    ]);
+    html += sbSection('Projects', DATA[0].projects.map(p=>({ico:'◻',txt:p.n.replace('lightarchitects-','la-'),bv:p.tag,bc:p.c})));
+  } else if (d === 1) {
+    html += sbSection('Project', [
+      {ico:'◻',txt:'lightarchitects-webshell',on:true},
+      {ico:'⎇',txt:'platform-provider-abs…',bv:'active',bc:DC[2]},
+    ]);
+    html += sbSection('Builds', DATA[1].builds.map(b=>({ico:'◉',txt:b.n.substring(0,22),bv:b.s,bc:b.c})));
+  } else if (d === 2) {
+    html += sbSection('Build', [
+      {ico:'◉',txt:'platform-provider-abs',on:true},
+      {ico:'◱',txt:'Phase 3 — Gate',bv:'ACTIVE',bc:DC[2]},
+      {ico:'◫',txt:'Gates [A+S+Q…R]'},
+    ]);
+    html += sbSection('Files Changed', DATA[2].files.map(f=>({ico:'◐',txt:f.n.split('/').pop(),bv:f.d.split(' ')[0],bc:DC[3]})));
+  } else {
+    html += sbSection('File', [
+      {ico:'◐',txt:'copilot/mod.rs',on:true},
+      {ico:'≡',txt:'run_gemini_turn()'},
+      {ico:'≡',txt:'run_gh_copilot_turn()'},
+      {ico:'≡',txt:'call_subprocess()'},
+    ]);
+    html += sbSection('Applied Fixes', [
+      {ico:'✓',txt:'Fix 4 model=VALUE',bv:'DONE',bc:DC[3]},
+      {ico:'✓',txt:'Fix 5 strip creds',bv:'DONE',bc:DC[3]},
+      {ico:'✓',txt:'Fix 3 sessionId key',bv:'DONE',bc:DC[3]},
+      {ico:'✓',txt:'Fix 2 done:true SSE',bv:'DONE',bc:DC[3]},
+    ]);
+  }
+
+  $('sidebar').innerHTML = html;
+}
+
+function sbSection(title, items) {
+  return `<div class="sb-section">
+    <div class="sb-lbl">${title}</div>
+    ${items.map(it => `
+      <div class="sb-item${it.on?' on':''}">
+        <span class="sb-ico">${it.ico||'·'}</span>
+        <span class="sb-txt">${it.txt}</span>
+        ${it.bv?`<span class="sb-badge" style="background:${(it.bc||dc())+'22'};color:${it.bc||dc()};border:1px solid ${(it.bc||dc())+'44'}">${it.bv}</span>`:''}
+      </div>
+    `).join('')}
+  </div>`;
+}
+
+// ─ Render copilot ────────────────────────────────────────────────
+function renderCop() {
+  const c = COP[depth];
+  const sc = $('cscope');
+  sc.textContent = c.scope;
+  sc.style.background = dc()+'22'; sc.style.color = dc(); sc.style.borderColor = dc()+'66';
+  $('cctx').innerHTML = `<div class="ctx-lbl">Active Context</div><div class="ctx-chips">${c.chips.map(x=>`<div class="cc"><span class="cc-k">${x.k}</span><span class="cc-v">${x.v}</span></div>`).join('')}</div>`;
+  $('cmsgs').innerHTML = c.msgs.map(m=>`<div class="msg ${m.r}"><div class="msg-r">${m.r==='ass'?'assistant':m.r}</div><div class="msg-b">${m.b}</div></div>`).join('');
+  $('cin').placeholder = c.ph;
+}
+
+// ─ Level renderers ───────────────────────────────────────────────
+function renderL0() {
+  const d = DATA[0];
+  $('lv-0').innerHTML = `
+    <div class="lh"><span class="li">${DI[0]}</span><div><div class="lt">Platform Workspace</div><div class="ls">${d.sub}</div></div></div>
+    <div class="grid g4">${d.metrics.map(m=>`
+      <div class="card${m.drill?' drill':''}" ${m.drill?`onclick="drill(1)"`:''}>${m.drill?'<span class="drill-hint">→ drill in</span>':''}
+        <div class="card-lbl">${m.l}</div>
+        <div class="card-val">${m.v}</div>
+        <div class="card-sub">${m.s}</div>
+        <div class="card-bar" style="background:${DC[0]}44"></div>
+      </div>`).join('')}
+    </div>
+    <div class="card">
+      <div class="card-lbl" style="margin-bottom:9px">Projects — click to drill in</div>
+      <div class="rows">${d.projects.map(p=>`
+        <div class="row drill" onclick="drill(1)">
+          <div class="rdot" style="background:${p.c};box-shadow:0 0 8px ${p.c}99"></div>
+          <div class="rname">${p.n}</div>
+          <div class="phase-bar" style="width:80px">${Array.from({length:p.t},(_,i)=>`<div class="ps ${i<p.p?'done':i===p.p?'act':''}"></div>`).join('')}</div>
+          ${chip(p.tag,p.c+'22',p.c,p.c+'44')}
+        </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+function renderL1() {
+  const d = DATA[1];
+  $('lv-1').innerHTML = `
+    <div class="lh"><span class="li">${DI[1]}</span><div><div class="lt">${DL[1]}</div><div class="ls">${d.sub}</div></div><button class="back-btn" onclick="go(0)">↑ Platform</button></div>
+    <div class="grid g3">${d.stats.map(s=>`
+      <div class="card">
+        <div class="card-lbl">${s.l}</div>
+        <div class="card-val">${s.v}</div>
+        <div class="card-sub">${s.s}</div>
+        <div class="card-bar" style="background:${DC[1]}44"></div>
+      </div>`).join('')}
+    </div>
+    <div class="card">
+      <div class="card-lbl" style="margin-bottom:9px">Builds — click to drill in</div>
+      <div class="rows">${d.builds.map(b=>`
+        <div class="row drill" onclick="drill(2)">
+          <div class="rdot" style="background:${b.c};box-shadow:0 0 8px ${b.c}99"></div>
+          <div class="rname">${b.n}</div>
+          <div class="phase-bar" style="width:80px">${Array.from({length:b.t},(_,i)=>`<div class="ps ${i<b.p?'done':i===b.p?'act':''}"></div>`).join('')}</div>
+          ${chip(b.s,b.c+'22',b.c,b.c+'44')}
+        </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+function renderL2() {
+  const d = DATA[2];
+  $('lv-2').innerHTML = `
+    <div class="lh"><span class="li">${DI[2]}</span><div><div class="lt">${DL[2].substring(0,32)}…</div><div class="ls">${d.sub}</div></div><button class="back-btn" onclick="go(1)">↑ Project</button></div>
+    <div class="card">
+      <div class="card-lbl" style="margin-bottom:9px">Phase Progression</div>
+      <div style="display:flex;gap:8px">
+        ${d.phases.map(p=>{
+          const c=p.s==='done'?DC[1]:p.s==='act'?DC[2]:'rgba(255,255,255,0.2)';
+          const bg=p.s==='done'?DC[1]+'12':p.s==='act'?DC[2]+'18':'transparent';
+          const bc=p.s==='done'?DC[1]+'44':p.s==='act'?DC[2]+'66':'rgba(255,255,255,0.07)';
+          return `<div style="flex:1;padding:10px 12px;border-radius:5px;border:1px solid ${bc};background:${bg}">
+            <div style="font-size:16px;font-weight:700;font-family:var(--display);color:${c}">${p.l}</div>
+            <div style="font-size:10px;color:rgba(255,255,255,0.38);margin-top:1px">${p.n}</div>
+            <div style="margin-top:6px">${chip(p.s==='act'?'ACTIVE':p.s==='done'?'DONE':'PENDING',c+'22',c,c+'44')}</div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+    <div class="grid g2">
+      <div class="card">
+        <div class="card-lbl" style="margin-bottom:8px">Gates [A+S+Q+C+O+P+K+D+T+R]</div>
+        <div class="gate-grid">${d.gates.map(g=>{
+          const c=g.p?DC[1]:'#ff5c8a';
+          return `<div class="gate" style="background:${c}18;color:${c};border-color:${c}44">${g.g}</div>`;
+        }).join('')}</div>
+      </div>
+      <div class="card">
+        <div class="card-lbl" style="margin-bottom:8px">Files Changed — click to drill in</div>
+        <div class="rows">${d.files.map(f=>`
+          <div class="row drill" onclick="drill(3)" style="padding:8px 12px">
+            <span style="font-size:10px;color:${DC[3]};opacity:0.7">◐</span>
+            <div class="rname" style="font-size:11px">${f.n.split('/').slice(-2).join('/')}</div>
+            <div class="rmeta">${f.d}</div>
+          </div>`).join('')}
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderL3() {
+  const d = DATA[3];
+  $('lv-3').innerHTML = `
+    <div class="lh"><span class="li">${DI[3]}</span><div><div class="lt">copilot/mod.rs</div><div class="ls">${d.sub}</div></div><button class="back-btn" onclick="go(2)">↑ Build</button></div>
+    <div class="code-viewer" style="flex:1">
+      <div class="code-top">
+        <span style="font-size:11px;opacity:0.4">●</span>
+        <span class="code-fn">src/copilot/mod.rs</span>
+        ${chip('FILE SCOPE',DC[3]+'22',DC[3],DC[3]+'44')}
+      </div>
+      <div class="code-body">
+        ${d.code.map(l=>`
+          <div class="cline${l.hi?' hi':''}">
+            <span class="ln">${l.n}</span>
+            <span>${highlight(l.t)}</span>
+          </div>`).join('')}
+        <div style="padding:12px 0 4px;color:rgba(255,255,255,0.18);font-size:11px">… 1555 more lines …</div>
+      </div>
+    </div>
+    <div class="grid g2" style="flex-shrink:0">
+      <div class="card">
+        <div class="card-lbl">Agent Annotations — This Build</div>
+        <div style="display:flex;flex-direction:column;gap:5px;margin-top:6px">
+          ${['Fix 1: GhCopilot sentinel bypass (session_fork.rs)','Fix 2: done:true fallback SSE on error path','Fix 3: sessionId camelCase init event key','Fix 4: --model=VALUE flag injection fix','Fix 5: strip cross-agent credentials'].map(a=>`
+            <div style="font-size:10.5px;color:rgba(255,255,255,0.5);display:flex;gap:7px;align-items:flex-start">
+              <span style="color:${DC[3]};font-size:9px;margin-top:2px;flex-shrink:0">✓</span>${a}
+            </div>`).join('')}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-lbl">File Stats</div>
+        <div style="display:flex;flex-direction:column;gap:7px;margin-top:6px">
+          ${[['LOC','1580'],['This build Δ','+125 −42'],['Tests referencing','14 test fn'],['Last commit','just now'],['Build','platform-provider-abs']].map(([k,v])=>`
+            <div style="display:flex;justify-content:space-between;font-size:11px">
+              <span style="color:rgba(255,255,255,0.35)">${k}</span>
+              <span style="color:rgba(255,255,255,0.78)">${v}</span>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>`;
+}
+
+// ─ Navigation ────────────────────────────────────────────────────
+function transition(to) {
+  const f = $('flash');
+  f.style.background = DC[to]+'07';
+  f.classList.add('on');
+  setTimeout(()=>f.classList.remove('on'), 200);
+}
+
+function setActive(d) {
+  ['lv-0','lv-1','lv-2','lv-3'].forEach((id,i)=>{
+    const el=$(id);
+    el.classList.remove('active','entering');
+    if(i===d){el.classList.add('active','entering');setTimeout(()=>el.classList.remove('entering'),400);}
+  });
+}
+
+function drill(d) {
+  if(d===depth)return;
+  transition(d);
+  depth=d;
+  setCSS(d);
+  setActive(d);
+  renderBC();renderDM();renderSB();renderCop();
+}
+
+function go(d) {
+  if(d===depth)return;
+  transition(d);
+  depth=d;
+  setCSS(d);
+  setActive(d);
+  renderBC();renderDM();renderSB();renderCop();
+}
+
+// ─ Init ──────────────────────────────────────────────────────────
+renderL0();renderL1();renderL2();renderL3();
+setCSS(0);renderBC();renderDM();renderSB();renderCop();
+</script>
+</body>
+</html>

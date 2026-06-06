@@ -232,7 +232,7 @@ pub async fn check_la_config_dir() -> CheckResult {
 ///
 /// Returns [`CheckStatus::Fail`] when the resolved path does not exist on disk.
 pub async fn check_agent_binary(agent: &AgentSession) -> CheckResult {
-    if let AgentSession::LightarchitectsNative(c) = agent {
+    if let AgentSession::LightArchitect(c) = agent {
         let resolved = crate::copilot::resolve_binary(&c.binary);
         let (status, detail) = if Path::new(&resolved).is_file() {
             (CheckStatus::Pass, "lightarchitects-cli found".to_owned())
@@ -269,7 +269,7 @@ pub async fn check_agent_binary(agent: &AgentSession) -> CheckResult {
             "Agent binary (vibe)",
             "uv tool install mistral-vibe",
         ),
-        AgentSession::LightarchitectsNative(_) => unreachable!("handled above"),
+        AgentSession::LightArchitect(_) => unreachable!("handled above"),
     };
 
     let resolved = crate::copilot::resolve_binary(name);
@@ -372,7 +372,7 @@ pub async fn check_agent_credentials(agent: &AgentSession) -> CheckResult {
             },
         },
 
-        AgentSession::LightarchitectsNative(_) => CheckResult {
+        AgentSession::LightArchitect(_) => CheckResult {
             id: "agent_credentials",
             label: "Agent credentials (lightarchitects-cli)",
             category: Category::Core,

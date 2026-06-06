@@ -126,14 +126,7 @@ fn remove_deletes_session() {
     let store = SessionStore::noop();
 
     store
-        .insert(
-            "build-rm",
-            "/tmp/rm",
-            "lightarchitects-native",
-            None,
-            None,
-            false,
-        )
+        .insert("build-rm", "/tmp/rm", "light-architect", None, None, false)
         .expect("insert should succeed");
 
     assert_eq!(store.count().expect("count"), 1);

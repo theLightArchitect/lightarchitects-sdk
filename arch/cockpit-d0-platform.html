@@ -1,0 +1,2650 @@
+<!--
+  ╔════════════════════════════════════════════════════════════════════════════╗
+  ║  Cockpit · D0 — Platform Depth                                            ║
+  ║  arch/cockpit-d0-platform.html                                            ║
+  ╠════════════════════════════════════════════════════════════════════════════╣
+  ║  PURPOSE                                                                   ║
+  ║                                                                            ║
+  ║  Drop-in replacement for the d0 surface of cockpit-depth-recursive.html.   ║
+  ║  Same tokens, same fonts, same depth-keyed --acc rebinding, same drill     ║
+  ║  flash. Adds the architectural innovations from the merge review:          ║
+  ║                                                                            ║
+  ║   1. STRAND MOSAIC      — project × {A,S,Q,T,P,D,K} risk matrix          ║
+  ║                            (Canon XXX strand mosaic visualized)            ║
+  ║   2. NORTHSTAR PULSE    — P1–P7 health bars w/ pillar-to-advance hint     ║
+  ║                            (Northstar §72–203 per-pillar mechanical)       ║
+  ║   3. SQUAD CONSTELLATION — 7 siblings as graph w/ A2A link animation      ║
+  ║   4. AMBIENT HELIX STRIP — recent enrichment marquee under header         ║
+  ║   5. SMART WAVE DISPATCH — reasons-aware, gate-aware dispatch             ║
+  ║   6. 7 PRESET CHIPS     — matches src/lib/cockpit/stores.ts                ║
+  ║   7. LABEL-MODE TOGGLE  — SQUAD codenames ↔ FUNCTION names (⌥N, ls)       ║
+  ║   8. ROUTE PREVIEW TOAST — 11 drill paths wired via computeDrillRoute()   ║
+  ╠════════════════════════════════════════════════════════════════════════════╣
+  ║  DROP-IN PROTOCOL — merge into cockpit-depth-recursive.html               ║
+  ║                                                                            ║
+  ║  Step 1. Token parity — verified. All :root vars (--la-*, --d0..--d3,    ║
+  ║          --sib-*, --depth-shift) match the parent file. No drift.          ║
+  ║                                                                            ║
+  ║  Step 2. Replace DEPTHS[0] block in parent (lines 1548–1632) with this    ║
+  ║          file's DATA section (search for "D0 — DATA" below). The parent   ║
+  ║          renderer feeds DEPTHS[d].{portal,context,health,hitl,fleet,git,  ║
+  ║          strat,wave} into renderDepth(d). The d0 surface here is a        ║
+  ║          superset with three additional roles: northstar, mosaic,         ║
+  ║          ambient. Add these to renderDepth(0).                             ║
+  ║                                                                            ║
+  ║  Step 3. Port the bento grid-template-areas from this file's .bento       ║
+  ║          rule into the parent file's d0-specific bento layout. Other      ║
+  ║          depths keep their existing 4×4 grid; d0 grows to 12×7.            ║
+  ║                                                                            ║
+  ║  Step 4. Port the chrome additions: .label-toggle-group + .route-toast    ║
+  ║          + .ambient. These are depth-agnostic — they belong on the .shell ║
+  ║          regardless of current depth.                                      ║
+  ║                                                                            ║
+  ║  Step 5. Port the JS:                                                      ║
+  ║            - SIBLING_FUNCTION map + siblingLabel() helper                  ║
+  ║            - computeDrillRoute() + showRouteToast()                        ║
+  ║            - applyLabelMode() + toggleLabelMode()                          ║
+  ║            - wire* functions (wirePortal, wireMosaic, etc.)                ║
+  ║          The parent's drillTo() should call computeDrillRoute() before    ║
+  ║          its DEPTHS[d] swap. Anchor schema is identical; depth swap is    ║
+  ║          additive.                                                         ║
+  ║                                                                            ║
+  ║  Step 6. SVELTE PORT (Cockpit.svelte): each render*() function becomes    ║
+  ║          a {#each $store as item} block. Each wire*() becomes an on:click ║
+  ║          handler. siblingLabel becomes a derived store. labelMode becomes ║
+  ║          writable<'squad'|'function'> persisted via lib/settings-persist. ║
+  ╠════════════════════════════════════════════════════════════════════════════╣
+  ║  FULL-STACK CONTRACT MAP — d0 scope                                       ║
+  ║                                                                            ║
+  ║  Each card maps to: (a) an HTTP endpoint or SSE stream (wire.http /        ║
+  ║  event.bus la-contract), (b) a Svelte store (ui.store), (c) a component   ║
+  ║  (ui.component), (d) an operator surface (operator.surface).               ║
+  ║                                                                            ║
+  ║  Spec citations: webshell-api-surface-v1.md §X.Y (the canonical surface)  ║
+  ║  Contract kinds: la-contracts-canon-v1.md §2.2 (the kind taxonomy)         ║
+  ║                                                                            ║
+  ║  STATUS LEGEND:                                                            ║
+  ║    ✓ SHIPPED  — endpoint live in src/server/mod.rs as of HEAD              ║
+  ║    ◍ CLIENT-SIDE — derived from existing data, no endpoint needed         ║
+  ║                                                                            ║
+  ║  ┌──────────────────┬────────────────────────────────────────┬─────────┐  ║
+  ║  │ CARD             │ ENDPOINT (or composition)              │ STATUS  │  ║
+  ║  ├──────────────────┼────────────────────────────────────────┼─────────┤  ║
+  ║  │ AMBIENT STRIP    │ GET /api/helix/nodes?limit=20          │ ✓ §2.15 │  ║
+  ║  │   (helix heart)  │ + GET /api/events?topic=v1.helix.*     │ ✓ §2.30 │  ║
+  ║  ├──────────────────┼────────────────────────────────────────┼─────────┤  ║
+  ║  │ PORTAL           │ GET /api/projects (list)               │ ✓ §2.34 │  ║
+  ║  │   (6 projects)   │ + GET /api/projects/:slug (per-row)    │ ✓ §2.34 │  ║
+  ║  │                  │ + GET /api/builds (active count)       │ ✓ §2.4  │  ║
+  ║  ├──────────────────┼────────────────────────────────────────┼─────────┤  ║
+  ║  │ CONTEXT          │ GET /api/events/global (ring + live)   │ ✓ §2.3  │  ║
+  ║  │   (events feed)  │ + GET /api/events?topic=v1.*           │ ✓ §2.30 │  ║
+  ║  ├──────────────────┼────────────────────────────────────────┼─────────┤  ║
+  ║  │ NORTHSTAR PULSE  │ GET /api/northstar/platform-pulse      │ ✓ §2.51 │  ║
+  ║  │   (P1–P7 bars)   │   handler: northstar_routes.rs          │         │  ║
+  ║  ├──────────────────┼────────────────────────────────────────┼─────────┤  ║
+  ║  │ STRAND MOSAIC    │ GET /api/strand-mosaic?scope=platform  │ ✓ §2.52 │  ║
+  ║  │   (proj×gate)    │   handler: mosaic_routes.rs             │         │  ║
+  ║  │                  │   la-contracts: mosaic.strand_matrix.v1│ ✓ amend │  ║
+  ║  ├──────────────────┼────────────────────────────────────────┼─────────┤  ║
+  ║  │ FLEET            │ GET /api/siblings (platform status)    │ ✓       │  ║
+  ║  │   (constellation)│ + GET (SSE) /api/squad/a2a (link edges)│ ✓ §2.54 │  ║
+  ║  │                  │   handler: squad_routes.rs              │         │  ║
+  ║  │                  │   la-contracts kind: agent.a2a         │ ✓       │  ║
+  ║  ├──────────────────┼────────────────────────────────────────┼─────────┤  ║
+  ║  │ HITL ESCALATIONS │ GET /api/conductor/hitl                │ ✓ §2.43 │  ║
+  ║  │                  │ + GET /api/gitforest/hitl-search       │ ✓ §2.28 │  ║
+  ║  │                  │ + SSE topic=v1.conductor.escalation    │ ✓ §2.30 │  ║
+  ║  ├──────────────────┼────────────────────────────────────────┼─────────┤  ║
+  ║  │ REPOSITORIES     │ POST /api/git/worktrees per repo       │ ✓ §2.27 │  ║
+  ║  │                  │ + GET /api/gitforest/topology?repo=X   │ ✓ §2.17 │  ║
+  ║  │                  │ + SSE topic=v1.worktree.update         │ ✓ §2.30 │  ║
+  ║  ├──────────────────┼────────────────────────────────────────┼─────────┤  ║
+  ║  │ SMART DISPATCH   │ GET /api/wave/suggestions?scope=plat   │ ✓ §2.53 │  ║
+  ║  │                  │   handler: wave_routes.rs               │         │  ║
+  ║  │                  │   la-contracts: wave.smart_suggestions.v1 amend │  ║
+  ║  │                  │ (POST execute → §2.7 /api/dispatch/*)  │ ✓ §2.7  │  ║
+  ║  ├──────────────────┼────────────────────────────────────────┼─────────┤  ║
+  ║  │ PRESET (chips)   │ ui.store $selectedPreset (writable)    │ ◍       │  ║
+  ║  │ LABEL toggle     │ ui.store $cockpitLabelMode + ls.persist│ ◍       │  ║
+  ║  │ TARGET breadcrumb│ ui.store $selectedTarget (writable)    │ ◍       │  ║
+  ║  └──────────────────┴────────────────────────────────────────┴─────────┘  ║
+  ║                                                                            ║
+  ║  ALL ENDPOINTS SHIPPED — ALL 9 CARDS WIRED. Total gap closed 2026-06-05:  ║
+  ║    1. GET /api/projects                — pre-existed (§2.34 list shipped)  ║
+  ║    2. GET /api/northstar/platform-pulse — shipped (§2.51 NEW)             ║
+  ║    3. GET /api/strand-mosaic           — shipped (§2.52 NEW)              ║
+  ║    4. GET /api/squad/a2a (SSE)         — shipped (§2.54 NEW)              ║
+  ║    5. GET /api/wave/suggestions        — shipped (§2.53 NEW)              ║
+  ║                                                                            ║
+  ║    la-contracts.schema.json amended (2026-06-05) — 2 new kinds:           ║
+  ║    - mosaic.strand_matrix.v1                                              ║
+  ║    - wave.smart_suggestions.v1                                            ║
+  ║                                                                            ║
+  ║    Existing kinds reused (no amendment):                                  ║
+  ║    - wire.http (every endpoint)                                           ║
+  ║    - event.bus (every SSE stream)                                         ║
+  ║    - ui.store (preset, target, labelMode)                                 ║
+  ║    - ui.component (every card)                                            ║
+  ║    - operator.surface (the cockpit screen as a whole)                     ║
+  ║    - strand.activation §4.1 (cell-level data inside mosaic)              ║
+  ║    - agent.a2a (constellation link edges)                                 ║
+  ╠════════════════════════════════════════════════════════════════════════════╣
+  ║  AUTH MODEL                                                                ║
+  ║                                                                            ║
+  ║  Two acceptable schemes (AppState supports both per H-5):                  ║
+  ║   - Authorization: Bearer <LIGHTARCHITECTS_WEBSHELL_TOKEN>                ║
+  ║   - Cookie: la_session=<HttpOnly SameSite=Strict>                          ║
+  ║  EventSource() streams MUST use the cookie scheme (browsers can't set     ║
+  ║  custom headers on EventSource). Fetch-streaming SSE uses Bearer.          ║
+  ║                                                                            ║
+  ║  CSRF: state-changing POSTs (dispatch, hitl-resolve) check Origin header. ║
+  ║  Allowlisted: localhost:8733, 127.0.0.1:8733, localhost:5173, 127.0.0.1:  ║
+  ║  5173.                                                                     ║
+  ║                                                                            ║
+  ║  CWE-22 path-traversal: any endpoint accepting a path/cwd validates via   ║
+  ║  safe_cwd() (canonicalize + reject `..` components). See §2.10 + §2.27.   ║
+  ║                                                                            ║
+  ║  SSRF: GitHub-proxy endpoints validate (owner, repo) against              ║
+  ║  HITL_TRACKED_REPOS allowlist before any outbound call. See §2.28 §2.31. ║
+  ╠════════════════════════════════════════════════════════════════════════════╣
+  ║  ROUTE TABLE — drill destinations (matches src/lib/routes.ts)             ║
+  ║                                                                            ║
+  ║   /cockpit?d=N&proj=X[&domain=Y]   — depth jump w/ optional domain lens   ║
+  ║   /cockpit?pillar=PN               — pillar dossier overlay (d0-stable)   ║
+  ║   /chat?sibling=corso              — open sibling chat surface            ║
+  ║   /helix?sib=X&idx=N               — open helix entry (SOUL vault)        ║
+  ║   /events?id=X                     — event detail (modal overlay)         ║
+  ║   /dispatch?action=SECURE&scope=Y  — wave dispatch confirmation           ║
+  ║   #modal:hitl/<esc_id>             — HITL resolution modal (in-place)     ║
+  ║                                                                            ║
+  ║  All routes parse via matchRoute() in src/lib/routes.ts. Query params    ║
+  ║  reach the screen module via the `params` prop (see Cockpit.svelte:67).  ║
+  ╚════════════════════════════════════════════════════════════════════════════╝
+
+  ─── Citation convention ─────────────────────────────────────────────
+  §X.Y   → webshell-api-surface-v1.md section
+  §4.X   → la-contracts-canon-v1.md frontier kind
+  P1–P7  → northstar.md pillar
+  Canon  → platform-canon.md (X = roman numeral)
+  Cookbk → builders-cookbook.md §N
+  ─────────────────────────────────────────────────────────────────────
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cockpit · D0 — Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Azeret+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+/* ── Design Tokens (parity w/ parent mockup) ─────────────────── */
+:root {
+  --la-bg-base:     #07080f;
+  --la-bg-panel:    #0d0f18;
+  --la-bg-card:     #111420;
+  --la-bg-sunken:   #0a0c14;
+  --la-hair-faint:  rgba(255,255,255,0.04);
+  --la-hair-base:   rgba(255,255,255,0.08);
+  --la-hair-strong: rgba(255,255,255,0.15);
+  --la-text-bright: rgba(255,255,255,0.95);
+  --la-text-base:   rgba(255,255,255,0.80);
+  --la-text-dim:    rgba(255,255,255,0.50);
+  --la-text-mute:   rgba(255,255,255,0.28);
+
+  --la-ok:   #39ff8a;
+  --la-err:  #ff4d6a;
+  --la-warn: #ffad2e;
+  --la-info: #8aa9ff;
+
+  --la-font-mono:    'Azeret Mono', ui-monospace, monospace;
+  --la-font-display: 'Syne', system-ui, sans-serif;
+  --la-tk-loose: 0.12em;
+  --la-tk-mid:   0.07em;
+  --la-tk-tight: 0.04em;
+  --la-fast: 0.15s ease;
+  --depth-shift: 0.4s cubic-bezier(0.4,0,0.2,1);
+
+  /* Depth accents (verbatim from parent) */
+  --d0: #4d8eff;
+  --d1: #39ff8a;
+  --d2: #ffad2e;
+  --d3: #ff5c8a;
+
+  /* Sibling brand hues — used for preset chip dots + fleet constellation */
+  --sib-eva:     #d44df0;
+  --sib-corso:   #ffad2e;
+  --sib-soul:    #7a6cff;
+  --sib-quantum: #39d8ff;
+  --sib-seraph:  #ff4d6a;
+  --sib-ayin:    #5f6e84;
+  --sib-laex:    #f0c14d;
+  --sib-claude:  #c4cad6;
+
+  --acc:      var(--d0);
+  --acc-tint: rgba(77,142,255,0.07);
+  --acc-line: rgba(77,142,255,0.45);
+}
+
+body.d0 { --acc: var(--d0); --acc-tint: rgba(77,142,255,0.07); --acc-line: rgba(77,142,255,0.45); }
+body.d1 { --acc: var(--d1); --acc-tint: rgba(57,255,138,0.06); --acc-line: rgba(57,255,138,0.40); }
+body.d2 { --acc: var(--d2); --acc-tint: rgba(255,173,46,0.06); --acc-line: rgba(255,173,46,0.40); }
+body.d3 { --acc: var(--d3); --acc-tint: rgba(255,92,138,0.06); --acc-line: rgba(255,92,138,0.40); }
+
+body.d0 { background: #07080f; }
+body.d1 { background: color-mix(in srgb, #07080f 96%, #39ff8a); }
+body.d2 { background: color-mix(in srgb, #07080f 96%, #ffad2e); }
+body.d3 { background: color-mix(in srgb, #07080f 96%, #ff5c8a); }
+
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; }
+body {
+  color: var(--la-text-base);
+  font-family: var(--la-font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  font-feature-settings: "ss01", "ss02", "calt";
+  transition: background var(--depth-shift);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Grain overlay (parity) */
+body::after {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  opacity: 0.024;
+}
+
+/* Drill flash overlay */
+.drill-flash {
+  position: fixed; inset: 0; pointer-events: none; z-index: 1000;
+  opacity: 0;
+  background: radial-gradient(circle at var(--flash-x, 50%) var(--flash-y, 50%),
+    color-mix(in srgb, var(--acc) 30%, transparent) 0%,
+    transparent 60%);
+  transition: opacity 0.08s ease;
+}
+.drill-flash.active { opacity: 1; }
+
+/* Selection */
+::selection { background: var(--acc-tint); color: var(--la-text-bright); }
+
+/* ── Shell ──────────────────────────────────────────────────── */
+.shell {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Header (parity w/ parent) ────────────────────────────── */
+.cockpit-hdr {
+  background: var(--la-bg-panel);
+  border-bottom: 1px solid var(--la-hair-base);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  height: 46px;
+  position: relative;
+  z-index: 20;
+  flex-shrink: 0;
+}
+
+.depth-rings { width: 36px; height: 36px; flex-shrink: 0; cursor: default; position: relative; }
+.rings-svg { width: 36px; height: 36px; display: block; }
+.ring { transition: opacity var(--depth-shift), filter var(--depth-shift); }
+.ring-platform { stroke: var(--d0); }
+.ring-project  { stroke: var(--d1); }
+.ring-build    { stroke: var(--d2); }
+.ring-file     { stroke: var(--d3); }
+
+.workspace-path {
+  display: flex; align-items: center; gap: 0;
+  overflow: hidden; flex: 1; min-width: 0;
+}
+.wp-seg {
+  font-size: 10px; font-weight: 500;
+  letter-spacing: var(--la-tk-mid);
+  color: var(--la-text-mute);
+  padding: 3px 8px; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 200px;
+  transition: color var(--la-fast);
+  border-radius: 2px;
+}
+.wp-seg:hover { color: var(--la-text-dim); background: var(--la-hair-faint); }
+.wp-seg.active { color: var(--la-text-bright); font-weight: 700; }
+.wp-seg.dim   { color: var(--la-text-mute); opacity: 0.5; pointer-events: none; }
+.wp-sep { color: var(--la-text-mute); font-size: 10px; padding: 0 2px; opacity: 0.4; }
+.wp-sep.dim { opacity: 0.18; }
+
+.preset-chips { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.preset-chip {
+  font-family: var(--la-font-mono);
+  font-size: 9px; font-weight: 700;
+  letter-spacing: var(--la-tk-mid);
+  padding: 3px 9px 3px 18px;
+  border: 1px solid var(--la-hair-base);
+  color: var(--la-text-mute);
+  cursor: pointer;
+  background: none;
+  text-transform: uppercase;
+  transition: all var(--la-fast);
+  position: relative;
+}
+.preset-chip::before {
+  content: '';
+  position: absolute;
+  left: 7px; top: 50%;
+  transform: translateY(-50%);
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--sib-hue, var(--la-text-mute));
+  opacity: 0.5;
+  transition: opacity var(--la-fast), box-shadow var(--la-fast);
+}
+.preset-chip[data-preset="engineer"]   { --sib-hue: var(--sib-claude); }
+.preset-chip[data-preset="security"]   { --sib-hue: var(--sib-seraph); }
+.preset-chip[data-preset="ops"]        { --sib-hue: var(--sib-ayin);   }
+.preset-chip[data-preset="quality"]    { --sib-hue: var(--sib-corso);  }
+.preset-chip[data-preset="knowledge"]  { --sib-hue: var(--sib-soul);   }
+.preset-chip[data-preset="researcher"] { --sib-hue: var(--sib-quantum);}
+.preset-chip[data-preset="testing"]    { --sib-hue: var(--sib-laex);   }
+
+.preset-chip:hover { border-color: var(--la-hair-strong); color: var(--la-text-dim); }
+.preset-chip:hover::before { opacity: 1; }
+.preset-chip.active {
+  border-color: var(--acc);
+  color: var(--acc);
+  background: var(--acc-tint);
+  transition: all var(--depth-shift);
+}
+.preset-chip.active::before {
+  opacity: 1;
+  box-shadow: 0 0 6px var(--sib-hue);
+}
+
+.divider { width: 1px; height: 20px; background: var(--la-hair-base); flex-shrink: 0; }
+
+.hdr-right { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.badge {
+  font-size: 8px; font-weight: 600; letter-spacing: var(--la-tk-mid);
+  padding: 3px 7px; border: 1px solid var(--la-hair-base);
+  color: var(--la-text-mute); text-transform: uppercase;
+}
+.badge-ok { border-color: var(--la-ok); color: var(--la-ok); }
+.badge-depth {
+  border-color: var(--acc); color: var(--acc);
+  background: var(--acc-tint);
+  transition: all var(--depth-shift);
+}
+.badge-scope {
+  font-style: italic;
+  color: var(--la-text-dim);
+  border-color: var(--la-hair-faint);
+  max-width: 200px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ── Label-mode toggle (SQUAD ↔ FUNCTION) ──────────────── */
+.label-toggle-group {
+  display: inline-flex;
+  border: 1px solid var(--la-hair-base);
+  height: 22px;
+  align-items: stretch;
+  flex-shrink: 0;
+}
+.ltg-opt {
+  font-family: var(--la-font-mono);
+  font-size: 8px; font-weight: 700;
+  letter-spacing: var(--la-tk-loose);
+  padding: 0 9px;
+  border: none;
+  background: none;
+  color: var(--la-text-mute);
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: background var(--la-fast), color var(--la-fast);
+  display: flex; align-items: center;
+}
+.ltg-opt:hover { color: var(--la-text-dim); background: var(--la-hair-faint); }
+.ltg-opt + .ltg-opt { border-left: 1px solid var(--la-hair-base); }
+.ltg-opt.active {
+  color: var(--la-bg-base);
+  background: var(--la-text-bright);
+}
+.ltg-hint {
+  display: inline-flex; align-items: center;
+  padding: 0 6px;
+  font-size: 7px; font-weight: 600;
+  letter-spacing: var(--la-tk-mid);
+  color: var(--la-text-mute);
+  border-left: 1px solid var(--la-hair-base);
+  font-style: italic;
+}
+
+/* ── Route preview toast ──────────────────────────────── */
+.route-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(60px);
+  background: var(--la-bg-panel);
+  border: 1px solid var(--acc);
+  padding: 10px 14px 10px 18px;
+  font-family: var(--la-font-mono);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  opacity: 0;
+  transition: transform 0.24s cubic-bezier(0.4,0,0.2,1),
+              opacity 0.24s, border-color var(--depth-shift);
+  pointer-events: none;
+  box-shadow: 0 12px 36px rgba(0,0,0,0.5),
+              0 0 0 1px var(--acc-tint);
+}
+.route-toast.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.rt-mark {
+  font-family: var(--la-font-display);
+  font-weight: 800;
+  font-size: 18px;
+  color: var(--acc);
+  line-height: 1;
+  transition: color var(--depth-shift);
+}
+.rt-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.rt-action {
+  font-size: 8px; font-weight: 700;
+  letter-spacing: var(--la-tk-loose);
+  color: var(--la-text-bright);
+  text-transform: uppercase;
+}
+.rt-route {
+  font-size: 11px; font-weight: 500;
+  color: var(--acc);
+  letter-spacing: var(--la-tk-tight);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transition: color var(--depth-shift);
+}
+.rt-key {
+  font-size: 8px; font-weight: 700;
+  color: var(--la-text-mute);
+  letter-spacing: var(--la-tk-loose);
+  padding-left: 12px;
+  border-left: 1px solid var(--la-hair-base);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* ── Ambient enrichment strip ────────────────────────────── */
+/*
+ * @mock  AMBIENT_EVENTS
+ * @api   GET /api/helix/activity?since=ISO
+ * @auth  Authorization: Bearer ${LIGHTARCHITECTS_WEBSHELL_TOKEN}
+ * @returns { events: Array<{ kind, sibling, summary, ts }> }
+ * @kind  helix.activity.v1  ⚠ MISSING
+ * @poll  every 12s — overlap by 2s to avoid gaps
+ */
+.ambient {
+  background: linear-gradient(to bottom,
+    var(--la-bg-panel) 0%,
+    var(--la-bg-sunken) 100%);
+  border-bottom: 1px solid var(--la-hair-base);
+  height: 26px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  position: relative;
+  z-index: 10;
+}
+.ambient::before, .ambient::after {
+  content: '';
+  position: absolute; top: 0; bottom: 0; width: 80px;
+  pointer-events: none; z-index: 2;
+}
+.ambient::before { left: 0; background: linear-gradient(to right, var(--la-bg-panel), transparent); }
+.ambient::after  { right: 0; background: linear-gradient(to left, var(--la-bg-panel), transparent); }
+
+.ambient-label {
+  flex-shrink: 0;
+  font-size: 8px; font-weight: 700;
+  letter-spacing: var(--la-tk-loose);
+  color: var(--la-text-mute);
+  padding: 0 14px 0 16px;
+  text-transform: uppercase;
+  border-right: 1px solid var(--la-hair-faint);
+  height: 100%;
+  display: flex; align-items: center;
+  position: relative; z-index: 3;
+  background: var(--la-bg-panel);
+}
+.ambient-label::after {
+  content: '';
+  display: inline-block;
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--la-info);
+  margin-left: 8px;
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 0.3; }
+  50%      { opacity: 1; box-shadow: 0 0 4px var(--la-info); }
+}
+
+.ambient-track {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  white-space: nowrap;
+  padding-left: 24px;
+  animation: scroll 90s linear infinite;
+}
+.ambient-track:hover { animation-play-state: paused; }
+
+@keyframes scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+.ae {
+  font-size: 10px;
+  color: var(--la-text-dim);
+  display: inline-flex; align-items: center; gap: 7px;
+  flex-shrink: 0;
+}
+.ae-sib {
+  font-weight: 700; letter-spacing: var(--la-tk-tight);
+  font-size: 9px; text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 2px;
+  color: var(--la-bg-base);
+  background: var(--ae-hue, var(--la-text-mute));
+}
+.ae[data-sib="EVA"]     { --ae-hue: var(--sib-eva); }
+.ae[data-sib="CORSO"]   { --ae-hue: var(--sib-corso); }
+.ae[data-sib="SOUL"]    { --ae-hue: var(--sib-soul); }
+.ae[data-sib="QUANTUM"] { --ae-hue: var(--sib-quantum); }
+.ae[data-sib="SERAPH"]  { --ae-hue: var(--sib-seraph); }
+.ae[data-sib="AYIN"]    { --ae-hue: var(--sib-ayin); color: var(--la-text-bright); }
+.ae[data-sib="LÆX"]    { --ae-hue: var(--sib-laex); }
+
+.ae-text b { color: var(--la-text-base); font-weight: 600; }
+.ae-time {
+  color: var(--la-text-mute);
+  font-size: 9px;
+  font-style: italic;
+}
+
+/* ── Body & bento ──────────────────────────────────────────── */
+.cockpit-body {
+  overflow: hidden;
+  display: flex;
+  flex-direction: row;
+}
+.cockpit-left {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+}
+
+.bento {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  grid-template-rows: 0.95fr 0.95fr 0.95fr 1fr 1fr 1fr 1.55fr;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  grid-template-areas:
+    "portal portal portal portal portal  context context context  northstar northstar northstar northstar"
+    "portal portal portal portal portal  context context context  northstar northstar northstar northstar"
+    "portal portal portal portal portal  context context context  northstar northstar northstar northstar"
+    "mosaic mosaic mosaic mosaic mosaic  mosaic  mosaic  mosaic   fleet     fleet     fleet     fleet"
+    "mosaic mosaic mosaic mosaic mosaic  mosaic  mosaic  mosaic   fleet     fleet     fleet     fleet"
+    "mosaic mosaic mosaic mosaic mosaic  mosaic  mosaic  mosaic   fleet     fleet     fleet     fleet"
+    "hitl   hitl   hitl   hitl   git     git     git     git      wave      wave      wave      wave";
+}
+
+.area-portal    { grid-area: portal; }
+.area-context   { grid-area: context; }
+.area-northstar { grid-area: northstar; }
+.area-mosaic    { grid-area: mosaic; }
+.area-fleet     { grid-area: fleet; }
+.area-hitl      { grid-area: hitl; }
+.area-git       { grid-area: git; }
+.area-wave      { grid-area: wave; }
+
+/* ── Card base ─────────────────────────────────────────────── */
+.card {
+  background: var(--la-bg-card);
+  border: 1px solid var(--la-hair-base);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  transition: border-color var(--la-fast);
+}
+.card:hover { border-color: var(--la-hair-strong); }
+.card-hdr {
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 11px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--la-hair-faint);
+  background: linear-gradient(to bottom, rgba(255,255,255,0.015), transparent);
+}
+.card-lbl {
+  font-size: 8px; font-weight: 700;
+  letter-spacing: var(--la-tk-loose);
+  color: var(--la-text-dim);
+  text-transform: uppercase;
+}
+.card-sub {
+  font-size: 8px; font-weight: 500;
+  letter-spacing: var(--la-tk-mid);
+  color: var(--la-text-mute);
+  text-transform: uppercase;
+  font-style: italic;
+}
+.card-body { flex: 1; overflow: auto; padding: 8px 11px; min-height: 0; }
+.area-portal .card-body { padding: 4px 11px; }
+.card-body::-webkit-scrollbar { width: 3px; }
+.card-body::-webkit-scrollbar-thumb { background: var(--la-hair-base); }
+
+/* Hero card — portal gets a left-edge accent rail */
+.card-hero { position: relative; }
+.card-hero::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: linear-gradient(180deg,
+    var(--acc) 0%,
+    color-mix(in srgb, var(--acc) 40%, transparent) 60%,
+    transparent 100%);
+  transition: background var(--depth-shift);
+}
+
+/* ── PORTAL — Projects ──────────────────────────────────── */
+/*
+ * @mock  PROJECTS
+ * @api   GET /api/projects
+ * @returns { projects: Array<{ id, name, crates, active_builds,
+ *                              status, last_event_at, drill: number }> }
+ * @kind  portal.projects.v1  ⚠ MISSING
+ */
+.portal-list { display: flex; flex-direction: column; gap: 2px; }
+.proj {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 9px 6px 5px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: background var(--la-fast), border-color var(--la-fast);
+  position: relative;
+}
+.proj:hover {
+  background: var(--la-hair-faint);
+  border-left-color: var(--acc);
+}
+.proj.priority { background: color-mix(in srgb, var(--acc) 4%, transparent); }
+.proj.priority::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--acc) 7%, transparent) 0%,
+    transparent 40%);
+}
+
+.proj-status {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  position: relative;
+}
+.proj-status.s-active { color: var(--la-ok); background: var(--la-ok); box-shadow: 0 0 4px var(--la-ok); }
+.proj-status.s-active::after {
+  content: '';
+  position: absolute; inset: -3px;
+  border-radius: 50%;
+  border: 1px solid var(--la-ok);
+  opacity: 0.4;
+  animation: ring 1.6s ease-out infinite;
+}
+@keyframes ring {
+  from { transform: scale(0.5); opacity: 0.7; }
+  to   { transform: scale(1.8); opacity: 0; }
+}
+.proj-status.s-ok    { color: var(--la-text-mute); background: var(--la-text-mute); }
+.proj-status.s-warn  { color: var(--la-warn); background: var(--la-warn); }
+.proj-status.s-dim   { color: var(--la-text-mute); background: transparent; }
+
+.proj-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.proj-name {
+  font-size: 11px; font-weight: 600;
+  line-height: 1.3;
+  color: var(--la-text-bright);
+  letter-spacing: var(--la-tk-tight);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.proj-meta {
+  font-size: 9px; color: var(--la-text-mute);
+  line-height: 1.35;
+  display: flex; gap: 0; align-items: center;
+}
+.proj-meta .sep { padding: 0 6px; opacity: 0.4; }
+.proj-meta .accent { color: var(--la-text-dim); font-weight: 500; }
+
+.proj-domains {
+  display: flex; gap: 2px;
+  margin-top: 3px;
+}
+.pd {
+  font-size: 7px; font-weight: 700;
+  letter-spacing: 0;
+  padding: 1px 4px;
+  border-radius: 2px;
+  color: var(--la-bg-base);
+  background: var(--la-text-mute);
+  text-transform: uppercase;
+}
+.pd.warn { background: var(--la-warn); }
+.pd.fail { background: var(--la-err); color: white; }
+
+.proj-arrow {
+  font-size: 11px;
+  color: var(--la-text-mute);
+  opacity: 0.32;
+  transition: color var(--la-fast), transform var(--la-fast), opacity var(--la-fast);
+  font-family: var(--la-font-display);
+  font-weight: 800;
+}
+.proj:hover .proj-arrow { color: var(--acc); transform: translateX(3px); opacity: 1; }
+.proj.priority .proj-arrow { opacity: 0.6; }
+
+.portal-foot {
+  border-top: 1px solid var(--la-hair-faint);
+  padding: 7px 11px 6px;
+  font-size: 9px;
+  color: var(--la-text-mute);
+  display: flex; justify-content: space-between; align-items: center;
+  flex-shrink: 0;
+}
+.portal-foot .next {
+  color: var(--acc);
+  letter-spacing: var(--la-tk-mid);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+/* ── CONTEXT — Platform events ───────────────────────────── */
+/*
+ * @mock  PLATFORM_EVENTS
+ * @api   GET /api/events/platform?limit=20
+ * @stream WS /ws/events (live append)
+ * @returns { events: Array<{ id, kind, sibling, html, ts }> }
+ */
+.ctx-list { display: flex; flex-direction: column; gap: 2px; }
+.ctx-group {
+  font-size: 8px;
+  letter-spacing: var(--la-tk-loose);
+  color: var(--la-text-mute);
+  text-transform: uppercase;
+  padding: 6px 0 4px;
+  border-bottom: 1px dashed var(--la-hair-faint);
+  margin-bottom: 4px;
+}
+.ctx-group:first-child { padding-top: 0; }
+
+.ctx {
+  display: grid;
+  grid-template-columns: 6px 1fr auto;
+  gap: 9px;
+  align-items: baseline;
+  padding: 5px 0 5px 0;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.ctx-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--la-text-mute);
+  margin-top: 5px;
+}
+.ctx-dot.acc  { background: var(--acc); box-shadow: 0 0 6px var(--acc); transition: background var(--depth-shift); }
+.ctx-dot.ok   { background: var(--la-ok); }
+.ctx-dot.warn { background: var(--la-warn); }
+.ctx-dot.info { background: var(--la-info); }
+.ctx-dot.err  { background: var(--la-err); }
+
+.ctx-text { color: var(--la-text-base); }
+.ctx-text b { color: var(--la-text-bright); font-weight: 600; }
+.ctx-text .sib {
+  display: inline-block;
+  padding: 0 4px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: var(--la-tk-tight);
+  text-transform: uppercase;
+  border-radius: 2px;
+  color: var(--la-bg-base);
+  background: var(--ctx-sib, var(--la-text-mute));
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.ctx-text[data-sib="EVA"]     { --ctx-sib: var(--sib-eva); }
+.ctx-text[data-sib="CORSO"]   { --ctx-sib: var(--sib-corso); }
+.ctx-text[data-sib="SOUL"]    { --ctx-sib: var(--sib-soul); }
+.ctx-text[data-sib="QUANTUM"] { --ctx-sib: var(--sib-quantum); }
+.ctx-text[data-sib="SERAPH"]  { --ctx-sib: var(--sib-seraph); }
+.ctx-text[data-sib="LÆX"]    { --ctx-sib: var(--sib-laex); }
+
+.ctx-time {
+  color: var(--la-text-mute);
+  font-size: 9px;
+  font-style: italic;
+  flex-shrink: 0;
+}
+
+/* ── NORTHSTAR PULSE — P1–P7 health bars ─────────────── */
+/*
+ * @mock  NORTHSTAR
+ * @api   GET /api/northstar/pulse
+ * @returns { pillars: Array<{ id, label, score, status,
+ *                             advance_hint, last_eval_at }> }
+ * @kind  northstar.pulse.v1  ⚠ MISSING
+ * @canon canon://northstar — P1–P7 mechanical checks
+ */
+.ns-list { display: flex; flex-direction: column; gap: 11px; }
+.ns-row {
+  display: grid;
+  grid-template-columns: 26px 1fr 40px;
+  gap: 10px;
+  align-items: center;
+  cursor: pointer;
+}
+.ns-row:hover .ns-label { color: var(--la-text-bright); }
+.ns-id {
+  font-family: var(--la-font-display);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: var(--la-tk-tight);
+  color: var(--la-text-dim);
+  text-align: left;
+}
+.ns-row.focus .ns-id { color: var(--acc); transition: color var(--depth-shift); }
+
+.ns-track {
+  display: flex; flex-direction: column; gap: 4px;
+  min-width: 0;
+}
+.ns-label {
+  font-size: 9px;
+  letter-spacing: var(--la-tk-mid);
+  color: var(--la-text-dim);
+  text-transform: uppercase;
+  display: flex; justify-content: space-between; align-items: baseline;
+  transition: color var(--la-fast);
+}
+.ns-label .ns-hint {
+  font-size: 8px;
+  font-style: italic;
+  color: var(--la-text-mute);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.ns-bar {
+  height: 5px;
+  background: var(--la-bg-sunken);
+  border: 1px solid var(--la-hair-faint);
+  border-radius: 1px;
+  position: relative;
+  overflow: hidden;
+}
+.ns-row.focus .ns-bar {
+  border-color: color-mix(in srgb, var(--la-warn) 40%, var(--la-hair-faint));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--la-warn) 18%, transparent);
+}
+.ns-fill {
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  background: var(--la-ok);
+  transition: width 0.8s cubic-bezier(0.4,0,0.2,1);
+}
+.ns-fill.s-warn { background: var(--la-warn); }
+.ns-fill.s-err  { background: var(--la-err); }
+.ns-fill::after {
+  content: '';
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 6px;
+  background: linear-gradient(to right, transparent, rgba(255,255,255,0.4));
+}
+
+.ns-score {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--la-text-bright);
+  text-align: right;
+  letter-spacing: var(--la-tk-tight);
+  font-variant-numeric: tabular-nums;
+}
+.ns-score.s-warn { color: var(--la-warn); }
+.ns-score.s-err  { color: var(--la-err); }
+
+.ns-foot {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--la-hair-faint);
+  font-size: 9px;
+  color: var(--la-text-mute);
+  display: flex; gap: 6px; align-items: center;
+}
+.ns-foot .focus-pill {
+  font-size: 8px; font-weight: 700;
+  letter-spacing: var(--la-tk-loose);
+  padding: 2px 6px;
+  color: var(--la-warn);
+  border: 1px solid var(--la-warn);
+  background: rgba(255,173,46,0.06);
+  text-transform: uppercase;
+}
+
+/* ── STRAND MOSAIC — projects × domains (HERO) ─────── */
+/*
+ * @mock  MOSAIC
+ * @api   GET /api/strand-mosaic?scope=platform
+ * @returns { rows: Array<{ id, label,
+ *                          cells: Record<'A'|'S'|'Q'|'T'|'P'|'D'|'K',
+ *                                        'ok'|'warn'|'fail'|'na'>,
+ *                          drill: number }> }
+ * @kind  strand.mosaic.platform.v1  ⚠ MISSING
+ * @canon canon://platform-canon — Canon XXX strand mosaic
+ *        + canon://gatekeeper-registry — A/S/Q/C/O/P/K/D/T/R owners
+ */
+.mosaic-wrap {
+  display: flex; flex-direction: column;
+  height: 100%;
+}
+.mosaic-grid {
+  display: grid;
+  grid-template-columns: 130px repeat(7, 1fr) 56px;
+  gap: 0;
+  font-variant-numeric: tabular-nums;
+}
+.mh {
+  font-size: 8px; font-weight: 700;
+  letter-spacing: var(--la-tk-loose);
+  color: var(--la-text-mute);
+  text-transform: uppercase;
+  padding: 6px 0 9px;
+  border-bottom: 1px solid var(--la-hair-base);
+  text-align: center;
+  cursor: help;
+  position: relative;
+}
+.mh:first-child { text-align: left; padding-left: 4px; }
+.mh:last-child  { text-align: right; padding-right: 4px; }
+.mh-tip {
+  position: absolute;
+  bottom: -28px; left: 50%;
+  transform: translateX(-50%);
+  background: var(--la-bg-panel);
+  border: 1px solid var(--la-hair-strong);
+  padding: 4px 8px;
+  font-size: 8px;
+  color: var(--la-text-bright);
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+  z-index: 10;
+  font-style: italic;
+  font-weight: 500;
+}
+.mh:hover .mh-tip { opacity: 1; }
+
+.mr {
+  display: contents;
+}
+.mr-label, .mc, .mr-risk {
+  border-bottom: 1px solid var(--la-hair-faint);
+  height: 30px;
+  display: flex; align-items: center;
+  transition: background var(--la-fast);
+}
+.mr:hover .mr-label,
+.mr:hover .mc,
+.mr:hover .mr-risk {
+  background: var(--la-hair-faint);
+}
+
+.mr-label {
+  font-size: 10px;
+  color: var(--la-text-base);
+  font-weight: 500;
+  padding-left: 4px;
+  cursor: pointer;
+}
+.mr-label:hover { color: var(--la-text-bright); }
+.mr-label .mr-meta {
+  font-size: 8px; color: var(--la-text-mute);
+  margin-left: 6px; font-weight: 400;
+  font-style: italic;
+}
+
+.mc {
+  justify-content: center;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--la-text-mute);
+}
+.mc.ok   { color: var(--la-ok); }
+.mc.warn { color: var(--la-warn); }
+.mc.fail { color: var(--la-err); }
+.mc.na   { color: var(--la-text-mute); opacity: 0.32; }
+.mc:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent) !important;
+  transform: scale(1.4);
+}
+
+.mr-risk {
+  justify-content: flex-end;
+  padding-right: 4px;
+  font-size: 8px; font-weight: 700;
+  letter-spacing: var(--la-tk-loose);
+  text-transform: uppercase;
+}
+.mr-risk.r-ok   { color: var(--la-ok); }
+.mr-risk.r-low  { color: var(--la-text-dim); }
+.mr-risk.r-med  { color: var(--la-warn); }
+.mr-risk.r-high { color: var(--la-err); }
+.mr-risk.r-crit { color: var(--la-err); font-weight: 800; }
+
+.mosaic-foot {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--la-hair-faint);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 9px;
+  color: var(--la-text-mute);
+}
+.mosaic-legend {
+  display: flex; gap: 14px; align-items: center;
+}
+.mosaic-legend span { display: flex; gap: 4px; align-items: center; }
+.mosaic-legend .lg-glyph { font-size: 12px; }
+.mosaic-legend .ok-g   { color: var(--la-ok); }
+.mosaic-legend .warn-g { color: var(--la-warn); }
+.mosaic-legend .fail-g { color: var(--la-err); }
+.mosaic-legend .na-g   { color: var(--la-text-mute); opacity: 0.5; }
+
+.mosaic-stat {
+  display: flex; gap: 12px;
+  color: var(--la-text-dim);
+}
+.mosaic-stat .stat-num {
+  color: var(--la-text-bright);
+  font-weight: 700;
+}
+
+/* ── FLEET CONSTELLATION ─────────────────────────────── */
+/*
+ * @mock  SQUAD + LINKS
+ * @api   GET /api/squad/constellation
+ * @stream WS /ws/squad/activity
+ * @returns { siblings: [{ name, role, status, last_activity_at }],
+ *            links:    [{ from, to, kind, ts }] }
+ * @kind  squad.constellation.v1  ⚠ MISSING
+ */
+.fleet-wrap {
+  display: flex; flex-direction: column;
+  height: 100%;
+}
+.constellation {
+  position: relative;
+  flex: 1;
+  min-height: 220px;
+}
+.constellation-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+}
+.cn-link {
+  stroke: var(--la-text-mute);
+  stroke-width: 1;
+  opacity: 0.18;
+  fill: none;
+  transition: opacity var(--la-fast), stroke var(--la-fast);
+}
+.cn-link.active {
+  stroke: var(--acc);
+  opacity: 0.42;
+  stroke-dasharray: 2 3;
+  animation: dash 24s linear infinite;
+}
+@keyframes dash {
+  to { stroke-dashoffset: -200; }
+}
+.cn-node {
+  cursor: pointer;
+}
+.cn-node-bg {
+  fill: var(--la-bg-card);
+  stroke: var(--node-hue);
+  stroke-width: 1.5;
+  transition: stroke-width 0.2s, filter 0.3s;
+}
+.cn-node.active .cn-node-bg {
+  stroke-width: 2;
+  filter: drop-shadow(0 0 6px var(--node-hue));
+}
+.cn-node.idle .cn-node-bg {
+  opacity: 0.42;
+}
+.cn-node-label {
+  font-family: var(--la-font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: var(--la-tk-tight);
+  fill: var(--la-text-bright);
+  text-anchor: middle;
+  pointer-events: none;
+}
+.cn-node.idle .cn-node-label { fill: var(--la-text-mute); }
+.cn-node-sub {
+  font-family: var(--la-font-mono);
+  font-size: 7px;
+  font-weight: 500;
+  letter-spacing: var(--la-tk-loose);
+  fill: var(--la-text-mute);
+  text-anchor: middle;
+  pointer-events: none;
+  text-transform: uppercase;
+}
+.cn-pulse {
+  fill: var(--node-hue);
+  opacity: 0.4;
+  animation: ringExpand 2.4s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes ringExpand {
+  0%   { r: 16; opacity: 0.5; }
+  100% { r: 32; opacity: 0; }
+}
+
+.fleet-foot {
+  border-top: 1px solid var(--la-hair-faint);
+  padding-top: 9px;
+  margin-top: 8px;
+  font-size: 9px;
+  display: flex; justify-content: space-between;
+  color: var(--la-text-mute);
+}
+.fleet-foot .ff-stat {
+  color: var(--la-text-bright);
+  font-weight: 700;
+}
+
+/* ── HITL ─────────────────────────────────────────────── */
+.hitl-list { display: flex; flex-direction: column; gap: 8px; }
+.hitl-row {
+  display: grid;
+  grid-template-columns: 8px 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 8px 8px;
+  background: var(--la-bg-sunken);
+  border-left: 2px solid var(--la-warn);
+  font-size: 10px;
+}
+.hitl-row .ctx-dot { margin-top: 3px; }
+.hitl-row.crit { border-left-color: var(--la-err); }
+.hitl-time { color: var(--la-text-mute); font-size: 9px; font-style: italic; }
+.hitl-empty {
+  font-size: 10px; color: var(--la-text-mute);
+  text-align: center; padding: 28px 0;
+  font-style: italic;
+}
+
+/* ── GIT ──────────────────────────────────────────────── */
+.git-list { display: flex; flex-direction: column; }
+.git-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--la-hair-faint);
+  font-size: 10px;
+}
+.git-row:last-child { border-bottom: none; }
+.git-name { color: var(--la-text-base); font-weight: 500; }
+.git-state {
+  font-size: 9px;
+  color: var(--la-text-dim);
+  font-style: italic;
+}
+.git-state.acc  { color: var(--acc); font-style: normal; font-weight: 600; }
+.git-state.warn { color: var(--la-warn); }
+.git-wt {
+  font-size: 8px; font-weight: 700;
+  padding: 1px 5px;
+  background: var(--la-hair-faint);
+  color: var(--la-text-dim);
+  border-radius: 2px;
+  letter-spacing: var(--la-tk-tight);
+}
+.git-wt.live {
+  background: var(--acc-tint);
+  color: var(--acc);
+  transition: all var(--depth-shift);
+}
+
+/* ── SMART WAVE ──────────────────────────────────────── */
+/*
+ * @mock  WAVE_SUGGESTIONS
+ * @api   GET /api/wave/suggestions?scope=platform
+ * @returns { suggestions: Array<{ action, reason, domain,
+ *                                 priority: boolean }> }
+ * @kind  wave.suggestions.v1  ⚠ MISSING
+ * @canon Cookbook §65.7 — gate-aware dispatch
+ */
+.wave-list { display: flex; flex-direction: column; gap: 2px; }
+.wave-row {
+  display: grid;
+  grid-template-columns: 12px 64px 1fr 20px;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 0;
+  cursor: pointer;
+  border-bottom: 1px solid var(--la-hair-faint);
+}
+.wave-row:last-child { border-bottom: none; }
+.wave-row:hover .wave-action { color: var(--acc); }
+.wave-row:hover .wave-go { color: var(--acc); transform: translateX(2px); }
+
+.wave-prio {
+  font-family: var(--la-font-display);
+  font-size: 13px;
+  font-weight: 800;
+  color: transparent;
+  text-align: center;
+  line-height: 1;
+}
+.wave-row.priority .wave-prio {
+  color: var(--la-warn);
+}
+
+.wave-action {
+  font-size: 10px; font-weight: 700;
+  letter-spacing: var(--la-tk-tight);
+  color: var(--la-text-bright);
+  text-transform: uppercase;
+  transition: color var(--la-fast);
+}
+.wave-reason {
+  font-size: 9px;
+  color: var(--la-text-dim);
+  font-style: italic;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.wave-reason b {
+  color: var(--la-text-base);
+  font-weight: 600;
+  font-style: normal;
+}
+.wave-domain {
+  display: inline-block;
+  font-size: 7px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: var(--la-text-mute);
+  color: var(--la-bg-base);
+  margin-right: 4px;
+  letter-spacing: 0;
+}
+.wave-domain.d-S { background: var(--la-err); color: white; }
+.wave-domain.d-T { background: var(--la-warn); }
+.wave-domain.d-D { background: var(--la-info); color: var(--la-bg-base); }
+.wave-domain.d-K { background: var(--sib-soul); color: white; }
+.wave-domain.d-O { background: var(--sib-ayin); color: var(--la-text-bright); }
+.wave-domain.d-Q { background: var(--sib-corso); color: var(--la-bg-base); }
+.wave-domain.d-A { background: var(--la-ok); color: var(--la-bg-base); }
+
+.wave-go {
+  color: var(--la-text-mute);
+  font-family: var(--la-font-display);
+  font-weight: 800;
+  font-size: 12px;
+  text-align: right;
+  transition: color var(--la-fast), transform var(--la-fast);
+}
+
+/* ── Responsive squeeze (≤1280) ──────────────────────── */
+@media (max-width: 1280px) {
+  .bento { grid-template-rows: 1fr 1fr 1fr 1fr 1fr 1fr 1fr; }
+  .mr-label { font-size: 9px; }
+  .mh { font-size: 7px; }
+}
+</style>
+</head>
+<body class="d0" data-depth="0">
+
+<!-- Drill flash overlay (parity) -->
+<div class="drill-flash" id="drillFlash"></div>
+
+<div class="shell">
+
+  <!-- ── Header (parity chrome) ──────────────────────────── -->
+  <header class="cockpit-hdr">
+
+    <div class="depth-rings" title="Workspace depth · d0 · platform">
+      <svg viewBox="0 0 36 36" class="rings-svg">
+        <rect class="ring ring-platform" id="ring0" x="1"    y="1"    width="34" height="34" rx="5"   fill="none" stroke-width="1.5"/>
+        <rect class="ring ring-project"  id="ring1" x="6"    y="6"    width="24" height="24" rx="4"   fill="none" stroke-width="1.5"/>
+        <rect class="ring ring-build"    id="ring2" x="11"   y="11"   width="14" height="14" rx="3"   fill="none" stroke-width="1.5"/>
+        <rect class="ring ring-file"     id="ring3" x="15.5" y="15.5" width="5"  height="5"  rx="1.5" fill="none" stroke-width="1.5"/>
+      </svg>
+    </div>
+
+    <nav class="workspace-path">
+      <span class="wp-seg active">Platform</span>
+      <span class="wp-sep dim">›</span>
+      <span class="wp-seg dim">project</span>
+      <span class="wp-sep dim">›</span>
+      <span class="wp-seg dim">build</span>
+      <span class="wp-sep dim">›</span>
+      <span class="wp-seg dim">file</span>
+    </nav>
+
+    <div class="divider"></div>
+
+    <!-- 7 preset chips (parity with src/lib/cockpit/stores.ts) -->
+    <div class="preset-chips" id="presetChips">
+      <button class="preset-chip active" data-preset="engineer">ENGINEER</button>
+      <button class="preset-chip" data-preset="security">SECURITY</button>
+      <button class="preset-chip" data-preset="ops">OPS</button>
+      <button class="preset-chip" data-preset="quality">QUALITY</button>
+      <button class="preset-chip" data-preset="knowledge">KNOWLEDGE</button>
+      <button class="preset-chip" data-preset="researcher">RESEARCH</button>
+      <button class="preset-chip" data-preset="testing">TESTING</button>
+    </div>
+
+    <div class="hdr-right">
+      <div class="label-toggle-group" id="labelToggle" title="Toggle sibling labels — squad codenames ↔ functional names (⌥N)">
+        <button class="ltg-opt active" data-mode="squad">SQUAD</button>
+        <button class="ltg-opt" data-mode="function">FUNCTION</button>
+        <span class="ltg-hint">⌥N</span>
+      </div>
+      <span class="badge badge-ok" id="badgeSquad">SQUAD ACTIVE</span>
+      <span class="badge badge-scope">Platform workspace</span>
+      <span class="badge badge-depth">D0 · PLATFORM</span>
+    </div>
+  </header>
+
+  <!-- ── Ambient enrichment strip (NEW) ─────────────────── -->
+  <div class="ambient" id="ambient">
+    <div class="ambient-label">HELIX</div>
+    <div class="ambient-track" id="ambientTrack">
+      <!-- injected -->
+    </div>
+  </div>
+
+  <!-- ── Cockpit body ─────────────────────────────────────── -->
+  <div class="cockpit-body">
+    <div class="cockpit-left">
+      <div class="bento">
+
+        <!-- ── PORTAL — Projects (hero) ──────────────────── -->
+        <div class="card area-portal card-hero">
+          <div class="card-hdr">
+            <span class="card-lbl">PROJECTS</span>
+            <span class="card-sub">WORKSPACE PORTAL · 6</span>
+          </div>
+          <div class="card-body">
+            <div class="portal-list" id="portalList"></div>
+          </div>
+          <div class="portal-foot">
+            <span>Click row to enter project</span>
+            <span class="next">→ D1 · PROJECT</span>
+          </div>
+        </div>
+
+        <!-- ── CONTEXT — Platform events ─────────────────── -->
+        <div class="card area-context">
+          <div class="card-hdr">
+            <span class="card-lbl">PLATFORM EVENTS</span>
+            <span class="card-sub">LIVE</span>
+          </div>
+          <div class="card-body">
+            <div class="ctx-list" id="ctxList"></div>
+          </div>
+        </div>
+
+        <!-- ── NORTHSTAR PULSE — P1–P7 ───────────────────── -->
+        <div class="card area-northstar">
+          <div class="card-hdr">
+            <span class="card-lbl">NORTHSTAR PULSE</span>
+            <span class="card-sub">P1–P7 · MECHANICAL</span>
+          </div>
+          <div class="card-body">
+            <div class="ns-list" id="nsList"></div>
+            <div class="ns-foot">
+              <span class="focus-pill">FOCUS</span>
+              <span id="nsFocusText">P2 — secure-by-default — 5 SERAPH HIGH open</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── STRAND MOSAIC — projects × domains ───────── -->
+        <div class="card area-mosaic card-hero">
+          <div class="card-hdr">
+            <span class="card-lbl">STRAND MOSAIC</span>
+            <span class="card-sub">PROJECT × GATEKEEPER · CANON XXX</span>
+          </div>
+          <div class="card-body">
+            <div class="mosaic-wrap">
+              <div class="mosaic-grid" id="mosaicGrid">
+                <div class="mh">PROJECT</div>
+                <div class="mh">A<span class="mh-tip">Architecture · CORSO</span></div>
+                <div class="mh">S<span class="mh-tip">Security · SERAPH</span></div>
+                <div class="mh">Q<span class="mh-tip">Quality · CORSO + LÆX</span></div>
+                <div class="mh">T<span class="mh-tip">Testing · CORSO</span></div>
+                <div class="mh">P<span class="mh-tip">Performance · EVA + AYIN</span></div>
+                <div class="mh">D<span class="mh-tip">Documentation · SOUL + EVA</span></div>
+                <div class="mh">K<span class="mh-tip">Knowledge · SOUL</span></div>
+                <div class="mh">RISK</div>
+                <!-- rows injected -->
+              </div>
+              <div class="mosaic-foot">
+                <div class="mosaic-legend">
+                  <span><span class="lg-glyph ok-g">●</span> pass</span>
+                  <span><span class="lg-glyph warn-g">◑</span> warn</span>
+                  <span><span class="lg-glyph fail-g">○</span> fail</span>
+                  <span><span class="lg-glyph na-g">·</span> n/a</span>
+                </div>
+                <div class="mosaic-stat">
+                  <span>cells <span class="stat-num">42</span></span>
+                  <span>warns <span class="stat-num">4</span></span>
+                  <span>fails <span class="stat-num">1</span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── FLEET — Squad Constellation ───────────────── -->
+        <div class="card area-fleet">
+          <div class="card-hdr">
+            <span class="card-lbl">SQUAD CONSTELLATION</span>
+            <span class="card-sub">7 / 7 ONLINE</span>
+          </div>
+          <div class="card-body">
+            <div class="fleet-wrap">
+              <div class="constellation">
+                <svg class="constellation-svg" viewBox="0 0 300 240" preserveAspectRatio="xMidYMid meet" id="constellationSvg">
+                  <!-- links injected first (so they sit beneath nodes) -->
+                  <g id="cnLinks"></g>
+                  <!-- nodes injected -->
+                  <g id="cnNodes"></g>
+                </svg>
+              </div>
+              <div class="fleet-foot">
+                <span>A2A links active <span class="ff-stat" id="ff-links">4</span></span>
+                <span>Idle <span class="ff-stat" id="ff-idle">2</span></span>
+                <span>Active <span class="ff-stat" id="ff-active">5</span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── HITL ──────────────────────────────────────── -->
+        <div class="card area-hitl">
+          <div class="card-hdr">
+            <span class="card-lbl">ALL ESCALATIONS</span>
+            <span class="card-sub" id="hitlSub">2 OPEN</span>
+          </div>
+          <div class="card-body">
+            <div class="hitl-list" id="hitlList"></div>
+          </div>
+        </div>
+
+        <!-- ── GIT ───────────────────────────────────────── -->
+        <div class="card area-git">
+          <div class="card-hdr">
+            <span class="card-lbl">REPOSITORIES</span>
+            <span class="card-sub">4 TRACKED</span>
+          </div>
+          <div class="card-body">
+            <div class="git-list" id="gitList"></div>
+          </div>
+        </div>
+
+        <!-- ── SMART WAVE DISPATCH ───────────────────────── -->
+        <div class="card area-wave">
+          <div class="card-hdr">
+            <span class="card-lbl">SMART DISPATCH</span>
+            <span class="card-sub">PLATFORM SCOPE · GATE-AWARE</span>
+          </div>
+          <div class="card-body">
+            <div class="wave-list" id="waveList"></div>
+          </div>
+        </div>
+
+      </div><!-- .bento -->
+    </div><!-- .cockpit-left -->
+  </div><!-- .cockpit-body -->
+
+</div><!-- .shell -->
+
+<!-- ── Route preview toast (shows what drill WOULD navigate to) ── -->
+<div class="route-toast" id="routeToast" role="status" aria-live="polite">
+  <span class="rt-mark">→</span>
+  <div class="rt-body">
+    <span class="rt-action" id="rtAction">DEPTH JUMP</span>
+    <span class="rt-route" id="rtRoute">/cockpit?d=1&amp;proj=sdk</span>
+  </div>
+  <span class="rt-key" id="rtKey">D1 · PROJECT</span>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+//  LABELS — codename ↔ function name
+//
+//  All internal data uses the canonical codename (CORSO, EVA, ...).
+//  Display passes through siblingLabel(name) which respects labelMode.
+//
+//  PROD PORT:
+//    src/lib/stores.ts:
+//      export const cockpitLabelMode = writable<'squad'|'function'>('squad');
+//    src/lib/settings-persistence.ts:
+//      registers cockpitLabelMode for localStorage key 'la.cockpit.labelMode'
+//    src/lib/cockpit/labels.ts (NEW):
+//      export const SIBLING_FUNCTION = { ... };
+//      export function siblingLabel(canon: string,
+//                                   mode: 'squad'|'function'): string;
+//
+//  la-contracts kind:  ui.store
+//    store_path:        "src/lib/stores.ts::cockpitLabelMode"
+//    store_kind:        writable<'squad'|'function'>
+//    value_schema:      enum ['squad','function']
+//    writers:           ["LabelToggle.svelte", "lib/hotkeyRegistry (⌥N)"]
+//    subscribers_observable: true (any subscriber visible via Svelte devtools)
+//    persistence_mirror:    localStorage key 'la.cockpit.labelMode'
+//    update_rules:      no validation needed — enum-typed
+//
+//  Mapping source-of-truth: gatekeeper-registry.yaml + CLAUDE.md (squad
+//  roles table). Each sibling's "function name" is its primary gatekeeping
+//  domain — these are NOT arbitrary aliases.
+// ════════════════════════════════════════════════════════════════
+const SIBLING_FUNCTION = {
+  'CORSO':   'BUILD',
+  'EVA':     'OPS',
+  'SOUL':    'VAULT',
+  'QUANTUM': 'RESEARCH',
+  'SERAPH':  'SECURITY',
+  'AYIN':    'OBSERVE',
+  'LÆX':    'CANON',
+  'Claude':  'ENGINEER',
+};
+// Inverse — used so data attributes (which drive CSS color tokens via
+// [data-sib="CORSO"] selectors) can still be looked up when in function mode.
+const FUNCTION_SIBLING = Object.fromEntries(
+  Object.entries(SIBLING_FUNCTION).map(([k, v]) => [v, k])
+);
+
+const LABEL_MODE_KEY = 'la.cockpit.labelMode';
+let labelMode = (() => {
+  try { return localStorage.getItem(LABEL_MODE_KEY) || 'squad'; }
+  catch { return 'squad'; }
+})();
+
+function siblingLabel(canonical) {
+  if (labelMode === 'function') return SIBLING_FUNCTION[canonical] || canonical;
+  return canonical;
+}
+
+// ════════════════════════════════════════════════════════════════
+//  D0 — DATA
+//  Every block carries an @api comment tying mock → real endpoint.
+//  When the contracts ship, replace each block with a fetch() that
+//  returns the same shape. No render-layer changes required.
+// ════════════════════════════════════════════════════════════════
+
+// ══════════════════════════════════════════════════════════════════
+//  AMBIENT — Helix heartbeat strip
+//
+//  @api      GET /api/helix/nodes?limit=20[&since=ISO]    §2.15  ✓ SHIPPED
+//            (REST snapshot of the GlobalEventStore ring buffer)
+//  @stream   GET /api/events?topic=v1.helix.entry.changed  §2.30  ✓ SHIPPED
+//            (live append via topic-filtered SSE)
+//            also: v1.helix.entry.promoted  (SOUL promotion events)
+//  @response { nodes: Array<{
+//                entry_id:  uuid,
+//                strand:    "SOUL"|"CORSO"|"EVA"|"QUANTUM"|
+//                           "SERAPH"|"AYIN"|"LÆX",
+//                title:     string,
+//                summary:   string,
+//                timestamp: ISO-8601,
+//                pillar:    "P1"|...|"P7"|null,
+//                tags:      string[]
+//              }>,
+//              total: u32 }
+//  @auth     Bearer for REST; cookie la_session for SSE (EventSource)
+//  @kind     event.bus (channel=helix, payload=HelixEntry / SoulPromotion)
+//            ui.store    $hotMemory  (writable<HelixEntry[]>)
+//            ui.component lib/components/AmbientStrip.svelte  (NEW)
+//  @consumer api.getHelixNodes({ limit: 20 }) → existing in src/lib/api.ts
+//            sse.subscribeByTopic('v1.helix.>', cb) → src/lib/sse.ts
+//  @cache    moka ring buffer in src/events/store.rs (process-lifetime)
+//  @errors   401 (no/expired auth)
+//  @secure   strand field is enum-validated server-side (S3 from §2.23)
+//
+//  Mock-to-real swap: replace AMBIENT_EVENTS = [...] with the result of
+//    const { nodes } = await api.getHelixNodes({ limit: 20 });
+//    AMBIENT_EVENTS = nodes.map(n => ({
+//      sib: n.strand, text: n.summary, time: relTime(n.timestamp)
+//    }));
+// ══════════════════════════════════════════════════════════════════
+const AMBIENT_EVENTS = [
+  { sib:'EVA',     text:'enriched <b>cli-tui-conversation-session</b> — 8 layers',  time:'47s' },
+  { sib:'CORSO',   text:'scoped <b>platform-provider-abstraction</b> Phase 3',       time:'2m'  },
+  { sib:'SOUL',    text:'queried helix — <b>3 prior decisions</b> on cockpit-depth', time:'3m'  },
+  { sib:'QUANTUM', text:'probed <b>copilot-debug-pitfalls</b> — Risk MED',            time:'4m'  },
+  { sib:'LÆX',    text:'canon amend ratified — <b>§50.5c</b> SSE emission audit',    time:'6m'  },
+  { sib:'AYIN',    text:'span lineage repaired on <b>react-loop-engine</b>',         time:'8m'  },
+  { sib:'EVA',     text:'Day 248 — <b>META^∞</b> reflection logged',                  time:'11m' },
+  { sib:'SERAPH',  text:'scope.toml validated — <b>0 CRITICAL</b>',                   time:'14m' },
+  { sib:'CORSO',   text:'gate PASS — <b>webshell-copilot-providers Phase 3</b>',     time:'18m' },
+];
+
+// ══════════════════════════════════════════════════════════════════
+//  PORTAL — Project list
+//
+//  @api      GET /api/projects                            §2.34  ✓ SHIPPED
+//            (canonical list endpoint — handler: real_data::list_projects)
+//  @api+     GET /api/projects/:slug                       §2.34  ✓ SHIPPED
+//            (per-row hydration — ProjectMeta + git remote + branch)
+//  @api+     GET /api/builds?active=true                   §2.4   ✓ SHIPPED
+//            (active-build counts per project — JOIN client-side)
+//  @composed result is a derived store; the missing list endpoint is the
+//            single gap. Until shipped, /api/projects/init manifest dir
+//            (~/.lightarchitects/projects/*.toml) can be enumerated by
+//            adding a thin handler: project_routes.rs::list_projects.
+//
+//  @response (target shape — list endpoint):
+//            { projects: Array<{
+//                id:             uuid,
+//                slug:           string,        // path-validated
+//                name:           string,
+//                kind:           "git_repo"|"workspace",
+//                crates:         u32,           // computed from Cargo.toml glob
+//                active_builds:  u32,           // JOIN /api/builds
+//                last_event_at:  ISO-8601,
+//                status:         "active"|"ok"|"warn"|"dim",
+//                drill:          1              // depth-jump target
+//              }>,
+//              total: u32 }
+//
+//  @auth     AuthGuard (cookie la_session) — per §2.34
+//  @kind     wire.http (path=/api/projects, method=GET, auth_required=true)
+//            ui.store     $projects  (writable<ProjectMeta[]>)
+//            ui.component lib/cockpit/PortalCard.svelte  (NEW)
+//  @consumer src/lib/api.ts::api.listProjects()  (NEW — wrap fetch)
+//  @errors   401 (cookie absent/expired), 500 (registry I/O)
+//  @secure   slug validation: rejects /, \, non-ASCII (§2.34)
+//
+//  Drill anchor: each row → /cockpit?d=1&proj=<slug>
+//                (PROJECT depth, that project's build list)
+// ══════════════════════════════════════════════════════════════════
+const PROJECTS = [
+  { id:'sdk',     name:'lightarchitects-sdk', meta:'12 crates · 2 active builds', recent:'webshell-copilot Phase 3', status:'active', risk:[{k:'S',c:'warn'},{k:'T',c:'fail'}], drill:1, priority:true },
+  { id:'soul',    name:'SOUL-DEV',             meta:'11 crates · 1 active build',   recent:'soul-cache-substrate merged 1d',  status:'ok',     risk:[], drill:1 },
+  { id:'corso',   name:'CORSO-DEV',            meta:'8 crates · stable',            recent:'7-pillar gate · last 4h',          status:'ok',     risk:[], drill:1 },
+  { id:'ayin',    name:'AYIN-DEV',             meta:'4 crates · deploying',         recent:'span lineage repair · 8m ago',     status:'warn',   risk:[{k:'O',c:'warn'},{k:'P',c:'warn'}], drill:1 },
+  { id:'quantum', name:'QUANTUM-DEV',          meta:'6 crates · stable',            recent:'probe · 4m ago',                   status:'ok',     risk:[], drill:1 },
+  { id:'seraph',  name:'SERAPH-DEV',           meta:'3 crates · ARM64 disabled',    recent:'scope validated · 14m ago',        status:'dim',    risk:[], drill:1 },
+];
+
+// ══════════════════════════════════════════════════════════════════
+//  CONTEXT — Platform events feed
+//
+//  @api      GET /api/events/global                       §2.3   ✓ SHIPPED
+//            (replays last 1000-event ring buffer, then live stream)
+//  @stream   GET /api/events?topic=v1.*                    §2.30  ✓ SHIPPED
+//            (NATS-style topic filter; `*` = one segment, `>` = trailing)
+//  @groupBy  client-side bucketing on event.timestamp into NOW / WITHIN 1h
+//            / EARLIER groups (deterministic, no server round-trip)
+//
+//  @event_shape (per §2.30 WebEventV2):
+//            { topic:     "v1.<domain>.<verb>",
+//              timestamp: ISO-8601,
+//              type:      <discriminant>,   // matches WebEvent variant tag
+//              <variant-specific fields per src/events/types.rs:18–156>,
+//              agent_id?: string,
+//              build_id?: uuid,
+//              severity?: "low"|"medium"|"high",
+//              canon_ref?: "Cookbook §N" }
+//
+//  @topics_used (canonical from envelope.rs::topic_for()):
+//    v1.build.update          BuildUpdate     ← build state transitions
+//    v1.conductor.escalation  Escalation      ← drives HITL row glow
+//    v1.conductor.tick        ConductorTick   ← supervisor heartbeat
+//    v1.helix.entry.changed   HelixEntry      ← ambient strip
+//    v1.helix.entry.promoted  SoulPromotion   ← ambient strip
+//    v1.agent.<sib>.*         AyinStatus etc. ← constellation status
+//    v1.worktree.update       GitForestUpdate ← repos card live updates
+//
+//  @auth     Bearer for REST; cookie for EventSource
+//  @kind     event.bus  (channel=global, payload=WebEventV2)
+//            ui.store     $platformEvents (writable<Event[]> capped at 200)
+//            ui.component lib/cockpit/ContextCard.svelte  (NEW)
+//  @consumer connectGlobalSSE() in src/lib/sse.ts (already wired in
+//            app.svelte for cross-screen events)
+//
+//  Drill anchor: row with buildId  → /cockpit?d=2&build=<id>  (BUILD depth)
+//                row without ref    → /events?id=<id>          (modal)
+// ══════════════════════════════════════════════════════════════════
+const PLATFORM_EVENTS = [
+  { group:'NOW', items:[
+    { dot:'acc',  sib:null,      html:'<b>SQUAD ACTIVE</b> — 7 siblings online',                                              time:'now' },
+    { dot:'ok',   sib:'CORSO',   html:'<b>webshell-copilot-providers</b> Phase 3 gate PASS — A·S·Q clear',                    time:'2m',  buildId:'webshell-copilot-providers' },
+    { dot:'ok',   sib:null,      html:'<b>react-loop-engine</b> merged to main',                                              time:'18m', buildId:'react-loop-engine' },
+  ]},
+  { group:'WITHIN 1h', items:[
+    { dot:'warn', sib:'AYIN',    html:'<b>AYIN-DEV</b> deploy in progress — 4 crates rebuilding',                              time:'22m' },
+    { dot:'ok',   sib:null,      html:'<b>soul-cache-substrate</b> merged — 1506 tokens',                                     time:'1h',  buildId:'soul-cache-substrate' },
+    { dot:'info', sib:'LÆX',    html:'LÆX <b>#58</b> canon amend ratified — PBGC Tier 4',                                   time:'1h'  },
+  ]},
+  { group:'EARLIER', items:[
+    { dot:'ok',   sib:'SERAPH',  html:'pentest audit complete — <b>0 CRITICAL</b>',                                           time:'4h'  },
+    { dot:'info', sib:'SOUL',    html:'helix consolidator pass — 14 entries promoted',                                        time:'6h'  },
+  ]},
+];
+
+// ══════════════════════════════════════════════════════════════════
+//  NORTHSTAR PULSE — P1–P7 pillar health bars
+//
+//  @api      GET /api/northstar/platform-pulse            §2.51  ✓ SHIPPED
+//            handler: server/northstar_routes.rs::platform_pulse_handler
+//  @composed Per-build endpoint already exists:
+//              GET /api/builds/:id/supervisor/state       §2.13  ✓ SHIPPED
+//              → { consecutive_drifts, drift_threshold,
+//                  proposal_pending, last_evaluation, northstar_text }
+//            Aggregator iterates all active builds, computes per-pillar
+//            score as weighted-mean of mechanical-check pass rates
+//            (canon://northstar §72–203 defines the 7 pillar predicates).
+//
+//  @response (target shape):
+//            { pillars: Array<{
+//                id:        "P1"|...|"P7",
+//                label:     string,           // e.g. "E2E Engineering Surface"
+//                score:     u8,               // 0–100 — weighted-mean
+//                status:    "ok"|"warn"|"err",
+//                focus:     boolean,          // true = pillar needing attention
+//                hint:      string,           // canonical advance condition
+//                contributors: Array<{        // builds contributing to score
+//                  build_id: uuid, weight: f32, score: u8
+//                }>
+//              }>,
+//              evaluated_at: ISO-8601 }
+//
+//  @auth     Bearer or cookie
+//  @kind     wire.http (new endpoint)
+//            ui.store     $northstarPulse (writable<Pillar[]>)
+//            ui.component lib/cockpit/NorthstarPulseCard.svelte  (NEW)
+//  @poll     every 30s OR re-fetch on v1.build.supervisor.update SSE
+//  @errors   401, 503 (no active builds to aggregate)
+//
+//  Drill anchor: ns-row click → /cockpit?pillar=<id>
+//                (pillar dossier — shows contributors list as modal/overlay)
+// ══════════════════════════════════════════════════════════════════
+const NORTHSTAR = [
+  { id:'P1', label:'E2E Engineering Surface',     score:93,  status:'ok',   hint:'webshell + TUI parity verified' },
+  { id:'P2', label:'Secure-by-Default Orchestration', score:58, status:'warn', hint:'5 SERAPH HIGH open · CWE-20', focus:true },
+  { id:'P3', label:'Mixture-of-Experts Platform',  score:91,  status:'ok',   hint:'expert.selection_rationale emitted' },
+  { id:'P4', label:'Async Parallel Collaboration', score:73,  status:'ok',   hint:'IronClaw 7 write · 16 read slots' },
+  { id:'P5', label:'Persistent Knowledge',         score:100, status:'ok',   hint:'4-signal RRF · 96.2% R@5' },
+  { id:'P6', label:'Operator-Legible Engineering Arc', score:78, status:'ok', hint:'cockpit depth merge in flight' },
+  { id:'P7', label:'Production Reliability',       score:95,  status:'ok',   hint:'rollback path verified' },
+];
+
+// ══════════════════════════════════════════════════════════════════
+//  STRAND MOSAIC — project × gatekeeper risk matrix (the d0 hero card)
+//
+//  Canon source: platform-canon.md Canon XXX — strand mosaic invariant;
+//                gatekeeper-registry.yaml — owner-per-gate map.
+//
+//  @api      GET /api/strand-mosaic?scope=platform        §2.52  ✓ SHIPPED
+//            handler: server/mosaic_routes.rs::strand_mosaic_handler
+//  @composed Cells derive from:
+//              §2.13 supervisor state          → A·O·P signal (drift+gates)
+//              §2.21 /api/arch/extract         → A signal (architecture)
+//              §2.28 /api/gitforest/hitl-search→ S signal (review queue)
+//              CORSO sniff results             → Q signal (clippy/pedantic)
+//              fleet/coverage telemetry        → T signal (per Cookbook §50)
+//              SOUL helix doc audits           → D + K signals
+//            Aggregator emits one row per registered project (§2.34).
+//
+//  @response (target shape):
+//            { rows: Array<{
+//                id:    string,                // project slug
+//                label: string,                // display name
+//                meta:  string,                // "main +3" / "deploy" / etc.
+//                cells: {
+//                  A: 'ok'|'warn'|'fail'|'na',
+//                  S: 'ok'|'warn'|'fail'|'na',
+//                  Q: 'ok'|'warn'|'fail'|'na',
+//                  T: 'ok'|'warn'|'fail'|'na',
+//                  P: 'ok'|'warn'|'fail'|'na',
+//                  D: 'ok'|'warn'|'fail'|'na',
+//                  K: 'ok'|'warn'|'fail'|'na'
+//                },
+//                risk:     "OK"|"LOW"|"MED"|"HIGH"|"CRIT",
+//                evidence: { [gate]: Array<{                 // §4.4 chain
+//                  kind: "audit"|"telemetry"|"helix"|"gate",
+//                  uri:  string, ts: ISO-8601 }> }
+//              }>,
+//              gatekeepers: { A:"CORSO", S:"SERAPH", ..., K:"SOUL" },
+//              evaluated_at: ISO-8601 }
+//
+//  @auth     Bearer or cookie
+//  @kind     wire.http (NEW endpoint to define)
+//            mosaic.strand_matrix.v1 (NEW la-contracts kind — schema amend)
+//            strand.activation §4.1   (cell-level — la-contracts existing)
+//            ui.store     $strandMosaic (writable<Row[]>)
+//            ui.component lib/cockpit/StrandMosaicCard.svelte  (NEW)
+//  @poll     every 60s OR on v1.build.update + v1.helix.entry.changed
+//  @errors   401, 502 (composing call failed)
+//
+//  Drill anchors:
+//    row label → /cockpit?d=1&proj=<id>                   (depth jump)
+//    cell      → /cockpit?d=1&proj=<id>&domain=<A|S|Q|..> (gate-filtered)
+//    risk      → /cockpit?d=1&proj=<id>&sort=risk         (risk sort)
+//
+//  Glyph contract: ●=ok ◑=warn ○=fail ·=na  (rendered via GLYPH[c] map).
+//                  Gatekeeper-Registry sets the OWNER per gate; SVG color
+//                  for each cell tracks sibling-hue when status is warn/fail.
+// ══════════════════════════════════════════════════════════════════
+const MOSAIC = [
+  { id:'sdk',     label:'lightarchitects-sdk', meta:'main +3',  cells:['ok','warn','ok','fail','ok','ok','ok'], risk:'HIGH'  },
+  { id:'soul',    label:'SOUL-DEV',             meta:'main',     cells:['ok','ok','ok','ok','ok','ok','ok'],     risk:'OK'    },
+  { id:'corso',   label:'CORSO-DEV',            meta:'main',     cells:['ok','ok','ok','ok','ok','warn','ok'],   risk:'LOW'   },
+  { id:'ayin',    label:'AYIN-DEV',             meta:'deploy',   cells:['ok','ok','ok','ok','warn','warn','ok'], risk:'MED'   },
+  { id:'quantum', label:'QUANTUM-DEV',          meta:'main',     cells:['ok','ok','ok','ok','na','ok','ok'],     risk:'OK'    },
+  { id:'seraph',  label:'SERAPH-DEV',           meta:'arm64',    cells:['ok','ok','ok','na','na','warn','ok'],   risk:'LOW'   },
+];
+const GLYPH = { ok:'●', warn:'◑', fail:'○', na:'·' };
+
+// ══════════════════════════════════════════════════════════════════
+//  FLEET — Squad Constellation (7 siblings as a graph)
+//
+//  @api      GET /api/siblings                            ✓ SHIPPED
+//            handler: real_data::get_squad_status
+//            (returns 7-sibling status + last_activity_at + binary_present)
+//  @stream   GET (SSE) /api/squad/a2a                     §2.54  ✓ SHIPPED
+//            handler: server/squad_routes.rs::squad_a2a_sse_handler
+//            (correlates global event_tx → A2A link edges, 6 000 ms window)
+//  @composed Per-build endpoints exist:
+//              §2.24 GET /api/builds/{id}/fleet/snapshot   ✓ SHIPPED
+//              §2.23 GET /api/builds/{id}/fleet (SSE)      ✓ SHIPPED
+//            Platform aggregator unions across all builds + adds the
+//            7 sibling baseline (CORSO/EVA/SOUL/QUANTUM/SERAPH/AYIN/LÆX).
+//
+//  @response_status (target shape):
+//            { siblings: Array<{
+//                name:               "CORSO"|"EVA"|...|"LÆX",
+//                role:               string,             // "BUILD" etc.
+//                status:             "active"|"idle"|"degraded"|"offline",
+//                last_activity_at:   ISO-8601,
+//                active_builds:      u32,
+//                sub_label:          string              // "phase3", "idle", etc.
+//              }>,
+//              captured_at: ISO-8601 }
+//
+//  @response_a2a (event shape per la-contracts §X.X agent.a2a):
+//            { type: "a2a_message",
+//              from: <sibling>, to: <sibling>,
+//              kind: "enrich"|"context"|"canon"|"span"|"hitl"|"dispatch",
+//              build_id?: uuid,
+//              hmac:      string,                        // §4.11 chain
+//              ts:        ISO-8601 }
+//
+//  @auth     Bearer for REST; cookie for SSE
+//  @kind     wire.http   (NEW endpoints)
+//            agent.a2a   §III playbook (envelope_schema, hmac_signed)
+//            event.bus   (channel=squad-a2a, payload=A2AMessage)
+//            ui.store    $squadStatus (writable<Sibling[]>)
+//            ui.store    $a2aLinks    (writable<Link[]>, capped at 64)
+//            ui.component lib/cockpit/SquadConstellationCard.svelte  (NEW)
+//  @secure   S1: no `prompt` field in any fleet event payload (§2.23)
+//            S3: description ≤200 chars, no control chars (§2.23)
+//            S5: connection cap 100 per process via FleetSseGuard (§2.23)
+//  @errors   401, 404 (no fleet activity), 429 (SSE cap)
+//
+//  Drill anchor: node click → /chat?sibling=<canon-lowercase>
+//                (opens sibling-direct chat surface in current tab)
+//
+//  Constellation geometry: 6 nodes hexagonal around SOUL center, layout
+//  fixed in SQUAD coords. A2A links derived from $a2aLinks; active
+//  links use stroke-dasharray dash animation; inactive at opacity 0.18.
+// ══════════════════════════════════════════════════════════════════
+const SQUAD = [
+  // (x,y) coords in 300×240 SVG, plus brand hue + status
+  { name:'SOUL',    x:150, y:120, hue:'var(--sib-soul)',    role:'VAULT',  status:'idle',   sub:'idle' },
+  { name:'EVA',     x:150, y:38,  hue:'var(--sib-eva)',     role:'CONSC',  status:'active', sub:'enrich' },
+  { name:'CORSO',   x:236, y:78,  hue:'var(--sib-corso)',   role:'BUILD',  status:'active', sub:'phase3' },
+  { name:'QUANTUM', x:236, y:162, hue:'var(--sib-quantum)', role:'INVEST', status:'idle',   sub:'standby' },
+  { name:'SERAPH',  x:150, y:202, hue:'var(--sib-seraph)',  role:'REDTM',  status:'idle',   sub:'standby' },
+  { name:'AYIN',    x:64,  y:162, hue:'var(--sib-ayin)',    role:'OBS',    status:'active', sub:':3742' },
+  { name:'LÆX',    x:64,  y:78,  hue:'var(--sib-laex)',    role:'CANON',  status:'active', sub:'gate' },
+];
+const LINKS = [
+  { from:'SOUL', to:'EVA',   active:true,  kind:'enrich' },
+  { from:'SOUL', to:'CORSO', active:true,  kind:'context' },
+  { from:'SOUL', to:'LÆX', active:true,  kind:'canon' },
+  { from:'EVA',  to:'LÆX', active:true,  kind:'enrich' },
+  { from:'CORSO',to:'AYIN',  active:true,  kind:'span' },
+  { from:'AYIN', to:'SOUL',  active:false, kind:'idle' },
+  { from:'QUANTUM',to:'CORSO',active:false,kind:'idle' },
+  { from:'SERAPH',to:'CORSO',active:false, kind:'idle' },
+];
+
+// ══════════════════════════════════════════════════════════════════
+//  HITL — All escalations (composed from 3 surfaces)
+//
+//  @api      GET /api/conductor/hitl                      §2.43  ✓ SHIPPED
+//            (conductor-level queue — autonomous build pauses)
+//  @api+     GET /api/gitforest/hitl-search                §2.28  ✓ SHIPPED
+//            (PR-review HITL — GitHub `review-requested:@me`)
+//  @api+     GET /api/builds/:id/hitl + per-call resolve   ✓ SHIPPED
+//            (build-level — operator permission requests via SSE)
+//  @stream   GET /api/events?topic=v1.conductor.escalation §2.30  ✓ SHIPPED
+//            (live append — drives perm-card pulsing accent)
+//
+//  @response (conductor — §2.43):
+//            Array<{
+//              task_id:           string,
+//              build_id:          uuid,
+//              escalation_layer:  0|1|2|3|4,            // CAT/L1/L2/L3/FULL
+//              question:          string,
+//              context:           string,
+//              dispatched_at:     ISO-8601,
+//              nonce:             string                  // for resolve POST
+//            }>
+//
+//  @resolve  POST /api/conductor/hitl/{task_id}/resolve   §2.43  ✓ SHIPPED
+//            POST /api/control { kind:"ironclaw_hitl_resolution",
+//              escalation_nonce, decision:"approve"|"reject" }    ✓
+//  @resolve+ POST /api/builds/{id}/hitl/{call_id}                  ✓ build-level
+//
+//  @auth     Bearer or cookie (AuthGuard on all)
+//  @kind     wire.http (3 endpoints already shipped)
+//            event.bus (channel=escalation, payload=Escalation §2.3.1)
+//            ui.store     $pendingPermissions, $pendingEscalations,
+//                         $pendingIronclawEscalations
+//                         (already in Cockpit.svelte:80–83)
+//            ui.component already wired in Cockpit.svelte:511–579
+//                         (perm-card, esc-card, esc-ironclaw variants)
+//  @errors   401, 404 (unknown task_id), 409 (already resolved),
+//            412 (nonce mismatch — replay defense)
+//  @secure   escalation_nonce MUST NOT be logged (per Cookpit.svelte:166)
+//
+//  Drill anchor: row click → opens in-place HITL modal
+//                (no route nav — modal lives inside d0 cockpit)
+// ══════════════════════════════════════════════════════════════════
+const ESCALATIONS = [
+  { dot:'warn', html:'<b>CORS policy</b> — webshell-copilot gate · awaiting review', time:'8m', crit:false },
+  { dot:'warn', html:'<b>VRAM headroom</b> — ML training pre-flight · 5.2 GiB margin', time:'2h', crit:false },
+];
+
+// ══════════════════════════════════════════════════════════════════
+//  GIT — Repositories card
+//
+//  @api      POST /api/git/worktrees                      §2.27  ✓ SHIPPED
+//            Body: { cwd: string }   // safe_cwd() validated
+//            Response: { worktrees: WorktreeMeta[] }
+//                where WorktreeMeta = { path, branch, locked, created_at,
+//                                       status:"active" }
+//  @api+     GET /api/gitforest/topology?repo=<slug>     §2.17  ✓ SHIPPED
+//            Response: { branches, recent_commits } (30s moka TTL)
+//  @api+     GET /api/git/branch?cwd=<path>             ✓ SHIPPED
+//            (current branch + ahead/behind from §2.10 gitops)
+//  @stream   GET /api/events?topic=v1.worktree.update    §2.30  ✓ SHIPPED
+//            (triggers re-fetch on branch_added / ci_status / etc.)
+//
+//  @composed One row per active project; for each:
+//              parallel calls (max 4 concurrent — §66 fan-out)
+//              POST /api/git/worktrees   + GET /api/gitforest/topology
+//            Display: branch name (with ahead/behind), worktree count,
+//                     "live" chip for any worktree with status==active.
+//
+//  @auth     Bearer or cookie (AuthGuard on all §2.27 + §2.17)
+//  @kind     wire.http  (already shipped — both endpoints)
+//            event.bus  (channel=worktree, payload=GitForestUpdate)
+//            ui.store   $gitStore (subscribed in Cockpit.svelte:48–60)
+//            ui.store   $gitforestTree
+//            ui.component lib/cockpit/GitCard.svelte  (NEW — d0 variant)
+//  @secure   CWE-22 path-traversal: cwd validated via safe_cwd()
+//            CWE-78 cmd-injection: no shell interpolation (§2.10)
+//            repo regex ^[a-zA-Z0-9_.-]{1,100}$ (§2.17)
+//  @errors   400 (bad cwd/repo), 401, 500 (git command failed)
+//
+//  Drill anchor: row click → /cockpit?d=1&proj=<name>&view=git
+// ══════════════════════════════════════════════════════════════════
+const REPOS = [
+  { name:'lightarchitects-sdk', state:'main +3 ahead',  stateCls:'acc',  wt:2, live:true },
+  { name:'SOUL-DEV',            state:'main clean',     stateCls:'',     wt:0, live:false },
+  { name:'CORSO-DEV',           state:'main clean',     stateCls:'',     wt:0, live:false },
+  { name:'AYIN-DEV',            state:'deploy branch',  stateCls:'warn', wt:1, live:true  },
+];
+
+// ══════════════════════════════════════════════════════════════════
+//  SMART DISPATCH — Gate-aware wave suggestions
+//
+//  @api      GET /api/wave/suggestions?scope=platform    §2.53  ✓ SHIPPED
+//            handler: server/wave_routes.rs::wave_suggestions_handler
+//  @action   POST /api/dispatch/execute                  §2.7   ✓ SHIPPED
+//            (operator confirms a suggested action → dispatch run)
+//  @stream   GET (SSE) /api/dispatch/status/{id}         §2.7   ✓ SHIPPED
+//            (live status of an in-flight dispatch)
+//
+//  @composed Suggestions derive from:
+//              §2.13 supervisor state          → drift triggers /OPTIMIZE
+//              §2.21 arch findings             → trigger /SECURE or /VERIFY
+//              §2.28 HITL search backlog       → trigger /REVIEW
+//              SOUL helix promotion queue      → trigger /ENRICH
+//              northstar pillar focus          → trigger pillar-specific
+//
+//  @response (target shape):
+//            { suggestions: Array<{
+//                action:     "/BUILD"|"/PLAN"|"/SECURE"|"/VERIFY"|
+//                            "/ENRICH"|"/OBSERVE"|"/REVIEW"|"/OPTIMIZE",
+//                reason:     string,           // human-readable, HTML-safe
+//                domain:     "A"|"S"|"Q"|"O"|"P"|"K"|"D"|"T"|"R",
+//                priority:   boolean,
+//                scope:      "platform"|"project:<slug>"|"build:<id>",
+//                evidence:   string[],         // URIs to supporting data
+//                canon_ref?: string            // e.g. "Cookbook §63"
+//              }>,
+//              evaluated_at: ISO-8601 }
+//
+//  @dispatch_body (when operator clicks):
+//            POST /api/dispatch/execute
+//            { action, scope, reason, evidence, classified_sibling? }
+//            Returns: { run_id: uuid } — subscribe to SSE for status
+//
+//  @auth     Bearer or cookie
+//  @kind     wire.http (NEW endpoint to define)
+//            wave.smart_suggestions.v1 (NEW la-contracts kind — schema amend)
+//            ui.store     $waveSuggestions (writable<Suggestion[]>)
+//            ui.component lib/cockpit/SmartDispatchCard.svelte  (NEW)
+//  @poll     every 45s OR on v1.build.update + v1.conductor.escalation
+//  @errors   401, 503 (composer failed — fall back to static action list)
+//  @csrf     Origin allowlist enforced on /api/dispatch/execute (§2.31)
+//
+//  Drill anchor: row click → /dispatch?action=<action>&scope=platform
+//                (opens dispatch confirmation modal; on confirm,
+//                 POSTs /api/dispatch/execute, then SSE-subscribes
+//                 to /api/dispatch/status/{run_id} for live progress)
+// ══════════════════════════════════════════════════════════════════
+const WAVE_SUGGESTIONS = [
+  { action:'/SECURE',  reason:'AYIN-DEV has <b>3 untriaged HIGH</b> from 2026-06-04', domain:'S', priority:true  },
+  { action:'/VERIFY',  reason:'sdk crate <b>coverage 74%</b> · target 90% (Canon §63)', domain:'T', priority:true  },
+  { action:'/ENRICH',  reason:'4 sessions awaiting promotion · <b>significance ≥7.0</b>',domain:'K', priority:false },
+  { action:'/OBSERVE', reason:'AYIN <b>span lineage repaired</b> · verify circuit intact', domain:'O', priority:false },
+];
+
+// ════════════════════════════════════════════════════════════════
+//  RENDER
+// ════════════════════════════════════════════════════════════════
+
+function renderAmbient() {
+  const track = document.getElementById('ambientTrack');
+  const html = AMBIENT_EVENTS.map((e, i) =>
+    `<span class="ae" data-sib="${e.sib}" data-canon="${e.sib}" data-idx="${i}">
+       <span class="ae-sib">${siblingLabel(e.sib)}</span>
+       <span class="ae-text">${e.text}</span>
+       <span class="ae-time">${e.time}</span>
+     </span>`
+  ).join('<span style="opacity:0.18">·</span>');
+  // duplicate for seamless marquee
+  track.innerHTML = html + '<span style="opacity:0.18;padding:0 14px">·</span>' + html;
+}
+
+function renderPortal() {
+  const list = document.getElementById('portalList');
+  list.innerHTML = PROJECTS.map(p => {
+    const riskHtml = p.risk.length
+      ? `<div class="proj-domains">${p.risk.map(r =>
+          `<span class="pd ${r.c}">${r.k}</span>`).join('')}</div>`
+      : '';
+    return `<div class="proj ${p.priority ? 'priority' : ''}" data-drill="${p.drill}" data-id="${p.id}">
+      <div class="proj-status s-${p.status}"></div>
+      <div class="proj-main">
+        <div class="proj-name">${p.name}</div>
+        <div class="proj-meta">
+          <span>${p.meta}</span>
+          <span class="sep">›</span>
+          <span class="accent">${p.recent}</span>
+        </div>
+        ${riskHtml}
+      </div>
+      <div class="proj-arrow">›</div>
+    </div>`;
+  }).join('');
+
+  list.querySelectorAll('.proj').forEach(el => {
+    el.addEventListener('click', (e) => drillTo(parseInt(el.dataset.drill), e));
+  });
+}
+
+function renderContext() {
+  const list = document.getElementById('ctxList');
+  list.innerHTML = PLATFORM_EVENTS.map(g => {
+    const items = g.items.map((it, i) =>
+      `<div class="ctx" data-event-id="evt-${g.group}-${i}" ${it.buildId ? `data-build-id="${it.buildId}"` : ''}>
+        <div class="ctx-dot ${it.dot}"></div>
+        <div class="ctx-text" ${it.sib ? `data-sib="${it.sib}" data-canon="${it.sib}"` : ''}>
+          ${it.sib ? `<span class="sib">${siblingLabel(it.sib)}</span>` : ''}${it.html}
+        </div>
+        <div class="ctx-time">${it.time}</div>
+      </div>`
+    ).join('');
+    return `<div class="ctx-group">${g.group}</div>${items}`;
+  }).join('');
+}
+
+function renderNorthstar() {
+  const list = document.getElementById('nsList');
+  list.innerHTML = NORTHSTAR.map(p => {
+    const fillCls = p.status === 'warn' ? 's-warn' : p.status === 'err' ? 's-err' : '';
+    return `<div class="ns-row ${p.focus ? 'focus' : ''}" data-pillar="${p.id}">
+      <div class="ns-id">${p.id}</div>
+      <div class="ns-track">
+        <div class="ns-label">
+          <span>${p.label}</span>
+          <span class="ns-hint">${p.hint}</span>
+        </div>
+        <div class="ns-bar"><div class="ns-fill ${fillCls}" style="width:${p.score}%"></div></div>
+      </div>
+      <div class="ns-score ${fillCls}">${p.score}</div>
+    </div>`;
+  }).join('');
+}
+
+const MOSAIC_DOMAINS = ['A','S','Q','T','P','D','K'];
+
+function renderMosaic() {
+  const grid = document.getElementById('mosaicGrid');
+  // remove old rows (keep headers — first 9 children)
+  while (grid.children.length > 9) grid.removeChild(grid.lastChild);
+
+  MOSAIC.forEach(row => {
+    const cellsHtml = row.cells.map((c, ci) =>
+      `<div class="mc ${c}" data-cell="${c}" data-proj="${row.id}" data-domain="${MOSAIC_DOMAINS[ci]}">${GLYPH[c]}</div>`
+    ).join('');
+    const riskCls = `r-${row.risk.toLowerCase()}`;
+    const html = `
+      <div class="mr-label" data-id="${row.id}">${row.label}<span class="mr-meta">· ${row.meta}</span></div>
+      ${cellsHtml}
+      <div class="mr-risk ${riskCls}" data-id="${row.id}">${row.risk}</div>`;
+    const wrap = document.createElement('div');
+    wrap.className = 'mr';
+    wrap.dataset.id = row.id;
+    wrap.innerHTML = html;
+    grid.appendChild(wrap);
+  });
+}
+
+function renderConstellation() {
+  const linksG = document.getElementById('cnLinks');
+  const nodesG = document.getElementById('cnNodes');
+
+  // Position lookup
+  const byName = Object.fromEntries(SQUAD.map(s => [s.name, s]));
+
+  // Links — drawn first so they sit beneath nodes
+  linksG.innerHTML = LINKS.map(l => {
+    const a = byName[l.from];
+    const b = byName[l.to];
+    if (!a || !b) return '';
+    return `<path class="cn-link ${l.active ? 'active' : ''}"
+              d="M${a.x},${a.y} L${b.x},${b.y}" />`;
+  }).join('');
+
+  // Nodes — circle, pulse (if active), label, sub
+  nodesG.innerHTML = SQUAD.map(s => {
+    const pulse = s.status === 'active'
+      ? `<circle class="cn-pulse" cx="${s.x}" cy="${s.y}" r="16" style="--node-hue:${s.hue}"/>`
+      : '';
+    const display = siblingLabel(s.name);
+    // Labels longer than 5 chars shrink slightly to fit the 28px node circle
+    const labelSize = display.length > 6 ? 7.5 : (display.length > 4 ? 8.5 : 9);
+    return `<g class="cn-node ${s.status}" style="--node-hue:${s.hue}" data-name="${s.name}" data-canon="${s.name}">
+      ${pulse}
+      <circle class="cn-node-bg" cx="${s.x}" cy="${s.y}" r="14"/>
+      <text class="cn-node-label" x="${s.x}" y="${s.y + 3.5}" style="font-size:${labelSize}px">${display}</text>
+      <text class="cn-node-sub" x="${s.x}" y="${s.y + 30}">${s.sub}</text>
+    </g>`;
+  }).join('');
+
+  // Update foot counts
+  document.getElementById('ff-links').textContent  = LINKS.filter(l => l.active).length;
+  document.getElementById('ff-active').textContent = SQUAD.filter(s => s.status === 'active').length;
+  document.getElementById('ff-idle').textContent   = SQUAD.filter(s => s.status === 'idle').length;
+}
+
+function renderHitl() {
+  const list = document.getElementById('hitlList');
+  if (!ESCALATIONS.length) {
+    list.innerHTML = `<div class="hitl-empty">no open escalations</div>`;
+    return;
+  }
+  list.innerHTML = ESCALATIONS.map((e, i) =>
+    `<div class="hitl-row ${e.crit ? 'crit' : ''}" data-esc-id="esc-${i}">
+      <div class="ctx-dot ${e.dot}"></div>
+      <div class="ctx-text">${e.html}</div>
+      <div class="hitl-time">${e.time}</div>
+    </div>`
+  ).join('');
+  document.getElementById('hitlSub').textContent = `${ESCALATIONS.length} OPEN`;
+}
+
+function renderGit() {
+  const list = document.getElementById('gitList');
+  list.innerHTML = REPOS.map(r =>
+    `<div class="git-row" data-name="${r.name}">
+      <span class="git-name">${r.name}</span>
+      <span class="git-state ${r.stateCls}">${r.state}</span>
+      <span class="git-wt ${r.live ? 'live' : ''}">${r.wt} wt</span>
+    </div>`
+  ).join('');
+}
+
+function renderWave() {
+  const list = document.getElementById('waveList');
+  list.innerHTML = WAVE_SUGGESTIONS.map(w =>
+    `<div class="wave-row ${w.priority ? 'priority' : ''}" data-action="${w.action}">
+      <span class="wave-prio">↑</span>
+      <span class="wave-action">${w.action}</span>
+      <span class="wave-reason"><span class="wave-domain d-${w.domain}">${w.domain}</span>${w.reason}</span>
+      <span class="wave-go">›</span>
+    </div>`
+  ).join('');
+  list.querySelectorAll('.wave-row').forEach(el => {
+    el.addEventListener('click', () => {
+      console.log('wave dispatch:', el.dataset.action);
+      // Real impl: POST /api/wave/dispatch { action, scope:'platform' }
+    });
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+//  ROUTING — anchor → URL
+//
+//  Every drill anchor maps to a route via computeDrillRoute(anchor).
+//  In this focused file, routes surface via showRouteToast() so the
+//  wiring is observable without breaking the standalone preview.
+//
+//  PROD PORT — wire to src/lib/routes.ts::navigate(path):
+//
+//    import { navigate } from '$lib/routes';
+//    function drillTo(anchor: DrillAnchor, ev: MouseEvent) {
+//      flashAt(ev);
+//      const { route } = computeDrillRoute(anchor);
+//      navigate(route);                       // sets window.location.hash
+//    }
+//
+//  The hash routing layer parses each path via matchRoute() (routes.ts:1)
+//  and looks up ScreenKey → screen module in app.svelte::screenModules
+//  (app.svelte:69–91). Query params reach the screen via the `params`
+//  prop (Cockpit.svelte:67).
+//
+//  Route table — drill paths from d0:
+//    /cockpit?d=N&proj=X[&domain=Y]   → ScreenKey: Cockpit
+//    /cockpit?pillar=PN               → ScreenKey: Cockpit (overlay)
+//    /chat?sibling=<lc>                → ScreenKey: Chat
+//    /helix?sib=X&idx=N                → ScreenKey: Helix
+//    /events?id=X                      → ScreenKey: (modal overlay)
+//    /dispatch?action=X&scope=Y        → ScreenKey: Dispatch
+//    #modal:hitl/<esc_id>              → in-place modal, no nav
+//
+//  la-contracts kind:  operator.surface
+//    ui_locator:       "/cockpit?d=0"
+//    screen_key:       "Cockpit"
+//    history_continuity: true     (back-button preserves d0 state)
+//    cancellation:     supported  (ESC closes any overlay)
+//    auto_mode_re_consent_triggers: ["dispatch_execute", "hitl_resolve"]
+//    render_safety:    sanitized (all event.text HTML pre-escaped server-side)
+// ════════════════════════════════════════════════════════════════
+
+const ROUTE_SCOPE_LABELS = {
+  d0: 'D0 · PLATFORM', d1: 'D1 · PROJECT', d2: 'D2 · BUILD', d3: 'D3 · FILE',
+  pillar: 'PILLAR DOSSIER', sibling: 'SIBLING CHAT',
+  helix: 'HELIX ENTRY', hitl: 'HITL MODAL', dispatch: 'WAVE DISPATCH',
+};
+
+function computeDrillRoute(anchor) {
+  switch (anchor.kind) {
+    case 'project':
+      return { route: `/cockpit?d=1&proj=${anchor.id}`,
+               action: 'DEPTH JUMP', scope: 'd1' };
+    case 'mosaic-row':
+      return { route: `/cockpit?d=1&proj=${anchor.id}`,
+               action: 'DEPTH JUMP', scope: 'd1' };
+    case 'mosaic-cell':
+      return { route: `/cockpit?d=1&proj=${anchor.proj}&domain=${anchor.domain}`,
+               action: `DRILL · ${anchor.domain}-GATE`, scope: 'd1' };
+    case 'mosaic-risk':
+      return { route: `/cockpit?d=1&proj=${anchor.id}&sort=risk`,
+               action: 'DRILL · RISK SORT', scope: 'd1' };
+    case 'pillar':
+      return { route: `/cockpit?pillar=${anchor.id}`,
+               action: `PILLAR · ${anchor.id} DOSSIER`, scope: 'pillar' };
+    case 'sibling':
+      return { route: `/chat?sibling=${anchor.canon.toLowerCase()}`,
+               action: `OPEN CHAT · ${siblingLabel(anchor.canon)}`, scope: 'sibling' };
+    case 'event':
+      return anchor.buildId
+        ? { route: `/cockpit?d=2&build=${anchor.buildId}`,
+            action: 'DEPTH JUMP · BUILD', scope: 'd2' }
+        : { route: `/events?id=${anchor.id}`,
+            action: 'EVENT DETAIL', scope: 'd0' };
+    case 'helix':
+      return { route: `/helix?sib=${anchor.canon.toLowerCase()}&idx=${anchor.idx}`,
+               action: 'OPEN HELIX ENTRY', scope: 'helix' };
+    case 'repo':
+      return { route: `/cockpit?d=1&proj=${anchor.id}&view=git`,
+               action: 'DEPTH JUMP · GIT VIEW', scope: 'd1' };
+    case 'escalation':
+      return { route: `#modal:hitl/${anchor.id}`,
+               action: 'OPEN HITL MODAL', scope: 'hitl' };
+    case 'wave':
+      return { route: `/dispatch?action=${encodeURIComponent(anchor.action.replace(/^\//,''))}&scope=platform`,
+               action: `DISPATCH · ${anchor.action}`, scope: 'dispatch' };
+    default:
+      return { route: '/cockpit?d=0', action: 'NOOP', scope: 'd0' };
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  TOAST — route preview
+// ════════════════════════════════════════════════════════════════
+let toastTimer = null;
+function showRouteToast(route, action, scopeKey) {
+  const t   = document.getElementById('routeToast');
+  document.getElementById('rtRoute').textContent  = route;
+  document.getElementById('rtAction').textContent = action;
+  document.getElementById('rtKey').textContent    = ROUTE_SCOPE_LABELS[scopeKey] || scopeKey.toUpperCase();
+  t.classList.add('visible');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('visible'), 1800);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  DRILL — anchor + event → flash + route preview
+// ════════════════════════════════════════════════════════════════
+function drillTo(anchor, ev) {
+  const flash = document.getElementById('drillFlash');
+  let x = '50%', y = '50%';
+  if (ev && ev.clientX) {
+    x = ev.clientX + 'px';
+    y = ev.clientY + 'px';
+  } else if (ev && ev.target) {
+    const r = ev.target.getBoundingClientRect();
+    x = (r.left + r.width  / 2) + 'px';
+    y = (r.top  + r.height / 2) + 'px';
+  }
+  flash.style.setProperty('--flash-x', x);
+  flash.style.setProperty('--flash-y', y);
+  flash.classList.add('active');
+  setTimeout(() => flash.classList.remove('active'), 120);
+
+  const { route, action, scope } = computeDrillRoute(anchor);
+  showRouteToast(route, action, scope);
+
+  // PRODUCTION:
+  //   window.location.hash = `#${route}`;
+  // (Svelte Cockpit.svelte reads this via app.svelte's currentRoute store.)
+  console.log(`drill → ${route}  ·  ${action}`);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  LABEL MODE — SQUAD ↔ FUNCTION
+// ════════════════════════════════════════════════════════════════
+function applyLabelMode(mode) {
+  labelMode = mode;
+  try { localStorage.setItem(LABEL_MODE_KEY, mode); } catch {}
+  document.querySelectorAll('.ltg-opt').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === mode);
+  });
+  // Re-render surfaces that show sibling labels
+  renderAmbient();
+  renderContext();
+  renderConstellation();
+  // Re-attach interactions on re-rendered surfaces
+  wireAmbient();
+  wireContext();
+  wireConstellation();
+  // Update the SQUAD ACTIVE badge text to reflect mode
+  const sb = document.getElementById('badgeSquad');
+  if (sb) sb.textContent = mode === 'function' ? 'TEAM ACTIVE' : 'SQUAD ACTIVE';
+}
+
+function toggleLabelMode() {
+  applyLabelMode(labelMode === 'squad' ? 'function' : 'squad');
+}
+
+// ════════════════════════════════════════════════════════════════
+//  WIRING — click handlers, post-render
+// ════════════════════════════════════════════════════════════════
+
+// PRESET chips (no drill — re-renders d0 with new emphasis)
+function wirePresets() {
+  document.querySelectorAll('.preset-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.preset-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      // PRODUCTION: selectedPreset.set(chip.dataset.preset)
+      //   → triggers re-emphasis on Mosaic, Wave, Constellation
+      showRouteToast(
+        `selectedPreset = '${chip.dataset.preset}'`,
+        `LENS · ${chip.dataset.preset.toUpperCase()}`,
+        'd0'
+      );
+    });
+  });
+}
+
+// PROJECT rows — drill to d1
+function wirePortal() {
+  document.querySelectorAll('.proj').forEach(el => {
+    el.addEventListener('click', (e) =>
+      drillTo({ kind: 'project', id: el.dataset.id }, e));
+  });
+}
+
+// MOSAIC — row label, cell, risk badge — three distinct drill paths
+function wireMosaic() {
+  document.querySelectorAll('.mr-label').forEach(el => {
+    el.addEventListener('click', (e) =>
+      drillTo({ kind: 'mosaic-row', id: el.dataset.id }, e));
+  });
+  document.querySelectorAll('.mc').forEach(el => {
+    el.addEventListener('click', (e) =>
+      drillTo({ kind: 'mosaic-cell',
+                proj: el.dataset.proj,
+                domain: el.dataset.domain }, e));
+  });
+  document.querySelectorAll('.mr-risk').forEach(el => {
+    el.addEventListener('click', (e) =>
+      drillTo({ kind: 'mosaic-risk', id: el.dataset.id }, e));
+  });
+}
+
+// NORTHSTAR — pillar row → pillar dossier
+function wireNorthstar() {
+  document.querySelectorAll('.ns-row').forEach(el => {
+    el.addEventListener('click', (e) =>
+      drillTo({ kind: 'pillar', id: el.dataset.pillar }, e));
+  });
+}
+
+// CONSTELLATION — sibling node → sibling chat
+function wireConstellation() {
+  document.querySelectorAll('.cn-node').forEach(node => {
+    // Click → sibling chat route
+    node.addEventListener('click', (e) =>
+      drillTo({ kind: 'sibling', canon: node.dataset.canon }, e));
+
+    // Hover → emphasize linked nodes
+    node.addEventListener('mouseenter', () => {
+      const name = node.dataset.canon;
+      const paths = document.querySelectorAll('.cn-link');
+      paths.forEach(p => { p.style.opacity = '0.08'; });
+      LINKS.forEach((l, i) => {
+        if (l.from === name || l.to === name) {
+          if (paths[i]) {
+            paths[i].style.opacity = '0.6';
+            paths[i].style.stroke  = 'var(--acc)';
+          }
+        }
+      });
+    });
+    node.addEventListener('mouseleave', () => {
+      document.querySelectorAll('.cn-link').forEach(p => {
+        p.style.opacity = '';
+        p.style.stroke  = '';
+      });
+    });
+  });
+}
+
+// CONTEXT events — drill to d2 if build ref present, otherwise event detail
+function wireContext() {
+  document.querySelectorAll('.ctx').forEach(el => {
+    el.addEventListener('click', (e) =>
+      drillTo({ kind: 'event',
+                id: el.dataset.eventId,
+                buildId: el.dataset.buildId }, e));
+  });
+}
+
+// AMBIENT helix items — open helix entry
+function wireAmbient() {
+  document.querySelectorAll('.ae').forEach(el => {
+    el.addEventListener('click', (e) =>
+      drillTo({ kind: 'helix',
+                canon: el.dataset.canon,
+                idx: el.dataset.idx }, e));
+    el.style.cursor = 'pointer';
+  });
+}
+
+// HITL — open modal (no nav)
+function wireHitl() {
+  document.querySelectorAll('.hitl-row').forEach(el => {
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', (e) =>
+      drillTo({ kind: 'escalation', id: el.dataset.escId }, e));
+  });
+}
+
+// GIT — repo row → d1 with git view
+function wireGit() {
+  document.querySelectorAll('.git-row').forEach(el => {
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', (e) =>
+      drillTo({ kind: 'repo', id: el.dataset.name }, e));
+  });
+}
+
+// SMART WAVE — dispatch action (overrides earlier console.log handler)
+function wireWave() {
+  document.querySelectorAll('.wave-row').forEach(el => {
+    // Replace any previous handler by cloning
+    const clone = el.cloneNode(true);
+    el.parentNode.replaceChild(clone, el);
+    clone.addEventListener('click', (e) =>
+      drillTo({ kind: 'wave', action: clone.dataset.action }, e));
+  });
+}
+
+// LABEL-MODE toggle + ⌥N keyboard shortcut
+function wireLabelToggle() {
+  document.querySelectorAll('.ltg-opt').forEach(btn => {
+    btn.addEventListener('click', () => applyLabelMode(btn.dataset.mode));
+  });
+  // ⌥N (Option-N / Alt-N) — toggle
+  window.addEventListener('keydown', (e) => {
+    if (e.altKey && (e.code === 'KeyN' || e.key === 'n' || e.key === '˜')) {
+      e.preventDefault();
+      toggleLabelMode();
+    }
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+//  BOOT
+// ════════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  renderAmbient();
+  renderPortal();
+  renderContext();
+  renderNorthstar();
+  renderMosaic();
+  renderConstellation();
+  renderHitl();
+  renderGit();
+  renderWave();
+
+  // First-paint label state
+  if (labelMode !== 'squad') applyLabelMode(labelMode);
+
+  // Wire all drill anchors
+  wirePresets();
+  wirePortal();
+  wireMosaic();
+  wireNorthstar();
+  wireConstellation();
+  wireContext();
+  wireAmbient();
+  wireHitl();
+  wireGit();
+  wireWave();
+  wireLabelToggle();
+});
+</script>
+
+</body>
+</html>

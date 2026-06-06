@@ -114,7 +114,7 @@ pub struct BuildSession {
     /// `None` until the first turn; the mutex serializes concurrent turn requests.
     pub copilot_proc: tokio::sync::Mutex<Option<CopilotProcess>>,
 
-    /// Shared interrupt flag for native (`LightarchitectsNative`) sessions.
+    /// Shared interrupt flag for native (`LightArchitect`) sessions.
     ///
     /// `POST /api/builds/:id/interrupt` sets this to `true`; the running
     /// [`ConversationSession`] checks it at every iteration boundary and
@@ -328,7 +328,7 @@ impl BuildSession {
                 argv.push("-m".to_owned());
                 argv.push(cfg.model.clone());
             }
-            AgentSession::LightarchitectsNative(_) | AgentSession::MistralVibe(_) => {
+            AgentSession::LightArchitect(_) | AgentSession::MistralVibe(_) => {
                 // MistralVibe is dispatched via run_vibe_turn(), not the claude-CLI
                 // argv builder — model is injected via VIBE_ACTIVE_MODEL env var.
             }
@@ -353,7 +353,7 @@ impl BuildSession {
         ];
         match &self.agent {
             AgentSession::Lightarchitects(ClaudeBackend::Anthropic | ClaudeBackend::LiteLlm(_))
-            | AgentSession::LightarchitectsNative(_)
+            | AgentSession::LightArchitect(_)
             | AgentSession::MistralVibe(_) => {}
             AgentSession::Lightarchitects(ClaudeBackend::OllamaLaunch(lc)) => {
                 // Replicates what `ollama launch claude --model <model>` injects.
@@ -687,14 +687,14 @@ mod tests {
 
     #[test]
     fn build_argv_native_is_empty() {
-        use crate::config::LightarchitectsNativeConfig;
+        use crate::config::LightArchitectConfig;
         let sess = BuildSession::new(
             PathBuf::from("/tmp"),
-            AgentSession::LightarchitectsNative(LightarchitectsNativeConfig::default()),
+            AgentSession::LightArchitect(LightArchitectConfig::default()),
         );
         assert!(
             sess.build_argv().is_empty(),
-            "LightarchitectsNative must not pass claude-specific flags: {:?}",
+            "LightArchitect must not pass claude-specific flags: {:?}",
             sess.build_argv()
         );
     }

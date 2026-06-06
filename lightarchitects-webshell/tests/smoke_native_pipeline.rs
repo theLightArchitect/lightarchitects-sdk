@@ -2,7 +2,7 @@
 //!
 //! Verifies that the native SSE pipeline routes are wired, the `AppState` boots
 //! cleanly, and `POST /api/builds/:id/copilot` returns `200 text/event-stream`
-//! when a registered `LightarchitectsNative` session is present.
+//! when a registered `LightArchitect` session is present.
 //!
 //! These tests do NOT exercise the live Ollama Cloud connection; the SSE response
 //! headers are set before the spawned turn task makes any network call, so the
@@ -17,7 +17,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use lightarchitects_webshell::{
-    config::{AgentSession, Cli, Config, LightarchitectsNativeConfig},
+    config::{AgentSession, Cli, Config, LightArchitectConfig},
     container::DockerCapability,
     server::{AppState, build_app},
     session::BuildSession,
@@ -41,7 +41,7 @@ fn make_native_app() -> (axum::Router, Uuid) {
 
     let session = Arc::new(BuildSession::new(
         PathBuf::from("/tmp"),
-        AgentSession::LightarchitectsNative(LightarchitectsNativeConfig::default()),
+        AgentSession::LightArchitect(LightArchitectConfig::default()),
     ));
     let build_id = session.build_id;
     state.builds.insert(Arc::clone(&session));

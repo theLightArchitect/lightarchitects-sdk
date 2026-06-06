@@ -34,7 +34,7 @@ pub const DEFAULT_OLLAMA_MODEL: &str = "glm-5.1:cloud";
 
 /// Agent backend discriminator — selects which CLI binary and protocol the webshell uses.
 ///
-/// `LightarchitectsNative` routes through the LA SDK (`ConversationSession` / Ollama Cloud).
+/// `LightArchitect` routes through the LA SDK (`ConversationSession` / Ollama Cloud).
 /// `MistralVibe` and `Codex` use per-turn subprocess bridges. None use a PTY.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -44,7 +44,7 @@ pub enum AgentKind {
     /// `OpenAI` Codex CLI (binary: `codex`).
     Codex,
     /// lÆx0 native binary (`lightarchitects-cli`).
-    LightarchitectsNative,
+    LightArchitect,
     /// Mistral Vibe coding agent (binary: `vibe`, ACP bridge: `vibe-acp`).
     MistralVibe,
 }
@@ -311,7 +311,7 @@ impl Default for CodexConfig {
 /// through the in-binary LLM loop with all gateway `core_tools` available.
 /// Replaces the legacy `lightarchitects-cli` (lÆx0) binary which no longer ships.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LightarchitectsNativeConfig {
+pub struct LightArchitectConfig {
     /// Path to the `lightarchitects` gateway binary. Default: `"lightarchitects"` (assumes on `$PATH`).
     #[serde(default = "default_lightarchitects_cli_binary")]
     pub binary: String,
@@ -325,7 +325,7 @@ fn default_lightarchitects_cli_binary() -> String {
     "lightarchitects".to_owned()
 }
 
-impl Default for LightarchitectsNativeConfig {
+impl Default for LightArchitectConfig {
     fn default() -> Self {
         Self {
             binary: default_lightarchitects_cli_binary(),
@@ -357,7 +357,7 @@ pub enum AgentSession {
     /// `OpenAI` Codex CLI (`codex` binary).
     Codex(CodexConfig),
     /// lÆx0 native binary (`lightarchitects-cli`).
-    LightarchitectsNative(LightarchitectsNativeConfig),
+    LightArchitect(LightArchitectConfig),
     /// Mistral Vibe CLI (`vibe` binary, ACP bridge: `vibe-acp`).
     MistralVibe(MistralVibeConfig),
 }
@@ -375,7 +375,7 @@ impl AgentSession {
         match self {
             Self::Lightarchitects(_) => AgentKind::Lightarchitects,
             Self::Codex(_) => AgentKind::Codex,
-            Self::LightarchitectsNative(_) => AgentKind::LightarchitectsNative,
+            Self::LightArchitect(_) => AgentKind::LightArchitect,
             Self::MistralVibe(_) => AgentKind::MistralVibe,
         }
     }
@@ -403,7 +403,7 @@ pub struct Cli {
     pub cwd: Option<PathBuf>,
 
     /// Agent CLI to spawn (`l-aex0` = claude, `codex` = openai codex).
-    #[arg(long, value_enum, default_value_t = AgentKind::LightarchitectsNative)]
+    #[arg(long, value_enum, default_value_t = AgentKind::LightArchitect)]
     pub agent: AgentKind,
 
     /// Backend for the selected agent.
@@ -439,7 +439,7 @@ pub struct Cli {
     pub claude_agent: Option<String>,
 
     /// Path to the `lightarchitects-cli` binary (default: `lightarchitects-cli`, assumes on `$PATH`).
-    /// Only used when `--agent=lightarchitects-native`.
+    /// Only used when `--agent=light-architect`.
     #[arg(long)]
     pub lightarchitects_cli_binary: Option<String>,
 
@@ -479,7 +479,7 @@ impl Default for Cli {
             port: DEFAULT_PORT,
             host_cmd: OsString::from(DEFAULT_HOST_CMD),
             cwd: None,
-            agent: AgentKind::LightarchitectsNative,
+            agent: AgentKind::LightArchitect,
             backend: ClaudeBackendKind::Anthropic,
             ollama_base_url: None,
             ollama_model: None,
@@ -677,8 +677,8 @@ fn resolve_agent_session(cli: &Cli) -> AgentSession {
     match cli.agent {
         AgentKind::Lightarchitects => AgentSession::Lightarchitects(resolve_claude_backend(cli)),
         AgentKind::Codex => AgentSession::Codex(resolve_codex_config(cli)),
-        AgentKind::LightarchitectsNative => {
-            AgentSession::LightarchitectsNative(resolve_lightarchitects_cli_native_config(cli))
+        AgentKind::LightArchitect => {
+            AgentSession::LightArchitect(resolve_light_architect_config(cli))
         }
         AgentKind::MistralVibe => AgentSession::MistralVibe(resolve_mistral_vibe_config(cli)),
     }
@@ -691,9 +691,9 @@ fn resolve_mistral_vibe_config(cli: &Cli) -> MistralVibeConfig {
     }
 }
 
-/// Build [`LightarchitectsNativeConfig`] from CLI flags.
-fn resolve_lightarchitects_cli_native_config(cli: &Cli) -> LightarchitectsNativeConfig {
-    LightarchitectsNativeConfig {
+/// Build [`LightArchitectConfig`] from CLI flags.
+fn resolve_light_architect_config(cli: &Cli) -> LightArchitectConfig {
+    LightArchitectConfig {
         binary: cli
             .lightarchitects_cli_binary
             .clone()
@@ -868,8 +868,8 @@ impl SetupConfig {
                     CodexBackend::OpenAi
                 },
             }),
-            AgentKind::LightarchitectsNative => {
-                AgentSession::LightarchitectsNative(LightarchitectsNativeConfig::default())
+            AgentKind::LightArchitect => {
+                AgentSession::LightArchitect(LightArchitectConfig::default())
             }
             AgentKind::Lightarchitects => {
                 AgentSession::Lightarchitects(if self.backend.contains("ollama") {
@@ -1073,7 +1073,7 @@ mod tests {
             port,
             host_cmd: OsString::from("claude"),
             cwd: Some(PathBuf::from("/tmp")),
-            agent: AgentKind::LightarchitectsNative,
+            agent: AgentKind::LightArchitect,
             backend: ClaudeBackendKind::Anthropic,
             ollama_base_url: None,
             ollama_model: None,
@@ -1098,7 +1098,7 @@ mod tests {
             port: 8733,
             host_cmd: OsString::from("/custom/lightarchitects-cli"),
             cwd: Some(PathBuf::from("/tmp/session")),
-            agent: AgentKind::LightarchitectsNative,
+            agent: AgentKind::LightArchitect,
             backend: ClaudeBackendKind::Anthropic,
             ollama_base_url: None,
             ollama_model: None,
@@ -1140,7 +1140,7 @@ mod tests {
 
     #[test]
     #[allow(clippy::panic, unsafe_code)]
-    fn default_agent_is_lightarchitects_native() {
+    fn default_agent_is_light_architect() {
         // Redirect to a temp dir so no real setup.json is found — tests the
         // CLI-default path without interference from the operator's saved config.
         let tmp = std::env::temp_dir().join(format!("la-test-{}", std::process::id()));
@@ -1148,9 +1148,9 @@ mod tests {
         unsafe { std::env::set_var("LIGHTARCHITECTS_HOME", &tmp) };
         let result = std::panic::catch_unwind(|| {
             let cfg = Config::resolve(cli_with(8733)).unwrap();
-            assert_eq!(cfg.agent.kind(), AgentKind::LightarchitectsNative);
-            let AgentSession::LightarchitectsNative(_) = &cfg.agent else {
-                panic!("expected LightarchitectsNative session");
+            assert_eq!(cfg.agent.kind(), AgentKind::LightArchitect);
+            let AgentSession::LightArchitect(_) = &cfg.agent else {
+                panic!("expected LightArchitect session");
             };
         });
         // SAFETY: restoring env after test.
@@ -1242,17 +1242,17 @@ mod tests {
 
     #[test]
     fn lightarchitects_cli_native_config_defaults_to_lightarchitects_cli_binary() {
-        let cfg = LightarchitectsNativeConfig::default();
+        let cfg = LightArchitectConfig::default();
         assert_eq!(cfg.binary, "lightarchitects");
     }
 
     #[test]
     fn agent_session_native_kind_roundtrips() {
-        let sess = AgentSession::LightarchitectsNative(LightarchitectsNativeConfig::default());
-        assert_eq!(sess.kind(), AgentKind::LightarchitectsNative);
+        let sess = AgentSession::LightArchitect(LightArchitectConfig::default());
+        assert_eq!(sess.kind(), AgentKind::LightArchitect);
         let json = serde_json::to_string(&sess).unwrap();
         assert!(
-            json.contains(r#""agent":"lightarchitects_native""#),
+            json.contains(r#""agent":"light_architect""#),
             "native agent tag missing: {json}"
         );
     }

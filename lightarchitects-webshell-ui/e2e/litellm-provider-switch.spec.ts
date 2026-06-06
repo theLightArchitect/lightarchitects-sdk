@@ -37,7 +37,7 @@ async function setupMocks(page: Page, cfg: Partial<ConfigState> = {}) {
   // Core infra stubs (required for the SPA to reach a usable state)
   await page.route('**/api/health',         r => r.fulfill({ status: 200, body: 'ok' }));
   await page.route('**/api/auth-check',     r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ valid: true }) }));
-  await page.route('**/api/setup/info',     r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ configured: true, backend: 'lightarchitects', model: state.model, agent: 'lightarchitects_native' }) }));
+  await page.route('**/api/setup/info',     r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ configured: true, backend: 'lightarchitects', model: state.model, agent: 'light_architect' }) }));
   await page.route('**/api/siblings',       r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
   await page.route('**/api/sitrep',         r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'ok' }) }));
   await page.route('**/api/builds',         r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ builds: [] }) }));

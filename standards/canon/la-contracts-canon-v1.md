@@ -130,43 +130,57 @@ contract.alpha_gate.verdict == "pass"
 
 ## §2 — Kind taxonomy: all contract surfaces
 
-### §2.1 Schema version: 18 kinds shipped, 29 more defined in schema (47 total)
+### §2.1 Schema version: 19 kinds shipped with contracts, 4 schema-only kinds, 24 more defined in kind_enum (47 total)
+
+> Counts last audited **2026-06-05** against `standards/canon/contracts/*/`. See `la-contracts-canon-v1.CHANGELOG.md` for the audit delta.
 
 ```
 SHIPPED (v1.0 — 100% schema-validated):
 
-Wire layer (5):
-  ✓ wire.http     — 180 stubs + 1 hand-authored (Axum routes; webshell + gateway)
-                    Breakdown: 159 webshell server/mod.rs + 7 webshell dispatch/routes.rs + ~14 gateway
+Wire layer (5 kinds):
+  ✓ wire.http     — 182 contracts (Axum routes; webshell + gateway)
+                    Breakdown: 157 webshell + 1 api.dispatch + 24 gateway
                     Webshell detail: webshell-api-surface-v1.md v1.1.0 (166 total, updated 2026-06-03)
-  ✓ wire.mcp      — schema branch; 0 stubs (gateway MCP actions)
+                    Latest gateway addition: gateway.get.v1-platform-builds-codename-progress.yaml
+                    (build progress drawer keystone — see arch/cockpit-d2-* proposals)
+  ✓ wire.mcp      — 2 contracts (gateway MCP actions; more planned for core_tools/)
   ✓ wire.cli      — schema branch; 0 stubs (CLI subcommands)
   ✓ wire.ws       — 1 hand-authored (PTY WebSocket)
   ✓ wire.ipc      — 1 hand-authored (SOUL subprocess JSON-RPC)
 
-Agent layer (5):
+Agent layer (5 kinds):
   ✓ agent.loop     — 1 hand-authored (ReAct); 12 more planned
   ✓ agent.tool_use — 1 hand-authored (Anthropic bash); 20+ more planned
   ✓ agent.a2a      — 1 hand-authored (WAVE_COMPLETE); 19 more envelope types
   ✓ agent.identity — 1 hand-authored (LÆX); 7 more siblings
-  ✓ agent.skill    — schema branch; 0 stubs (BUILD/PLAN/SCRUM)
+  ✓ agent.skill    — 23 contracts (BUILD/PLAN/SCRUM/etc. — first major skill set shipped)
 
-Internal layer (4):
-  ✓ code.trait     — 1 hand-authored (LlmAgentProvider); 19 more SDK traits
-  ✓ event.bus      — schema branch; 0 stubs (WebEvent variants)
+Internal layer (4 kinds):
+  ✓ code.trait     — 2 hand-authored (LlmAgentProvider + 1 more); 18+ more SDK traits
+  ✓ event.bus      — 1 hand-authored; more WebEvent variants planned
   ✓ observe.span   — schema branch; 0 stubs (AYIN spans)
   ✓ state.store    — schema branch; 0 stubs (turnlog/helix/sessions)
 
-Provider + operator + UI (4):
-  ✓ provider.llm       — 6 hand-authored (ollama-cloud, anthropic-http, claude-code-cli, litellm-proxy, ollama-local, openai-compat-generic)
-  ✓ operator.surface   — 1 hand-authored (copilot.send-message)
-  ✓ ui.component       — 1 hand-authored (Cockpit.svelte)
+MCP layer (1 kind):
+  ✓ mcp.capability — 1 hand-authored (paired with wire.mcp via symmetric-edge sweep §6.x)
+
+Provider + operator + UI (4 kinds):
+  ✓ provider.llm       — 8 hand-authored (ollama-cloud, anthropic-http, claude-code-cli, litellm-proxy, ollama-local, openai-compat-generic, +2 more)
+  ✓ operator.surface   — 7 contracts (copilot.send-message + 6 more cockpit/HITL surfaces)
+  ✓ ui.component       — 3 contracts (Cockpit.svelte + 2 more)
   ✓ ui.store           — 1 hand-authored (builds writable)
+
+LA-native frontier (3 kinds — partially shipped, promoted from PLANNED Phase B):
+  ✓ strand.activation       — 1 hand-authored (10-strand mosaic activation)
+  ✓ hmac_chain.audit_trail  — 1 hand-authored (turnlog HMAC chain)
+  ✓ replay.deterministic_seed — 2 contracts (replay determinism on Anthropic + OpenAI)
+
+Schema-only (extension defined, no instances yet — Σ 4 kinds):
+  · wire.cli, observe.span, state.store, ldb.benchmark
 ```
 
 ```
 PLANNED — Phase A (industry parity per MCP 2025-11-25 + OTel GenAI 2026 + LangGraph 1.x):
-  - mcp.capability   — MCP server/client capability negotiation per 2025-11-25
   - mcp.elicitation  — server-initiated user input
   - mcp.sampling     — server-requested LLM samples (with tools, context capabilities)
   - mcp.root         — filesystem boundary declarations
@@ -183,11 +197,12 @@ PLANNED — Phase A (industry parity per MCP 2025-11-25 + OTel GenAI 2026 + Lang
   - checkpoint.state — durable agent state snapshots (LangGraph-style)
   - crypto.primitive — HKDF/AES-GCM/Ed25519/HMAC subkey chain ceremonies
   - hitl.flow        — typed HITL config (allow_ignore/respond/edit/accept)
+
+  (mcp.capability moved to SHIPPED — 2026-06-05 audit)
 ```
 
 ```
 PLANNED — Phase B (LA-native frontier — the moat):
-  - strand.activation       — 10-strand mosaic [A][S][Q][C][O][P][K][D][T][R] activation per op
   - canon.evolution         — Canon XXXIX promotion lifecycle (memory → candidate → check → ratify)
   - witness.evidence_chain  — Canon XXXV epistemic provenance with tier composition
   - agent.scrum_round       — bounded multi-sibling debate (R1/R2/R3 with convergence detection)
@@ -195,10 +210,10 @@ PLANNED — Phase B (LA-native frontier — the moat):
   - ldb.benchmark           — D1-D8 Deliverable Benchmark with cold-context independent runner
   - operator_wins.gate      — live per-turn supersession (SupersededByOperatorAction propagation)
   - covenant.assertion      — Communication Covenant 11 truth-telling rules as contracts
-  - replay.deterministic_seed — cryptographically replayable agentic decisions
   - identity.handoff        — typed sibling-to-sibling transition with strand-vector hand-off
-  - hmac_chain.audit_trail  — turnlog HMAC chain as first-class contract
   - negative.contract       — formal anti-contracts (platform-wide invariants we promise NOT to do)
+
+  (strand.activation, hmac_chain.audit_trail, replay.deterministic_seed all moved to SHIPPED — 2026-06-05 audit)
 ```
 
 ### §2.2 Per-kind quick reference
@@ -488,6 +503,27 @@ Examples:
 - `wire.http` for copilot endpoints: "Spawning a `claude` CLI subprocess when provider != anthropic_claude_code"
 - `provider.llm` for any LLM: "Routing to a different provider than the operator selected"
 - `agent.tool_use.anthropic-bash`: "Executing a command that fails the bash_policy allowlist"
+
+### §5.6 `wire.http` URL query parameters (added 2026-06-05)
+
+Endpoints that accept URL query parameters declare them in a top-level `query_params` field under `wire_http`, distinct from `request_schema` (which is for the request body on POST/PUT/PATCH). Each parameter declares its `type` (`string | integer | boolean | number`), optional `default`, optional `enum` set, and `required: true|false`.
+
+```yaml
+wire_http:
+  path: /v1/platform/builds/{codename}/progress
+  method: GET
+  query_params:
+    fleet_required:
+      type: boolean
+      default: false
+      description: If true, fail with 503 when AYIN fleet is unreachable.
+    include_pr_state:
+      type: boolean
+      default: true
+      description: If true, query gh CLI for PR state.
+```
+
+Field is **optional** — endpoints with no query parameters omit the block entirely. This addition is backward-compatible: existing contracts that don't declare `query_params` continue to validate. First exemplar contract: `gateway.get.v1-platform-builds-codename-progress.yaml`. Schema patch is non-breaking — `schema_version: la-contracts/v1` is unchanged.
 
 ---
 

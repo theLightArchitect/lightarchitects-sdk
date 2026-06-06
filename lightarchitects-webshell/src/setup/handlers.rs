@@ -790,14 +790,12 @@ fn agent_session_from_save(req: &SaveRequest) -> Option<crate::config::AgentSess
                 backend,
             }))
         }
-        AgentKind::LightarchitectsNative => {
-            Some(crate::config::AgentSession::LightarchitectsNative(
-                crate::config::LightarchitectsNativeConfig {
-                    binary: "lightarchitects".to_owned(),
-                    model: req.model.clone(),
-                },
-            ))
-        }
+        AgentKind::LightArchitect => Some(crate::config::AgentSession::LightArchitect(
+            crate::config::LightArchitectConfig {
+                binary: "lightarchitects".to_owned(),
+                model: req.model.clone(),
+            },
+        )),
         AgentKind::MistralVibe => Some(crate::config::AgentSession::MistralVibe(
             MistralVibeConfig {
                 model: req.model.clone(),
@@ -892,12 +890,11 @@ pub async fn setup_info(State(state): State<AppState>) -> impl IntoResponse {
 
     // Auto-complete for native CLI when no explicit setup exists.
     if !setup_complete {
-        let is_native_default =
-            matches!(state.config.agent.kind(), AgentKind::LightarchitectsNative);
+        let is_native_default = matches!(state.config.agent.kind(), AgentKind::LightArchitect);
         if is_native_default {
             setup_complete = true;
             config = Some(SetupConfig {
-                agent: AgentKind::LightarchitectsNative,
+                agent: AgentKind::LightArchitect,
                 backend: "lightarchitects".to_owned(),
                 model: lightarchitects_cli_model_from_toml(),
                 ollama_base_url: None,
@@ -943,7 +940,7 @@ pub async fn setup_info(State(state): State<AppState>) -> impl IntoResponse {
 pub async fn setup_models(Query(q): Query<ModelsQuery>) -> impl IntoResponse {
     let models = match q.backend.as_str() {
         "anthropic" => anthropic_models(),
-        "lightarchitects" | "lightarchitects_native" => lightarchitects_models(),
+        "lightarchitects" | "light_architect" => lightarchitects_models(),
         "openai" | "codex" => codex_models(),
         "ollama-launch" | "ollama_launch" | "ollama" => {
             let url = q.base_url.as_deref().unwrap_or("http://localhost:11434");
@@ -969,7 +966,7 @@ pub async fn setup_save(
 ) -> impl IntoResponse {
     // For native CLI, write the selected model to the CLI's TOML config first.
     // This must succeed before we claim the setup is saved.
-    if req.agent == AgentKind::LightarchitectsNative {
+    if req.agent == AgentKind::LightArchitect {
         if let Some(ref model) = req.model {
             if model.trim().is_empty() {
                 tracing::warn!(target: "setup", "Rejecting empty model for native CLI");

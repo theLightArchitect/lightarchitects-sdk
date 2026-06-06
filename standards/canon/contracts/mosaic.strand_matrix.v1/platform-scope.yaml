@@ -1,0 +1,157 @@
+# Strand-Mosaic matrix — platform scope
+# Source: webshell-api-surface-v1.md §2.52
+# Handler: lightarchitects-webshell/src/server/mosaic_routes.rs::strand_mosaic_handler
+# Authored: 2026-06-05 (cockpit-d0-platform follow-up)
+
+schema_version: la-contracts/v1
+id: mosaic.strand_matrix.v1.platform-scope
+kind: mosaic.strand_matrix.v1
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P3, P6]
+
+operator_intent: |
+  The Strand Mosaic surface gives the operator a single-glance answer to
+  "what's at risk across all projects, on which gatekeeping dimension?"
+  Each row is a project; each cell is a gatekeeper status drawn from the
+  Canon XXX 10-strand vocabulary. The mosaic refuses to flatten — every
+  cell must be sourced from a real observable signal or marked `na`.
+
+prior_art:
+  - name: Canon XXX (strand mosaic)
+    url: canon://platform-canon
+    what_we_adopt: 10-dimensional gatekeeper vocabulary [A,S,Q,C,O,P,K,D,T,R]
+    what_we_extend: project-scope risk matrix surfaced to the operator at d0
+  - name: gatekeeper-registry.yaml
+    url: canon://gatekeeper-registry
+    what_we_adopt: per-gate ownership map (A·CORSO, S·SERAPH, Q·CORSO+LÆX, …)
+    what_we_extend: each cell carries the owning sibling so the operator can
+      route directly to that sibling's chat surface at d0
+
+inherits_from: [strand.activation.dispatch-execute-mosaic]
+
+canon_refs:
+  - canon://platform-canon
+  - canon://gatekeeper-registry
+  - canon://northstar
+
+memory_refs: []
+
+inputs:
+  - name: scope
+    type: enum
+    description: "platform | project:<slug> | build:<id>"
+  - name: gatekeeper_subset
+    type: array
+    description: "optional subset of [A,S,Q,T,P,D,K] to project — defaults to the d0 seven"
+
+observable_outputs:
+  - "Mosaic rows order priority risk first (CRIT > HIGH > MED > LOW > OK)"
+  - "Each cell carries one of {ok, warn, fail, na}; rendered as ● ◑ ○ · respectively"
+  - "Per-row risk roll-up: any fail → HIGH; ≥2 warn → MED; 1 warn → LOW; else OK"
+  - "Gatekeeper owners returned alongside rows so frontend can route by gate"
+  - "Cells derived from observable platform signals — never aspirational"
+
+errors:
+  - condition: scope value is not recognised
+    code: E_MOSAIC_SCOPE_UNKNOWN
+    operator_sees: "Unknown mosaic scope; expected platform | project:<slug> | build:<id>"
+    forbidden: "silently returning empty rows for an unrecognised scope"
+    severity: MEDIUM
+  - condition: project enumeration failed (filesystem unreadable)
+    code: E_MOSAIC_ENUMERATION_FAILED
+    operator_sees: "Could not enumerate projects; check ~/Projects permissions"
+    forbidden: "returning a partial mosaic that hides the enumeration failure"
+    severity: HIGH
+
+observability:
+  required_spans:
+    - name: webshell.http.request
+      required_metadata: [method, path, status, duration_ms, row_count]
+      parent_relationship: root
+  duration_budget_ms: 5000
+  trace_context_propagation: true
+
+persistence:
+  - path: lightarchitects-webshell/src/server/mosaic_routes.rs
+    schema_ref: code.handler.strand_mosaic
+    ttl: forever
+    hmac_chained: false
+
+hitl_boundaries: [none]
+
+forbidden_behaviors:
+  - "Flat-Ok cells: every cell must derive from an observable signal or be marked na"
+  - "Cell-flipping without evidence: warn/fail must cite a specific signal source"
+  - "Stale evaluated_at: timestamp must reflect the actual aggregation moment"
+  - "Hiding the gatekeeper-owner map: operator cannot route a finding without knowing the owner"
+
+conformance_test:
+  given: "Webshell running with ≥1 project in ~/Projects/<slug>/.lightarchitects/project.toml"
+  when: "GET /api/strand-mosaic?scope=platform"
+  then:
+    - assertion: "response carries rows[] with ≥1 entry per project"
+      span_witness: webshell.http.request
+      evidence_tier_required: VERIFIED
+    - assertion: "every cell ∈ {ok, warn, fail, na}"
+      span_witness: webshell.http.request
+      evidence_tier_required: MULTI_SOURCE
+    - assertion: "gatekeepers map exposes the seven A·S·Q·T·P·D·K owners"
+      span_witness: webshell.http.request
+      evidence_tier_required: VERIFIED
+    - assertion: "rows sorted CRIT > HIGH > MED > LOW > OK, ties alphabetical"
+      span_witness: webshell.http.request
+      evidence_tier_required: VERIFIED
+  fixtures:
+    - mosaic.platform.example.json
+  timeout_seconds: 10
+
+status_per_provider:
+  anthropic_api:   { result: N/A, evidence_tier: VERIFIED, na_reason: "Platform-doctrine surface — provider-independent" }
+  anthropic_http:  { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  openai_api:      { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  openai_compat_generic: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  ollama_cloud:    { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  ollama_local:    { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  litellm_proxy:   { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  claude_code_cli: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  mistral_api:     { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  groq_api:        { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  openrouter_api:  { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+
+alpha_gate:
+  verdict: deferred
+  reason: |
+    v1 surface ships with cells derived from a small set of observable signals
+    (HITL backlog, supervisor presence, project type detection, doc presence,
+    SOUL availability). Alpha gate requires every gate column to source from a
+    canonical evidence chain: §2.21 arch findings for A, SERAPH findings for S,
+    CORSO sniff for Q, coverage telemetry for T, AYIN latency stats for P,
+    SOUL doc audits for D, helix entry counts for K. Deepening tracks in
+    follow-up `mosaic-evidence-chains` build.
+
+mosaic_strand_matrix:
+  schema_version: la-contracts/v1
+  scope_values: [platform, "project:<slug>", "build:<id>"]
+  gatekeepers:
+    A: CORSO
+    S: SERAPH
+    Q: CORSO+LÆX
+    T: CORSO
+    P: EVA+AYIN
+    D: SOUL+EVA
+    K: SOUL
+  cell_values: [ok, warn, fail, na]
+  risk_roll_up_rule: |
+    any cell == fail        → HIGH
+    cells with warn ≥ 2      → MED
+    cells with warn == 1     → LOW
+    all cells ok/na         → OK
+  glyph_rendering:
+    ok:   "●"
+    warn: "◑"
+    fail: "○"
+    na:   "·"
+  sort_order: [CRIT, HIGH, MED, LOW, OK]
+  evidence_per_cell_required: true

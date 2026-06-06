@@ -44,7 +44,7 @@ const MOCK_NATIVE_BUILD = {
   name:       'EEF E5 Permission Gate Test',
   meta_skill: '/BUILD',
   status:     'in_progress',
-  agent:      { kind: 'lightarchitects_native', backend: 'lightarchitects' },
+  agent:      { kind: 'light_architect', backend: 'lightarchitects' },
 };
 
 const MOCK_SESSION_START = {
@@ -111,7 +111,7 @@ async function setupPage(page: Page): Promise<void> {
         ollama: { base_url: 'http://localhost:11434', reachable: false },
       },
       config: {
-        agent: 'lightarchitects_native', backend: 'lightarchitects',
+        agent: 'light_architect', backend: 'lightarchitects',
         model: 'claude-opus-4-7', ollama_base_url: null, api_key_stored: false,
       },
       cwd: '/tmp',

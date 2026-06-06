@@ -43,7 +43,7 @@ async function registerBaseMocks(page: Page): Promise<void> {
       body: JSON.stringify({
         setup_complete: true,
         auth_status: { claude: { has_keychain_auth: true, has_api_key: false, login_method: 'keychain' } },
-        config: { agent: 'lightarchitects_native', backend: 'lightarchitects', model: 'claude-opus-4-7' },
+        config: { agent: 'light_architect', backend: 'lightarchitects', model: 'claude-opus-4-7' },
         cwd: '/tmp',
       }),
     }),

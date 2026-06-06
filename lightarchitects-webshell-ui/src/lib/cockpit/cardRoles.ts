@@ -28,7 +28,11 @@ export type CockpitCardRole =
   | 'engineer-zones'
   | 'copilot-drawer'
   | 'strategy-catalogue'
-  | 'wave-composer';
+  | 'wave-composer'
+  | 'northstar-pulse'
+  | 'strand-mosaic'
+  | 'smart-dispatch'
+  | 'squad-constellation';
 
 /** Human-readable description for each card role. */
 export const COCKPIT_CARD_ROLES: Record<CockpitCardRole, string> = {
@@ -47,6 +51,10 @@ export const COCKPIT_CARD_ROLES: Record<CockpitCardRole, string> = {
   'copilot-drawer':      'action+stream — AI assistant; context-aware to cockpit preset and selected target',
   'strategy-catalogue':  'status — all 10 loop strategies (6 L2 registered + 4 L0 executor-backed); L2 tiles are selectable',
   'wave-composer':       'action — compose and dispatch a multi-agent wave from domain preset chips and per-agent task descriptions',
+  'northstar-pulse':     'status — P1–P7 health bars composed from per-build supervisor state (§2.51)',
+  'strand-mosaic':       'status — project × gatekeeper risk matrix (Canon XXX strand mosaic — §2.52)',
+  'smart-dispatch':      'action — reasons-aware dispatch suggestions composed from observable signals (§2.53)',
+  'squad-constellation': 'status+stream — 7-sibling constellation with live A2A link edges (§2.54)',
 };
 
 /** All card role keys, derived from the registry for exhaustiveness checks. */

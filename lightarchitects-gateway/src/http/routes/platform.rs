@@ -1124,7 +1124,7 @@ fn merge_override(base: &mut Value, override_json: &str) {
 }
 
 /// Serialize `body`, compute a SHA-256 ETag, check `If-None-Match`, return 304 or 200.
-fn respond_with_body_etag(body: Value, headers: &HeaderMap) -> Response {
+pub(crate) fn respond_with_body_etag(body: Value, headers: &HeaderMap) -> Response {
     let bytes = serde_json::to_vec(&body).unwrap_or_default();
     let etag = compute_etag(&bytes);
     let inm = headers

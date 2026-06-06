@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cockpit × Workspace Depth — Merged Design</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Azeret+Mono:wght@300;400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+/* ── Design Token Foundation ────────────────────────────────── */
+:root {
+  /* Existing LA cockpit tokens */
+  --la-bg-base:    #07080f;
+  --la-bg-panel:   #0d0f18;
+  --la-bg-card:    #111420;
+  --la-bg-hover:   rgba(77,142,255,0.06);
+  --la-hair-faint: rgba(255,255,255,0.04);
+  --la-hair-base:  rgba(255,255,255,0.08);
+  --la-hair-strong:rgba(255,255,255,0.15);
+  --la-text-bright:rgba(255,255,255,0.95);
+  --la-text-base:  rgba(255,255,255,0.80);
+  --la-text-dim:   rgba(255,255,255,0.50);
+  --la-text-mute:  rgba(255,255,255,0.28);
+  --la-semantic-ok:   #39ff8a;
+  --la-semantic-error:#ff4d6a;
+  --la-semantic-warn: #ffad2e;
+  --la-agent-engineer:#4d8eff;
+  --la-font-mono: 'Azeret Mono', monospace;
+  --la-font-display: 'Syne', sans-serif;
+  --la-tk-loose: 0.1em;
+  --la-tk-mid:   0.07em;
+  --la-tk-tight: 0.04em;
+  --la-transition-fast: 0.15s ease;
+
+  /* ── Depth-indexed accent system (new) ── */
+  /* --la-struct-primary shifts with depth — the load-bearing merge */
+  --depth-0-color: #4d8eff;   /* Platform  — existing blue */
+  --depth-1-color: #39ff8a;   /* Project   — phosphor green */
+  --depth-2-color: #ffad2e;   /* Build     — amber */
+  --depth-3-color: #ff5c8a;   /* File      — hot pink */
+
+  /* Active depth color — JS writes this on every drill */
+  --la-struct-primary: var(--depth-0-color);
+  --la-depth-transition: 0.3s cubic-bezier(0.4,0,0.2,1);
+}
+
+/* ── Depth state classes — applied to body ── */
+body.d0 { --la-struct-primary: var(--depth-0-color); }
+body.d1 { --la-struct-primary: var(--depth-1-color); }
+body.d2 { --la-struct-primary: var(--depth-2-color); }
+body.d3 { --la-struct-primary: var(--depth-3-color); }
+
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+
+html, body {
+  width: 100%; height: 100%; overflow: hidden;
+  background: var(--la-bg-base);
+  color: var(--la-text-base);
+  font-family: var(--la-font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Subtle grain */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  opacity: 0.022; pointer-events: none; z-index: 9999;
+}
+
+/* ── Shell ────────────────────────────────────────────────────── */
+.shell {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Header ───────────────────────────────────────────────────── */
+.cockpit-hdr {
+  background: var(--la-bg-panel);
+  border-bottom: 1px solid var(--la-hair-base);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  position: relative;
+  z-index: 10;
+}
+
+/* Row 0: Depth navigation strip (NEW) */
+.depth-strip {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--la-hair-faint);
+  gap: 0;
+}
+
+.wordmark {
+  font-family: var(--la-font-display);
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--la-text-dim);
+  margin-right: 20px;
+  flex-shrink: 0;
+}
+.wordmark b { color: var(--la-struct-primary); transition: color var(--la-depth-transition); }
+
+/* Depth breadcrumb — replaces TargetBreadcrumb at this tier */
+.depth-crumbs {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  height: 100%;
+  overflow: hidden;
+}
+
+.dcrumb {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  height: 100%;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--la-transition-fast);
+  border-right: 1px solid var(--la-hair-faint);
+  position: relative;
+}
+.dcrumb:hover { background: rgba(255,255,255,0.04); }
+.dcrumb.active { cursor: default; }
+.dcrumb.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--la-struct-primary);
+  transition: background var(--la-depth-transition);
+}
+
+.dcrumb-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  flex-shrink: 0;
+  transition: box-shadow 0.3s;
+}
+.dcrumb.active .dcrumb-dot {
+  box-shadow: 0 0 8px currentColor;
+}
+
+.dcrumb-text {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: var(--la-tk-mid);
+  color: var(--la-text-mute);
+  transition: color var(--la-transition-fast);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dcrumb.active .dcrumb-text { color: var(--la-text-bright); }
+
+.dcrumb-sep { color: var(--la-text-mute); font-size: 9px; padding: 0 2px; opacity: 0.5; }
+
+/* Depth pips (right side) */
+.depth-pips {
+  display: flex; align-items: center; gap: 4px;
+  margin-left: auto; padding-left: 16px; flex-shrink: 0;
+}
+.dpip {
+  width: 22px; height: 2px; border-radius: 1px;
+  background: var(--la-hair-base);
+  transition: background var(--la-depth-transition), width 0.2s;
+}
+.dpip.on { background: var(--la-struct-primary); }
+
+/* Row 1: Preset + title + badges (existing cockpit row) */
+.hdr-row-1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  height: 38px;
+}
+
+.cockpit-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: var(--la-tk-loose);
+  color: var(--la-struct-primary);
+  flex-shrink: 0;
+  transition: color var(--la-depth-transition);
+}
+
+/* Preset chips — scope them to depth */
+.preset-chips {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.preset-chip {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: var(--la-tk-mid);
+  padding: 3px 9px;
+  border: 1px solid var(--la-hair-base);
+  color: var(--la-text-mute);
+  cursor: pointer;
+  transition: all var(--la-transition-fast);
+  text-transform: uppercase;
+}
+.preset-chip:hover { border-color: var(--la-hair-strong); color: var(--la-text-dim); }
+.preset-chip.active {
+  background: rgba(0,0,0,0);
+  border-color: var(--la-struct-primary);
+  color: var(--la-struct-primary);
+  background: color-mix(in srgb, var(--la-struct-primary) 10%, transparent);
+  transition: all var(--la-depth-transition);
+}
+
+.hdr-badges {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+}
+.badge {
+  font-size: 8px; padding: 2px 6px; letter-spacing: var(--la-tk-mid);
+  border: 1px solid var(--la-hair-base); color: var(--la-text-mute);
+}
+.badge-active { border-color: var(--la-semantic-ok); color: var(--la-semantic-ok); }
+.badge-depth {
+  border-color: var(--la-struct-primary);
+  color: var(--la-struct-primary);
+  background: color-mix(in srgb, var(--la-struct-primary) 10%, transparent);
+  transition: all var(--la-depth-transition);
+}
+
+/* ── Main scroll area ─────────────────────────────────────────── */
+.cockpit-body {
+  overflow-y: auto;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Engineer Zones (depth 2+) ────────────────────────────────── */
+.engineer-zones {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  flex-shrink: 0;
+}
+.ez-zone {
+  background: var(--la-bg-panel);
+  border: 1px solid var(--la-hair-base);
+  border-top: 2px solid var(--la-struct-primary);
+  padding: 10px 12px;
+  transition: border-color var(--la-depth-transition);
+}
+.ez-title {
+  font-size: 8px; font-weight: 700; letter-spacing: var(--la-tk-loose);
+  color: var(--la-struct-primary); margin-bottom: 8px;
+  transition: color var(--la-depth-transition);
+}
+
+/* ── Bento Grid ───────────────────────────────────────────────── */
+.bento {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: auto 1fr auto auto auto;
+  grid-template-areas:
+    "health escalations fleet"
+    "decisions decisions builds"
+    "pr pr git"
+    "strategies strategies strategies"
+    "wave wave wave";
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+}
+
+.card {
+  background: var(--la-bg-panel);
+  border: 1px solid var(--la-hair-base);
+  padding: 11px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  overflow: hidden;
+  transition: border-color var(--la-transition-fast);
+  position: relative;
+}
+/* Depth accent on left edge of cards — signals scope */
+.card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 0;
+  background: var(--la-struct-primary);
+  transition: all var(--la-depth-transition);
+}
+.card.scoped::before { width: 2px; }
+
+.card-health     { grid-area: health; }
+.card-hitl       { grid-area: escalations; }
+.card-fleet      { grid-area: fleet; }
+.card-decisions  { grid-area: decisions; overflow-y: auto; }
+.card-builds     { grid-area: builds; overflow-y: auto; }
+.card-pr         { grid-area: pr; overflow-y: auto; }
+.card-git        { grid-area: git; }
+.card-strategies { grid-area: strategies; }
+.card-wave       { grid-area: wave; }
+
+.card-lbl {
+  font-size: 8px; font-weight: 700; letter-spacing: var(--la-tk-loose);
+  color: var(--la-text-mute);
+  display: flex; align-items: center; gap: 6px;
+  flex-shrink: 0;
+}
+.card-lbl-scope {
+  font-size: 7px; font-weight: 700; padding: 1px 5px;
+  color: var(--la-struct-primary);
+  background: color-mix(in srgb, var(--la-struct-primary) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--la-struct-primary) 35%, transparent);
+  letter-spacing: var(--la-tk-tight);
+  transition: all var(--la-depth-transition);
+}
+
+.empty-state {
+  font-size: 8px; color: var(--la-text-mute); font-style: italic; padding: 6px 0;
+}
+
+/* ── Build Health Card ────────────────────────────────────────── */
+.sparkline-wrap { flex-shrink: 0; height: 36px; }
+.sparkline { width: 100%; height: 36px; }
+.spark-line {
+  fill: none; stroke: var(--la-struct-primary); stroke-width: 1.5;
+  stroke-linecap: round; stroke-linejoin: round;
+  transition: stroke var(--la-depth-transition);
+}
+
+.health-stats { display: flex; gap: 12px; flex-shrink: 0; flex-wrap: wrap; }
+.hs-row { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.hs-val { font-size: 16px; font-weight: 700; line-height: 1; }
+.hs-key { font-size: 7px; color: var(--la-text-mute); letter-spacing: var(--la-tk-mid); }
+.hs-val.ok  { color: var(--la-semantic-ok); }
+.hs-val.act { color: var(--la-struct-primary); transition: color var(--la-depth-transition); }
+.hs-val.err { color: var(--la-semantic-error); }
+.hs-val.dim { color: var(--la-text-mute); }
+
+.active-build-row {
+  display: flex; align-items: center; gap: 6px; padding: 4px 6px;
+  background: var(--la-bg-card);
+  border-left: 2px solid var(--la-struct-primary); font-size: 8px;
+  flex-shrink: 0; transition: border-color var(--la-depth-transition);
+}
+.ab-label { color: var(--la-text-mute); letter-spacing: var(--la-tk-mid); }
+.ab-name  { color: var(--la-text-bright); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ab-conf  { color: var(--la-struct-primary); font-weight: 700; transition: color var(--la-depth-transition); }
+
+/* Phase bar (build depth) */
+.phase-row { display: flex; gap: 4px; flex-shrink: 0; }
+.phase-seg {
+  flex: 1; height: 3px; border-radius: 2px; background: var(--la-hair-base);
+  transition: background 0.3s;
+}
+.phase-seg.done { background: var(--la-semantic-ok); }
+.phase-seg.act  { background: var(--la-struct-primary); animation: pa 1.4s ease-in-out infinite; transition: background var(--la-depth-transition); }
+@keyframes pa { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* Gate grid (build depth) */
+.gate-grid { display: grid; grid-template-columns: repeat(5,1fr); gap: 4px; flex-shrink: 0; }
+.gate {
+  aspect-ratio: 1; border-radius: 3px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.03em; border: 1px solid;
+}
+.gate.pass { background: rgba(57,255,138,0.1); color: var(--la-semantic-ok); border-color: rgba(57,255,138,0.3); }
+.gate.fail { background: rgba(255,77,106,0.1); color: var(--la-semantic-error); border-color: rgba(255,77,106,0.3); }
+
+/* ── HITL Card ────────────────────────────────────────────────── */
+.perm-card {
+  background: var(--la-bg-card);
+  border: 1px solid var(--la-hair-strong);
+  border-left: 3px solid var(--la-semantic-warn);
+  padding: 7px; display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;
+}
+.perm-top { display: flex; justify-content: space-between; align-items: center; }
+.perm-tool { font-size: 9px; font-weight: 700; color: var(--la-text-bright); letter-spacing: var(--la-tk-tight); }
+.perm-timer { font-size: 8px; color: var(--la-text-dim); }
+.perm-timer.warn { color: var(--la-semantic-error); font-weight: 700; }
+.perm-summary { font-size: 8px; color: var(--la-text-dim); line-height: 1.4; }
+.perm-actions { display: flex; gap: 5px; }
+.btn-approve, .btn-deny {
+  flex: 1; font-family: var(--la-font-mono); font-size: 8px; font-weight: 700;
+  letter-spacing: var(--la-tk-mid); padding: 3px 0; cursor: pointer;
+  transition: background var(--la-transition-fast);
+}
+.btn-approve { background: rgba(57,255,138,0.1); border: 1px solid var(--la-semantic-ok); color: var(--la-semantic-ok); }
+.btn-approve:hover { background: rgba(57,255,138,0.22); }
+.btn-deny    { background: rgba(255,77,106,0.08); border: 1px solid var(--la-semantic-error); color: var(--la-semantic-error); }
+.btn-deny:hover    { background: rgba(255,77,106,0.18); }
+
+/* ── Worker Fleet ─────────────────────────────────────────────── */
+.fleet-meta { display: flex; align-items: baseline; gap: 3px; flex-shrink: 0; }
+.fm-val { font-size: 18px; font-weight: 700; color: var(--la-struct-primary); line-height: 1; transition: color var(--la-depth-transition); }
+.fm-sep { color: var(--la-hair-strong); }
+.fm-cap { font-size: 12px; color: var(--la-text-dim); }
+.fm-key { font-size: 8px; color: var(--la-text-mute); margin-left: 2px; }
+
+.slot-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 5px; flex-shrink: 0; }
+.slot {
+  aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+  background: var(--la-bg-card); border: 1px solid var(--la-hair-faint);
+  position: relative;
+}
+.slot.active {
+  border-color: var(--la-struct-primary);
+  background: color-mix(in srgb, var(--la-struct-primary) 8%, transparent);
+  transition: all var(--la-depth-transition);
+}
+.slot-dot { width: 4px; height: 4px; background: var(--la-text-mute); border-radius: 50%; opacity: 0.3; }
+.slot-poly {
+  width: 26px; height: 26px;
+  border: 1.5px solid var(--la-struct-primary);
+  transform: rotate(45deg);
+  animation: spin 8s linear infinite;
+  transition: border-color var(--la-depth-transition);
+}
+.slot-poly::before {
+  content: ''; position: absolute; inset: 4px;
+  border: 1px solid color-mix(in srgb, var(--la-struct-primary) 50%, transparent);
+  transform: rotate(22.5deg);
+  transition: border-color var(--la-depth-transition);
+}
+@keyframes spin { to { transform: rotate(405deg); } }
+
+.conductor-row { display: flex; align-items: center; gap: 5px; font-size: 8px; flex-shrink: 0; }
+.c-key { color: var(--la-text-mute); }
+.c-val { color: var(--la-text-bright); }
+.c-val.act { color: var(--la-struct-primary); transition: color var(--la-depth-transition); }
+
+.ft-row { display: flex; align-items: center; gap: 5px; font-size: 8px; padding: 2px 0; }
+.ft-pulse {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--la-struct-primary); flex-shrink: 0;
+  animation: pulse 1.4s ease-in-out infinite;
+  transition: background var(--la-depth-transition);
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.2} }
+.ft-sib { font-weight: 700; color: var(--la-struct-primary); width: 24px; flex-shrink: 0; transition: color var(--la-depth-transition); }
+.ft-name { color: var(--la-text-dim); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ft-type { color: var(--la-text-mute); flex-shrink: 0; }
+
+/* ── Decision Feed ────────────────────────────────────────────── */
+.dec-list { display: flex; flex-direction: column; gap: 1px; overflow-y: auto; flex: 1; min-height: 0; }
+.dec-row {
+  display: flex; align-items: flex-start; gap: 6px; padding: 4px 5px;
+  font-size: 8px; border-left: 2px solid transparent;
+  transition: background var(--la-transition-fast);
+}
+.dec-row:hover { background: var(--la-bg-card); }
+.dec-l4 { background: rgba(255,77,106,0.05); border-left-color: var(--la-semantic-error); }
+.dec-l3 { background: rgba(255,173,46,0.04); border-left-color: var(--la-semantic-warn); }
+.dec-lbl { font-weight: 700; letter-spacing: var(--la-tk-mid); flex-shrink: 0; font-size: 7px; width: 28px; padding-top: 1px; }
+.dec-text { color: var(--la-text-dim); line-height: 1.4; flex: 1; word-break: break-word; }
+.dec-esc { font-size: 6px; font-weight: 700; color: var(--la-semantic-error); border: 1px solid var(--la-semantic-error); padding: 0 3px; flex-shrink: 0; align-self: center; }
+
+/* ── Builds Rail ──────────────────────────────────────────────── */
+.builds-rail { display: flex; flex-direction: column; gap: 1px; overflow-y: auto; flex: 1; min-height: 0; }
+.build-row {
+  display: flex; align-items: center; gap: 6px; font-size: 8px;
+  padding: 5px 6px; background: transparent; border: none;
+  border-left: 2px solid transparent; color: inherit;
+  font-family: var(--la-font-mono); cursor: pointer; text-align: left; width: 100%;
+  transition: background var(--la-transition-fast);
+}
+.build-row:hover { background: var(--la-bg-card); }
+.build-row.act {
+  border-left-color: var(--la-struct-primary);
+  background: color-mix(in srgb, var(--la-struct-primary) 6%, transparent);
+  transition: all var(--la-depth-transition);
+}
+.br-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.br-name { flex: 1; color: var(--la-text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.br-phase { font-size: 7px; color: var(--la-text-mute); letter-spacing: var(--la-tk-tight); flex-shrink: 0; }
+.br-conf { font-size: 7px; color: var(--la-text-mute); flex-shrink: 0; width: 26px; text-align: right; }
+
+/* ── Git State ────────────────────────────────────────────────── */
+.git-branch { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.git-branch-icon { color: var(--la-text-mute); }
+.git-branch-name { font-size: 10px; font-weight: 700; color: var(--la-struct-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color var(--la-depth-transition); }
+.git-stats { display: flex; gap: 10px; flex-shrink: 0; }
+.gs-row { display: flex; align-items: center; gap: 4px; }
+.gs-dot { width: 5px; height: 5px; border-radius: 50%; }
+.gs-dot.s { background: var(--la-semantic-ok); }
+.gs-dot.m { background: var(--la-semantic-warn); }
+.gs-dot.u { background: var(--la-text-mute); }
+.gs-val { font-size: 10px; font-weight: 700; color: var(--la-text-bright); }
+.gs-key { font-size: 7px; color: var(--la-text-mute); }
+
+.wt-row { display: flex; align-items: center; gap: 5px; font-size: 7px; padding: 2px 0; }
+.wt-dot { width: 4px; height: 4px; border-radius: 50%; flex-shrink: 0; }
+.wt-domain { font-weight: 700; color: var(--la-text-dim); width: 22px; flex-shrink: 0; }
+.wt-path { flex: 1; color: var(--la-text-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wt-state { color: var(--la-text-mute); flex-shrink: 0; }
+
+/* ── Strategy Catalogue ───────────────────────────────────────── */
+.strat-grid { display: grid; grid-template-columns: repeat(5,1fr); gap: 5px; flex-shrink: 0; }
+.strat-tile {
+  display: flex; flex-direction: column; gap: 3px; padding: 7px;
+  background: var(--la-bg-card); border: 1px solid var(--la-hair-base);
+  color: inherit; font-family: var(--la-font-mono); text-align: left;
+  cursor: pointer; transition: all var(--la-transition-fast);
+}
+.strat-tile.l2 { border-left: 2px solid var(--la-struct-primary); transition: border-color var(--la-depth-transition); }
+.strat-tile.l0 { border-left: 2px solid var(--la-hair-strong); opacity: 0.6; cursor: default; }
+.strat-tile.l2:hover { background: color-mix(in srgb, var(--la-struct-primary) 8%, transparent); border-color: var(--la-struct-primary); }
+.strat-tile.selected { background: color-mix(in srgb, var(--la-struct-primary) 12%, transparent) !important; border-color: var(--la-struct-primary) !important; }
+.strat-top { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+.strat-lbl { font-size: 9px; font-weight: 700; color: var(--la-text-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.strat-cls {
+  font-size: 6px; font-weight: 700; padding: 1px 3px; flex-shrink: 0;
+  color: var(--la-struct-primary);
+  border: 1px solid color-mix(in srgb, var(--la-struct-primary) 50%, transparent);
+  background: color-mix(in srgb, var(--la-struct-primary) 10%, transparent);
+  transition: all var(--la-depth-transition);
+}
+.strat-cls.l0 { color: var(--la-text-mute); border-color: var(--la-hair-base); background: transparent; }
+.strat-desc { font-size: 7px; color: var(--la-text-mute); line-height: 1.4; flex: 1; }
+.strat-sib { font-size: 6px; font-weight: 700; color: var(--la-text-dim); opacity: 0.7; letter-spacing: var(--la-tk-mid); }
+
+/* ── Wave Composer stub ───────────────────────────────────────── */
+.wave-composer {
+  background: var(--la-bg-panel);
+  border: 1px solid var(--la-hair-base);
+  border-top: 1px solid color-mix(in srgb, var(--la-struct-primary) 40%, transparent);
+  padding: 10px 12px;
+  display: flex; align-items: center; gap: 12px;
+  transition: border-color var(--la-depth-transition);
+}
+.wc-label { font-size: 8px; font-weight: 700; letter-spacing: var(--la-tk-loose); color: var(--la-struct-primary); flex-shrink: 0; transition: color var(--la-depth-transition); }
+.wc-input {
+  flex: 1; background: var(--la-bg-card); border: 1px solid var(--la-hair-base);
+  color: var(--la-text-base); font-family: var(--la-font-mono); font-size: 11px;
+  padding: 5px 8px; outline: none;
+  transition: border-color var(--la-transition-fast);
+}
+.wc-input:focus { border-color: var(--la-struct-primary); }
+.wc-btn {
+  font-family: var(--la-font-mono); font-size: 8px; font-weight: 700;
+  letter-spacing: var(--la-tk-mid); padding: 5px 12px; cursor: pointer;
+  background: color-mix(in srgb, var(--la-struct-primary) 15%, transparent);
+  border: 1px solid var(--la-struct-primary); color: var(--la-struct-primary);
+  transition: all var(--la-depth-transition);
+}
+.wc-btn:hover { background: color-mix(in srgb, var(--la-struct-primary) 25%, transparent); }
+
+/* ── Drill-transition overlay ─────────────────────────────────── */
+.drill-flash {
+  position: fixed; inset: 0; pointer-events: none; z-index: 500;
+  opacity: 0; transition: opacity 0.18s;
+}
+.drill-flash.on { opacity: 1; }
+
+/* ── Shared utilities ─────────────────────────────────────────── */
+.dim-note { font-size: 7px; color: var(--la-text-mute); font-weight: 400; letter-spacing: 0; }
+.badge-count {
+  background: var(--la-semantic-error); color: #fff;
+  font-size: 7px; padding: 1px 4px; font-weight: 700;
+}
+
+::-webkit-scrollbar { width: 3px; height: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+/* ── Depth visibility gates ───────────────────────────────────── */
+/* Certain cards show different content based on depth */
+[data-show-d]    { display: none; }
+[data-show-d="0"] { display: block; }
+.d1 [data-show-d="0"] { display: none; }
+.d1 [data-show-d="1"] { display: block; }
+.d2 [data-show-d="1"] { display: none; }
+.d2 [data-show-d="2"] { display: block; }
+.d3 [data-show-d="2"] { display: none; }
+.d3 [data-show-d="3"] { display: block; }
+
+/* Engineer zones — only d2+ */
+.engineer-zones { display: none; }
+.d2 .engineer-zones, .d3 .engineer-zones { display: grid; }
+</style>
+</head>
+<body class="d0">
+<div class="shell">
+
+  <!-- ── Header ──────────────────────────────────────────────── -->
+  <div class="cockpit-hdr">
+
+    <!-- Row 0: Depth navigation strip (NEW from prototype) -->
+    <div class="depth-strip">
+      <div class="wordmark">LIGHT<b>ARCHITECTS</b></div>
+      <div class="depth-crumbs" id="depthCrumbs"></div>
+      <div class="depth-pips" id="depthPips"></div>
+    </div>
+
+    <!-- Row 1: Existing cockpit chrome + preset chips -->
+    <div class="hdr-row-1">
+      <span class="cockpit-title">COCKPIT</span>
+      <div class="preset-chips" id="presetChips">
+        <div class="preset-chip active" data-p="engineer">ENGINEER</div>
+        <div class="preset-chip" data-p="security">SECURITY</div>
+        <div class="preset-chip" data-p="ops">OPS</div>
+        <div class="preset-chip" data-p="quality">QUALITY</div>
+        <div class="preset-chip" data-p="knowledge">KNOWLEDGE</div>
+      </div>
+      <div class="hdr-badges">
+        <span class="badge badge-depth" id="depthBadge">PLATFORM</span>
+        <span class="badge badge-active">platform-provider-abs</span>
+        <span class="badge">3 active</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Body ────────────────────────────────────────────────── -->
+  <div class="cockpit-body">
+
+    <!-- Engineer Zones — depth 2+ only -->
+    <div class="engineer-zones">
+      <div class="ez-zone">
+        <div class="ez-title">NEEDS ACTION</div>
+        <div style="font-size:8px;color:var(--la-text-mute)">2 items · gate [C] + [K] open</div>
+        <div style="margin-top:6px;display:flex;flex-direction:column;gap:4px">
+          <div style="font-size:8px;display:flex;gap:6px;align-items:center;padding:4px 6px;background:var(--la-bg-card);border-left:2px solid var(--la-semantic-warn)">
+            <span style="color:var(--la-semantic-warn);font-weight:700">[C]</span>
+            <span style="color:var(--la-text-dim);flex:1">Canon review — new AgentKind variants</span>
+            <span style="color:var(--la-text-mute)">LÆX</span>
+          </div>
+          <div style="font-size:8px;display:flex;gap:6px;align-items:center;padding:4px 6px;background:var(--la-bg-card);border-left:2px solid var(--la-text-mute)">
+            <span style="color:var(--la-text-mute);font-weight:700">[K]</span>
+            <span style="color:var(--la-text-dim);flex:1">Helix entry for Gemini/GhCopilot design</span>
+            <span style="color:var(--la-text-mute)">SOUL</span>
+          </div>
+        </div>
+      </div>
+      <div class="ez-zone">
+        <div class="ez-title">IN FLIGHT</div>
+        <div style="font-size:8px;color:var(--la-text-mute)">Wave 3 dispatched · 7 workers</div>
+        <div style="margin-top:8px">
+          <div class="phase-row">
+            <div class="phase-seg done"></div>
+            <div class="phase-seg done"></div>
+            <div class="phase-seg act"></div>
+            <div class="phase-seg"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:7px;color:var(--la-text-mute);margin-top:4px">
+            <span>P1 Research</span><span>P2 Impl</span><span style="color:var(--la-struct-primary)">P3 Gate</span><span>P4 Ship</span>
+          </div>
+        </div>
+      </div>
+      <div class="ez-zone">
+        <div class="ez-title">QUICK ACTIONS</div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <button class="wc-btn" style="text-align:left;padding:5px 8px;font-size:8px">/SCRUM platform-provider-abs</button>
+          <button class="wc-btn" style="text-align:left;padding:5px 8px;font-size:8px">/SECURE gate [S] re-run</button>
+          <button class="wc-btn" style="text-align:left;padding:5px 8px;font-size:8px">/ENRICH helix entry</button>
+        </div>
+      </div>
+      <div class="ez-zone">
+        <div class="ez-title">INSIGHTS</div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <div style="display:flex;justify-content:space-between;font-size:8px">
+            <span style="color:var(--la-text-mute)">Confidence velocity</span>
+            <span style="color:var(--la-semantic-ok)">+2.1/day</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:8px">
+            <span style="color:var(--la-text-mute)">Gate throughput</span>
+            <span style="color:var(--la-struct-primary)">8/10 PASS</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:8px">
+            <span style="color:var(--la-text-mute)">Build XEA score</span>
+            <span style="color:var(--la-semantic-warn)">79.35 STRONG</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bento grid -->
+    <div class="bento">
+
+      <!-- ── BUILD HEALTH ──────────────────────────────────────── -->
+      <div class="card card-health scoped" data-card-role="build-health">
+        <div class="card-lbl">
+          BUILD HEALTH
+          <span class="card-lbl-scope" id="healthScope">ALL BUILDS</span>
+        </div>
+
+        <!-- d0/d1: all-builds sparkline -->
+        <div data-show-d="0">
+          <div class="sparkline-wrap">
+            <svg class="sparkline" viewBox="0 0 120 36">
+              <path class="spark-line" d="M4,28 L16,22 L28,25 L40,14 L52,18 L64,8 L76,12 L88,6 L100,9 L112,4 L124,10" />
+              <circle cx="112" cy="4" r="2.5" fill="var(--la-semantic-ok)" />
+            </svg>
+          </div>
+          <div class="health-stats">
+            <div class="hs-row"><span class="hs-val ok">14</span><span class="hs-key">done</span></div>
+            <div class="hs-row"><span class="hs-val act">3</span><span class="hs-key">active</span></div>
+            <div class="hs-row"><span class="hs-val err">1</span><span class="hs-key">failed</span></div>
+            <div class="hs-row"><span class="hs-val dim">4</span><span class="hs-key">queued</span></div>
+          </div>
+        </div>
+
+        <!-- d2: build-scoped phases + gates -->
+        <div data-show-d="2">
+          <div class="active-build-row">
+            <span class="ab-label">build</span>
+            <span class="ab-name">platform-provider-abstraction</span>
+            <span class="ab-conf">79%</span>
+          </div>
+          <div style="font-size:7px;color:var(--la-text-mute);margin:4px 0 2px">Phases</div>
+          <div class="phase-row" style="gap:6px">
+            <div style="flex:1;text-align:center">
+              <div class="phase-seg done" style="height:4px;margin-bottom:2px"></div>
+              <span style="font-size:7px;color:var(--la-semantic-ok)">P1</span>
+            </div>
+            <div style="flex:1;text-align:center">
+              <div class="phase-seg done" style="height:4px;margin-bottom:2px"></div>
+              <span style="font-size:7px;color:var(--la-semantic-ok)">P2</span>
+            </div>
+            <div style="flex:1;text-align:center">
+              <div class="phase-seg act" style="height:4px;margin-bottom:2px"></div>
+              <span style="font-size:7px;color:var(--la-struct-primary)">P3</span>
+            </div>
+            <div style="flex:1;text-align:center">
+              <div class="phase-seg" style="height:4px;margin-bottom:2px"></div>
+              <span style="font-size:7px;color:var(--la-text-mute)">P4</span>
+            </div>
+          </div>
+          <div style="font-size:7px;color:var(--la-text-mute);margin:6px 0 3px">Gates</div>
+          <div class="gate-grid">
+            <div class="gate pass">A</div><div class="gate pass">S</div><div class="gate pass">Q</div>
+            <div class="gate fail">C</div><div class="gate pass">O</div><div class="gate pass">P</div>
+            <div class="gate fail">K</div><div class="gate pass">D</div><div class="gate pass">T</div>
+            <div class="gate pass">R</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── ESCALATIONS ───────────────────────────────────────── -->
+      <div class="card card-hitl" data-card-role="hitl-escalations">
+        <div class="card-lbl">ESCALATIONS <span class="badge-count">1</span></div>
+        <div class="perm-card">
+          <div class="perm-top">
+            <span class="perm-tool">bash · cargo test</span>
+            <span class="perm-timer">42s</span>
+          </div>
+          <div class="perm-summary">Run cargo test --package lightarchitects-webshell in build worktree?</div>
+          <div class="perm-actions">
+            <button class="btn-approve">APPROVE</button>
+            <button class="btn-deny">DENY</button>
+          </div>
+        </div>
+        <div style="padding:5px 6px;background:rgba(255,173,46,0.06);border:1px solid rgba(255,173,46,0.25);display:flex;gap:6px;align-items:flex-start">
+          <span style="font-size:7px;font-weight:700;color:var(--la-semantic-warn);flex-shrink:0;padding-top:1px">IRONCLAW</span>
+          <span style="font-size:8px;color:var(--la-text-dim)">Gemini credential scope: confirm env_remove covers COPILOT_GITHUB_TOKEN?</span>
+        </div>
+      </div>
+
+      <!-- ── WORKER FLEET ──────────────────────────────────────── -->
+      <div class="card card-fleet" data-card-role="worker-fleet">
+        <div class="card-lbl">
+          WORKER FLEET
+          <span class="card-lbl-scope" id="fleetScope">PLATFORM</span>
+        </div>
+        <div class="fleet-meta">
+          <span class="fm-val">5</span><span class="fm-sep">/</span>
+          <span class="fm-cap">7</span><span class="fm-key">slots</span>
+        </div>
+        <div class="slot-grid">
+          <div class="slot active"><div class="slot-poly"></div></div>
+          <div class="slot active"><div class="slot-poly"></div></div>
+          <div class="slot active"><div class="slot-poly"></div></div>
+          <div class="slot active"><div class="slot-poly"></div></div>
+          <div class="slot active"><div class="slot-poly"></div></div>
+          <div class="slot"><div class="slot-dot"></div></div>
+          <div class="slot"><div class="slot-dot"></div></div>
+        </div>
+        <div class="conductor-row">
+          <span class="c-key">queue</span><span class="c-val">3</span>
+          <span class="c-key">workers</span><span class="c-val act">5</span>
+        </div>
+        <div class="ft-row"><div class="ft-pulse"></div><span class="ft-sib">ENG</span><span class="ft-name">copilot/mod.rs</span><span class="ft-type">code</span></div>
+        <div class="ft-row"><div class="ft-pulse"></div><span class="ft-sib">SEC</span><span class="ft-name">preflight/checks.rs</span><span class="ft-type">audit</span></div>
+      </div>
+
+      <!-- ── DECISION FEED ─────────────────────────────────────── -->
+      <div class="card card-decisions" data-card-role="decision-feed">
+        <div class="card-lbl">
+          DECISION FEED
+          <span class="card-lbl-scope" id="decScope">ALL BUILDS</span>
+        </div>
+        <div class="dec-list">
+          <!-- d0: cross-build decisions -->
+          <div data-show-d="0">
+            <div class="dec-row dec-l3"><span class="dec-lbl" style="color:var(--la-semantic-warn)">GATE</span><span class="dec-text">[C] Canon gate open — LÆX review needed on new AgentKind variants (platform-provider-abstraction)</span></div>
+            <div class="dec-row"><span class="dec-lbl" style="color:#5b8db8">IMPL</span><span class="dec-text">Fix 4 applied: --model=VALUE prevents flag injection via Gemini CLI subprocess</span></div>
+            <div class="dec-row"><span class="dec-lbl" style="color:#5b8db8">IMPL</span><span class="dec-text">Fix 5 applied: ANTHROPIC_API_KEY + OPENAI_API_KEY + MISTRAL_API_KEY removed from both bridge fns</span></div>
+            <div class="dec-row"><span class="dec-lbl" style="color:var(--la-agent-engineer)">ARCH</span><span class="dec-text">GhCopilot sentinel "active" bypasses UUID validator in session_fork.rs — correct behavior</span></div>
+            <div class="dec-row"><span class="dec-lbl" style="color:var(--la-agent-engineer)">ARCH</span><span class="dec-text">Gemini init event: try both session_id and sessionId (JS CLI uses camelCase)</span></div>
+          </div>
+          <!-- d2: build-scoped decisions -->
+          <div data-show-d="2">
+            <div class="dec-row dec-l4"><span class="dec-lbl" style="color:var(--la-semantic-error)">ESC</span><span class="dec-text">Ironclaw L3 gate: confirm COPILOT_GITHUB_TOKEN env_remove scope in gh copilot bridge</span><span class="dec-esc">ESC</span></div>
+            <div class="dec-row dec-l3"><span class="dec-lbl" style="color:var(--la-semantic-warn)">GATE</span><span class="dec-text">[C] Canon gate open — requires LÆX sign-off on Gemini + GhCopilot AgentSession variants</span></div>
+            <div class="dec-row dec-l3"><span class="dec-lbl" style="color:var(--la-semantic-warn)">GATE</span><span class="dec-text">[K] Knowledge gate open — helix entry for provider coupling design decisions not yet written</span></div>
+            <div class="dec-row"><span class="dec-lbl" style="color:#5b8db8">IMPL</span><span class="dec-text">done:true SSE fallback emits before ? propagation so UI spinner always unblocks on Gemini error</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── BUILDS RAIL ───────────────────────────────────────── -->
+      <div class="card card-builds" data-card-role="builds-rail">
+        <div class="card-lbl">
+          BUILDS
+          <span class="dim-note" id="buildsNote">22 total</span>
+        </div>
+        <!-- d0: all builds (drill-in on click) -->
+        <div class="builds-rail" data-show-d="0">
+          <button class="build-row act" onclick="drill(2)">
+            <span class="br-dot" style="background:var(--la-semantic-warn);box-shadow:0 0 6px var(--la-semantic-warn)88"></span>
+            <span class="br-name">platform-provider-abstraction</span>
+            <span class="br-phase">P3</span>
+            <span class="br-conf">79%</span>
+          </button>
+          <button class="build-row" onclick="drill(2)">
+            <span class="br-dot" style="background:var(--la-struct-primary)"></span>
+            <span class="br-name">copilot-ayin-instrumentation</span>
+            <span class="br-phase">P7</span>
+            <span class="br-conf">97%</span>
+          </button>
+          <button class="build-row" onclick="drill(2)">
+            <span class="br-dot" style="background:var(--la-semantic-ok)"></span>
+            <span class="br-name">webshell-copilot-core</span>
+            <span class="br-phase">done</span>
+            <span class="br-conf">100%</span>
+          </button>
+          <button class="build-row" onclick="drill(2)">
+            <span class="br-dot" style="background:var(--la-text-mute)"></span>
+            <span class="br-name">workspace-depth-integration</span>
+            <span class="br-phase">queued</span>
+            <span class="br-conf">—</span>
+          </button>
+        </div>
+        <!-- d2: build files (drill to file) -->
+        <div class="builds-rail" data-show-d="2">
+          <div style="font-size:7px;color:var(--la-text-mute);padding:2px 6px;margin-bottom:2px">FILES CHANGED IN THIS BUILD</div>
+          <button class="build-row" onclick="drill(3)" style="border-left:2px solid transparent">
+            <span style="font-size:10px;color:var(--la-struct-primary);flex-shrink:0">◐</span>
+            <span class="br-name">src/copilot/mod.rs</span>
+            <span class="br-phase">+125 −42</span>
+          </button>
+          <button class="build-row" onclick="drill(3)" style="border-left:2px solid transparent">
+            <span style="font-size:10px;color:var(--la-struct-primary);flex-shrink:0">◐</span>
+            <span class="br-name">src/config.rs</span>
+            <span class="br-phase">+88 −12</span>
+          </button>
+          <button class="build-row" onclick="drill(3)" style="border-left:2px solid transparent">
+            <span style="font-size:10px;color:var(--la-struct-primary);flex-shrink:0">◐</span>
+            <span class="br-name">src/preflight/checks.rs</span>
+            <span class="br-phase">+67 −8</span>
+          </button>
+          <button class="build-row" onclick="drill(3)" style="border-left:2px solid transparent">
+            <span style="font-size:10px;color:var(--la-struct-primary);flex-shrink:0">◐</span>
+            <span class="br-name">src/session_fork.rs</span>
+            <span class="br-phase">+18 −5</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ── HITL INBOX + GIT STATE ────────────────────────────── -->
+      <div class="card card-pr" data-card-role="hitl-inbox">
+        <div class="card-lbl">
+          HITL INBOX
+          <span class="card-lbl-scope" id="hitlScope">ALL PROJECTS</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--la-bg-card);border:1px solid var(--la-hair-base);cursor:pointer;transition:all 0.15s" onmouseenter="this.style.borderColor='var(--la-struct-primary)'" onmouseleave="this.style.borderColor='var(--la-hair-base)'">
+            <span style="font-size:9px;color:var(--la-text-mute)">⎌</span>
+            <span style="flex:1;font-size:8px;color:var(--la-text-dim)">PR #247 — platform-provider-abstraction</span>
+            <span style="font-size:7px;color:var(--la-semantic-warn)">12m</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--la-bg-card);border:1px solid var(--la-hair-base);cursor:pointer;transition:all 0.15s" onmouseenter="this.style.borderColor='var(--la-struct-primary)'" onmouseleave="this.style.borderColor='var(--la-hair-base)'">
+            <span style="font-size:9px;color:var(--la-text-mute)">◈</span>
+            <span style="flex:1;font-size:8px;color:var(--la-text-dim)">Gate [C] review — LÆX required</span>
+            <span style="font-size:7px;color:var(--la-semantic-error)">2h</span>
+          </div>
+        </div>
+      </div>
+      <div class="card card-git" data-card-role="git-state">
+        <div class="card-lbl">
+          GIT STATE
+          <span class="card-lbl-scope" id="gitScope">REPO</span>
+        </div>
+        <div class="git-branch"><span class="git-branch-icon">⎇</span><span class="git-branch-name">platform-provider-abstraction</span></div>
+        <div class="git-stats">
+          <div class="gs-row"><div class="gs-dot s"></div><span class="gs-val">4</span><span class="gs-key">staged</span></div>
+          <div class="gs-row"><div class="gs-dot m"></div><span class="gs-val">2</span><span class="gs-key">modified</span></div>
+          <div class="gs-row"><div class="gs-dot u"></div><span class="gs-val">0</span><span class="gs-key">untracked</span></div>
+        </div>
+        <div style="border-top:1px solid var(--la-hair-faint);padding-top:4px;margin-top:2px">
+          <div style="font-size:7px;font-weight:700;letter-spacing:var(--la-tk-loose);color:var(--la-text-mute);margin-bottom:3px">WORKTREES 5</div>
+          <div class="wt-row"><div class="wt-dot" style="background:var(--la-semantic-warn)"></div><span class="wt-domain">ENG</span><span class="wt-path">platform-provider-abs/wave-3</span><span class="wt-state">writing</span></div>
+          <div class="wt-row"><div class="wt-dot" style="background:#a78bfa"></div><span class="wt-domain">SEC</span><span class="wt-path">platform-provider-abs/gate-s</span><span class="wt-state">gate</span></div>
+          <div class="wt-row"><div class="wt-dot" style="background:var(--la-semantic-ok)"></div><span class="wt-domain">QUA</span><span class="wt-path">platform-provider-abs/clippy</span><span class="wt-state">done</span></div>
+        </div>
+      </div>
+
+      <!-- ── STRATEGY CATALOGUE ────────────────────────────────── -->
+      <div class="card card-strategies" data-card-role="strategy-catalogue">
+        <div class="card-lbl">STRATEGIES <span class="dim-note">6 registered · 4 executor</span></div>
+        <div class="strat-grid">
+          <div class="strat-tile l2 selected" onclick="this.classList.toggle('selected')">
+            <div class="strat-top"><span class="strat-lbl">Build</span><span class="strat-cls">L2</span></div>
+            <div class="strat-desc">LASDLC 6–7 phase pipeline</div>
+            <div class="strat-sib">CORSO</div>
+          </div>
+          <div class="strat-tile l2" onclick="this.classList.toggle('selected')">
+            <div class="strat-top"><span class="strat-lbl">Secure</span><span class="strat-cls">L2</span></div>
+            <div class="strat-desc">Security assessment loop</div>
+            <div class="strat-sib">SERAPH</div>
+          </div>
+          <div class="strat-tile l2" onclick="this.classList.toggle('selected')">
+            <div class="strat-top"><span class="strat-lbl">Scrum</span><span class="strat-cls">L2</span></div>
+            <div class="strat-desc">Multi-sibling squad review</div>
+            <div class="strat-sib">AYIN</div>
+          </div>
+          <div class="strat-tile l2" onclick="this.classList.toggle('selected')">
+            <div class="strat-top"><span class="strat-lbl">Enrich</span><span class="strat-cls">L2</span></div>
+            <div class="strat-desc">EVA 8-layer enrichment</div>
+            <div class="strat-sib">EVA</div>
+          </div>
+          <div class="strat-tile l2" onclick="this.classList.toggle('selected')">
+            <div class="strat-top"><span class="strat-lbl">Gate</span><span class="strat-cls">L2</span></div>
+            <div class="strat-desc">LASDLC 7-gate V0→Q→V</div>
+            <div class="strat-sib">LÆX</div>
+          </div>
+          <div class="strat-tile l0">
+            <div class="strat-top"><span class="strat-lbl">BCRA</span><span class="strat-cls l0">L0</span></div>
+            <div class="strat-desc">FAIR/Bowtie blast-score</div>
+            <div class="strat-sib">SERAPH</div>
+          </div>
+          <div class="strat-tile l0">
+            <div class="strat-top"><span class="strat-lbl">Red Team</span><span class="strat-cls l0">L0</span></div>
+            <div class="strat-desc">5-phase adversarial assess.</div>
+            <div class="strat-sib">SERAPH</div>
+          </div>
+          <div class="strat-tile l0">
+            <div class="strat-top"><span class="strat-lbl">Drain</span><span class="strat-cls l0">L0</span></div>
+            <div class="strat-desc">Bounded queue-drain</div>
+            <div class="strat-sib">CORSO</div>
+          </div>
+          <div class="strat-tile l0">
+            <div class="strat-top"><span class="strat-lbl">Multi-Pass</span><span class="strat-cls l0">L0</span></div>
+            <div class="strat-desc">N-pass independent verify</div>
+            <div class="strat-sib">CORSO</div>
+          </div>
+          <div class="strat-tile l2" onclick="this.classList.toggle('selected')">
+            <div class="strat-top"><span class="strat-lbl">Scope Gov</span><span class="strat-cls">L2</span></div>
+            <div class="strat-desc">5-gate AND-scope validation</div>
+            <div class="strat-sib">SERAPH</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── WAVE COMPOSER ─────────────────────────────────────── -->
+      <div class="card card-wave">
+        <div class="wave-composer" style="padding:0;background:none;border:none">
+          <span class="card-lbl" style="flex-shrink:0">WAVE COMPOSER</span>
+          <input class="wc-input" placeholder="describe wave tasks… e.g. 'add Gemini streaming tests for run_gemini_turn'" />
+          <button class="wc-btn">DISPATCH</button>
+        </div>
+      </div>
+
+    </div><!-- /bento -->
+  </div><!-- /body -->
+</div><!-- /shell -->
+
+<!-- Drill transition flash -->
+<div class="drill-flash" id="drillFlash"></div>
+
+<script>
+// ── State ───────────────────────────────────────────────────────
+const DC = ['#4d8eff','#39ff8a','#ffad2e','#ff5c8a'];
+const DL = ['Platform','lightarchitects-webshell','platform-provider-abstraction','src/copilot/mod.rs'];
+const DI = ['◈','◻','◉','◐'];
+
+let depth = 0;
+
+// ── Header labels per depth ────────────────────────────────────
+const SCOPE_LABELS = {
+  healthScope: ['ALL BUILDS','PROJECT','THIS BUILD','THIS FILE'],
+  fleetScope:  ['PLATFORM','PROJECT','BUILD','FILE'],
+  decScope:    ['ALL BUILDS','PROJECT','THIS BUILD','THIS FILE'],
+  hitlScope:   ['ALL PROJECTS','PROJECT','BUILD','FILE'],
+  gitScope:    ['REPO','PROJECT','WORKTREE','FILE'],
+  buildsNote:  ['22 total','3 builds','4 files changed',''],
+};
+
+// ── Render breadcrumb ──────────────────────────────────────────
+function renderCrumbs() {
+  const el = document.getElementById('depthCrumbs');
+  let html = '';
+  for (let i = 0; i <= depth; i++) {
+    if (i > 0) html += `<span class="dcrumb-sep">›</span>`;
+    const active = i === depth;
+    html += `<div class="dcrumb${active?' active':''}" ${!active?`onclick="gd(${i})"`:''}
+      style="color:${DC[i]}">
+      <span class="dcrumb-dot" style="background:${DC[i]};color:${DC[i]}"></span>
+      <span class="dcrumb-text">${i===0?'Platform':DL[i].split('/').pop()}</span>
+    </div>`;
+  }
+  el.innerHTML = html;
+}
+
+function renderPips() {
+  const el = document.getElementById('depthPips');
+  el.innerHTML = Array.from({length:4},(_,i)=>
+    `<div class="dpip${i<=depth?' on':''}" style="${i<=depth?`background:${DC[i]}`:''}"></div>`
+  ).join('');
+}
+
+function renderScopeLabels() {
+  for (const [id, labels] of Object.entries(SCOPE_LABELS)) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = labels[depth] || '';
+  }
+  const badge = document.getElementById('depthBadge');
+  badge.textContent = ['PLATFORM','PROJECT','BUILD','FILE'][depth];
+}
+
+// ── Navigation ─────────────────────────────────────────────────
+function transition(d) {
+  const f = document.getElementById('drillFlash');
+  f.style.background = DC[d]+'09';
+  f.classList.add('on');
+  setTimeout(()=>f.classList.remove('on'), 200);
+}
+
+function setDepth(d) {
+  document.body.className = `d${d}`;
+  depth = d;
+  renderCrumbs();
+  renderPips();
+  renderScopeLabels();
+}
+
+function drill(d) {
+  if (d === depth) return;
+  transition(d);
+  setDepth(d);
+}
+
+function gd(d) { drill(d); }
+
+// Preset chip interaction
+document.querySelectorAll('.preset-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('.preset-chip').forEach(c=>c.classList.remove('active'));
+    chip.classList.add('active');
+  });
+});
+
+// ── Init ───────────────────────────────────────────────────────
+setDepth(0);
+</script>
+</body>
+</html>

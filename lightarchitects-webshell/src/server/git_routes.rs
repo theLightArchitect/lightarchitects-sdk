@@ -39,6 +39,8 @@ const TIMEOUT_LOG: Duration = Duration::from_secs(10);
 const TIMEOUT_PUSH: Duration = Duration::from_secs(60);
 const TIMEOUT_PULL: Duration = Duration::from_secs(30);
 const TIMEOUT_PR: Duration = Duration::from_secs(15);
+const TIMEOUT_BLAME: Duration = Duration::from_secs(15);
+const TIMEOUT_LOG_FILE: Duration = Duration::from_secs(10);
 
 const GITHUB_API: &str = "https://api.github.com";
 
@@ -91,6 +93,46 @@ fn git_err(msg: &str) -> Resp {
 }
 
 // ── Security helpers ──────────────────────────────────────────────────────────
+
+/// Validate a git ref (SHA, branch, tag, `HEAD`, refspecs) for use as a subprocess argument.
+///
+/// Rejects leading `-` (flag-smuggling CWE-88), leading `.`, `..` (path-traversal CWE-22),
+/// and characters outside `[A-Za-z0-9._/@{}^~:-]`. Accepts SHAs, `HEAD`, branch refs, and
+/// common refspecs like `HEAD@{1}` and `origin/main`.
+fn validate_git_ref(r: &str) -> Result<(), &'static str> {
+    if r.is_empty() {
+        return Err("ref must not be empty");
+    }
+    if r.starts_with('-') {
+        return Err("ref must not start with '-'");
+    }
+    if r.starts_with('.') {
+        return Err("ref must not start with '.'");
+    }
+    if r.contains("..") {
+        return Err("ref must not contain '..'");
+    }
+    if !r.chars().all(|c| {
+        c.is_ascii_alphanumeric()
+            || matches!(c, '.' | '_' | '/' | '-' | '@' | '{' | '}' | '^' | '~' | ':')
+    }) {
+        return Err("ref contains disallowed characters");
+    }
+    Ok(())
+}
+
+/// Validate a file path argument.
+///
+/// Rejects `..` (path-traversal CWE-22) and leading `:` (git pathspec magic).
+fn validate_path_arg(p: &str) -> Result<(), &'static str> {
+    if p.contains("..") {
+        return Err("path must not contain '..'");
+    }
+    if p.starts_with(':') {
+        return Err("path must not start with ':' (pathspec magic)");
+    }
+    Ok(())
+}
 
 /// Validate a branch name without shell expansion.
 ///
@@ -915,6 +957,400 @@ pub async fn log_handler(
     ok(json!({ "commits": commits, "branches": branches })).into_response()
 }
 
+// ── POST /api/git/diff-file ───────────────────────────────────────────────────
+
+/// Return a structured hunk diff for a single file between two refs.
+///
+/// Body: `{"cwd": string, "path": string, "base": string, "head": string}`
+/// Returns: `{"hunks": [{header, old_start, old_count, new_start, new_count,
+///   lines: [{type, content, old_n?, new_n?}]}], "stats": {added, removed, hunks}}`
+///
+/// @api POST /api/git/diff-file
+/// @contract code.file-diff.v1
+/// Security: path/refs validated for `..` (CWE-22); structured argv (CWE-78); opaque errors (CWE-209).
+pub async fn diff_file_handler(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(body): Json<Value>,
+) -> impl IntoResponse {
+    if let Err(r) = check_auth(&headers, &state.config.token) {
+        return r.into_response();
+    }
+    let (Some(cwd_str), Some(path_str), Some(base), Some(head)) = (
+        body["cwd"].as_str(),
+        body["path"].as_str(),
+        body["base"].as_str(),
+        body["head"].as_str(),
+    ) else {
+        return bad_request("missing required fields: cwd, path, base, head").into_response();
+    };
+    let cwd = match safe_cwd(cwd_str) {
+        Ok(p) => p,
+        Err(e) => return bad_request(e).into_response(),
+    };
+    if let Err(e) = validate_path_arg(path_str) {
+        return bad_request(e).into_response();
+    }
+    if let Err(e) = validate_git_ref(base) {
+        return bad_request(e).into_response();
+    }
+    if let Err(e) = validate_git_ref(head) {
+        return bad_request(e).into_response();
+    }
+    let out = match git_run(&["diff", base, head, "--", path_str], &cwd, TIMEOUT_DIFF).await {
+        Ok(o) => o,
+        Err(r) => return r.into_response(),
+    };
+    if !out.status.success() {
+        return git_err("git diff-file failed").into_response();
+    }
+    let raw = String::from_utf8_lossy(&out.stdout);
+    let (hunks, diff_stats) = parse_unified_diff(&raw);
+    ok(json!({ "hunks": hunks, "stats": diff_stats })).into_response()
+}
+
+/// Parse unified diff text into structured hunks with per-line type annotation.
+fn parse_unified_diff(raw: &str) -> (Vec<Value>, Value) {
+    let mut hunks: Vec<Value> = Vec::new();
+    let mut current_lines: Vec<Value> = Vec::new();
+    let mut current_header = String::new();
+    let mut current_old_start = 0u64;
+    let mut current_old_count = 0u64;
+    let mut current_new_start = 0u64;
+    let mut current_new_count = 0u64;
+    let mut old_n = 0u64;
+    let mut new_n = 0u64;
+    let mut total_added = 0u64;
+    let mut total_removed = 0u64;
+
+    for line in raw.lines() {
+        if line.starts_with("@@ ") {
+            if !current_header.is_empty() {
+                hunks.push(flush_hunk(
+                    &current_header,
+                    current_old_start,
+                    current_old_count,
+                    current_new_start,
+                    current_new_count,
+                    &current_lines,
+                ));
+                current_lines.clear();
+            }
+            line.clone_into(&mut current_header);
+            if let Some(rest) = line.strip_prefix("@@ ") {
+                let mut parts = rest.splitn(3, ' ');
+                let old_part = parts.next().unwrap_or("").trim_start_matches('-');
+                let new_part = parts.next().unwrap_or("").trim_start_matches('+');
+                (current_old_start, current_old_count) = parse_hunk_range(old_part);
+                (current_new_start, current_new_count) = parse_hunk_range(new_part);
+                old_n = current_old_start;
+                new_n = current_new_start;
+            }
+        } else if line.starts_with('+') && !line.starts_with("+++") {
+            current_lines.push(json!({ "type": "add", "content": &line[1..], "new_n": new_n }));
+            new_n += 1;
+            total_added += 1;
+        } else if line.starts_with('-') && !line.starts_with("---") {
+            current_lines.push(json!({ "type": "del", "content": &line[1..], "old_n": old_n }));
+            old_n += 1;
+            total_removed += 1;
+        } else if let Some(content) = line.strip_prefix(' ') {
+            current_lines
+                .push(json!({ "type": "ctx", "content": content, "old_n": old_n, "new_n": new_n }));
+            old_n += 1;
+            new_n += 1;
+        }
+    }
+    if !current_header.is_empty() {
+        hunks.push(flush_hunk(
+            &current_header,
+            current_old_start,
+            current_old_count,
+            current_new_start,
+            current_new_count,
+            &current_lines,
+        ));
+    }
+    let hunk_count = hunks.len() as u64;
+    (
+        hunks,
+        json!({ "added": total_added, "removed": total_removed, "hunks": hunk_count }),
+    )
+}
+
+fn parse_hunk_range(s: &str) -> (u64, u64) {
+    let mut it = s.splitn(2, ',');
+    let start = it.next().and_then(|x| x.parse().ok()).unwrap_or(0u64);
+    let count = it.next().and_then(|x| x.parse().ok()).unwrap_or(1u64);
+    (start, count)
+}
+
+fn flush_hunk(
+    header: &str,
+    old_start: u64,
+    old_count: u64,
+    new_start: u64,
+    new_count: u64,
+    lines: &[Value],
+) -> Value {
+    json!({
+        "header": header,
+        "old_start": old_start,
+        "old_count": old_count,
+        "new_start": new_start,
+        "new_count": new_count,
+        "lines": lines,
+    })
+}
+
+// ── POST /api/git/blame ───────────────────────────────────────────────────────
+
+/// Return per-line blame info with commit metadata for a file.
+///
+/// Body: `{"cwd": string, "path": string, "ref"?: string}`
+/// Returns: `{"lines": [{n, content, commit: {hash, author_name, author_time, summary}}]}`
+///
+/// @api POST /api/git/blame
+/// @contract code.blame.v1
+/// Security: path validated for `..` (CWE-22); `author_email` not surfaced to client; opaque errors (CWE-209).
+pub async fn blame_handler(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(body): Json<Value>,
+) -> impl IntoResponse {
+    if let Err(r) = check_auth(&headers, &state.config.token) {
+        return r.into_response();
+    }
+    let (Some(cwd_str), Some(path_str)) = (body["cwd"].as_str(), body["path"].as_str()) else {
+        return bad_request("missing required fields: cwd, path").into_response();
+    };
+    let cwd = match safe_cwd(cwd_str) {
+        Ok(p) => p,
+        Err(e) => return bad_request(e).into_response(),
+    };
+    if let Err(e) = validate_path_arg(path_str) {
+        return bad_request(e).into_response();
+    }
+    let ref_arg = body["ref"].as_str().unwrap_or("HEAD");
+    if let Err(e) = validate_git_ref(ref_arg) {
+        return bad_request(e).into_response();
+    }
+    let out = match git_run(
+        &["blame", "--porcelain", ref_arg, "--", path_str],
+        &cwd,
+        TIMEOUT_BLAME,
+    )
+    .await
+    {
+        Ok(o) => o,
+        Err(r) => return r.into_response(),
+    };
+    if !out.status.success() {
+        return git_err("git blame failed").into_response();
+    }
+    let raw = String::from_utf8_lossy(&out.stdout);
+    let lines = parse_blame_porcelain(&raw);
+    ok(json!({ "lines": lines })).into_response()
+}
+
+/// Parse `git blame --porcelain` output into per-line records with cached commit metadata.
+fn parse_blame_porcelain(raw: &str) -> Vec<Value> {
+    let mut lines_out: Vec<Value> = Vec::new();
+    // hash → (author_name, author_time, summary) — populated on first occurrence.
+    let mut commit_cache: HashMap<String, (String, i64, String)> = HashMap::new();
+    let mut current_hash = String::new();
+    let mut current_final_line: u64 = 0;
+    let mut pending_author = String::new();
+    let mut pending_author_time: i64 = 0;
+    let mut pending_summary = String::new();
+
+    for line in raw.lines() {
+        if let Some(content) = line.strip_prefix('\t') {
+            // Flush pending fields into cache on first occurrence.
+            if !current_hash.is_empty() && !commit_cache.contains_key(&current_hash) {
+                commit_cache.insert(
+                    current_hash.clone(),
+                    (
+                        pending_author.clone(),
+                        pending_author_time,
+                        pending_summary.clone(),
+                    ),
+                );
+            }
+            if let Some((author_name, author_time, summary)) = commit_cache.get(&current_hash) {
+                lines_out.push(json!({
+                    "n": current_final_line,
+                    "content": content,
+                    "commit": {
+                        "hash": &current_hash,
+                        "author_name": author_name,
+                        "author_time": author_time,
+                        "summary": summary,
+                    }
+                }));
+            }
+            pending_author.clear();
+            pending_author_time = 0;
+            pending_summary.clear();
+        } else if is_blame_hash_line(line) {
+            let mut parts = line.split_ascii_whitespace();
+            parts.next().unwrap_or("").clone_into(&mut current_hash);
+            let _orig = parts.next();
+            current_final_line = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+        } else if let Some(rest) = line.strip_prefix("author ") {
+            rest.clone_into(&mut pending_author);
+        } else if let Some(rest) = line.strip_prefix("author-time ") {
+            pending_author_time = rest.parse().unwrap_or(0);
+        } else if let Some(rest) = line.strip_prefix("summary ") {
+            rest.clone_into(&mut pending_summary);
+        }
+    }
+    lines_out
+}
+
+/// Return true if `line` is a porcelain blame hash header: 40 hex chars then a space.
+fn is_blame_hash_line(line: &str) -> bool {
+    let Some((hash, _)) = line.split_once(' ') else {
+        return false;
+    };
+    hash.len() == 40 && hash.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+// ── POST /api/git/log-file ────────────────────────────────────────────────────
+
+/// Return file-specific commit history with rename tracking and per-commit stats.
+///
+/// Body: `{"cwd": string, "path": string, "n"?: number}` (n default 20, max 100)
+/// Returns: `{"commits": [{hash, summary, author_name, author_time, stats: {added, removed}}]}`
+///
+/// @api POST /api/git/log-file
+/// @contract code.log-file.v1
+/// Security: path validated for `..` (CWE-22); structured argv (CWE-78); opaque errors (CWE-209).
+pub async fn log_file_handler(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(body): Json<Value>,
+) -> impl IntoResponse {
+    if let Err(r) = check_auth(&headers, &state.config.token) {
+        return r.into_response();
+    }
+    let (Some(cwd_str), Some(path_str)) = (body["cwd"].as_str(), body["path"].as_str()) else {
+        return bad_request("missing required fields: cwd, path").into_response();
+    };
+    let cwd = match safe_cwd(cwd_str) {
+        Ok(p) => p,
+        Err(e) => return bad_request(e).into_response(),
+    };
+    if let Err(e) = validate_path_arg(path_str) {
+        return bad_request(e).into_response();
+    }
+    let n = body["n"].as_u64().unwrap_or(20).min(100);
+    let n_arg = format!("-n{n}");
+    // `--numstat` emits per-file add/remove counts after each commit header.
+    // `SPLIT\t` sentinel separates commits; `--follow` tracks renames.
+    let out = match git_run(
+        &[
+            "log",
+            "--follow",
+            "--numstat",
+            "--format=SPLIT\t%H\t%s\t%an\t%at",
+            &n_arg,
+            "--",
+            path_str,
+        ],
+        &cwd,
+        TIMEOUT_LOG_FILE,
+    )
+    .await
+    {
+        Ok(o) => o,
+        Err(r) => return r.into_response(),
+    };
+    if !out.status.success() {
+        return git_err("git log-file failed").into_response();
+    }
+    let raw = String::from_utf8_lossy(&out.stdout);
+    let commits = parse_log_file_output(&raw);
+    ok(json!({ "commits": commits })).into_response()
+}
+
+/// Parse `git log --follow --numstat --format=SPLIT\t%H\t%s\t%an\t%at` output.
+fn parse_log_file_output(raw: &str) -> Vec<Value> {
+    let mut commits: Vec<Value> = Vec::new();
+    let mut current_hash = String::new();
+    let mut current_summary = String::new();
+    let mut current_author = String::new();
+    let mut current_time: i64 = 0;
+    let mut current_added: u64 = 0;
+    let mut current_removed: u64 = 0;
+    let mut in_commit = false;
+
+    for line in raw.lines() {
+        if let Some(rest) = line.strip_prefix("SPLIT\t") {
+            if in_commit {
+                commits.push(make_log_entry(
+                    &current_hash,
+                    &current_summary,
+                    &current_author,
+                    current_time,
+                    current_added,
+                    current_removed,
+                ));
+            }
+            let mut parts = rest.splitn(4, '\t');
+            parts.next().unwrap_or("").clone_into(&mut current_hash);
+            parts.next().unwrap_or("").clone_into(&mut current_summary);
+            parts.next().unwrap_or("").clone_into(&mut current_author);
+            current_time = parts
+                .next()
+                .and_then(|s| s.trim().parse().ok())
+                .unwrap_or(0);
+            current_added = 0;
+            current_removed = 0;
+            in_commit = true;
+        } else if in_commit && !line.is_empty() && line.contains('\t') {
+            // numstat line: "<added>\t<removed>\t<path>"
+            let mut parts = line.splitn(3, '\t');
+            current_added += parts
+                .next()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(0);
+            current_removed += parts
+                .next()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(0);
+        }
+    }
+    if in_commit {
+        commits.push(make_log_entry(
+            &current_hash,
+            &current_summary,
+            &current_author,
+            current_time,
+            current_added,
+            current_removed,
+        ));
+    }
+    commits
+}
+
+fn make_log_entry(
+    hash: &str,
+    summary: &str,
+    author_name: &str,
+    author_time: i64,
+    added: u64,
+    removed: u64,
+) -> Value {
+    json!({
+        "hash": hash,
+        "summary": summary,
+        "author_name": author_name,
+        "author_time": author_time,
+        "stats": { "added": added, "removed": removed },
+    })
+}
+
 // ── Smoke tests (Canon XXVII suite 6) ─────────────────────────────────────────
 
 #[cfg(test)]
@@ -1011,5 +1447,83 @@ mod tests {
     fn parse_worktree_porcelain_handles_empty_input() {
         let rows = super::parse_worktree_porcelain("");
         assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn parse_unified_diff_empty_input() {
+        let (hunks, stats) = super::parse_unified_diff("");
+        assert!(hunks.is_empty());
+        assert_eq!(stats["added"], 0);
+        assert_eq!(stats["removed"], 0);
+        assert_eq!(stats["hunks"], 0);
+    }
+
+    #[test]
+    fn parse_unified_diff_single_hunk() {
+        let raw = "@@ -1,3 +1,4 @@\n context\n-removed\n+added\n+extra\n context\n";
+        let (hunks, stats) = super::parse_unified_diff(raw);
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(stats["added"], 2);
+        assert_eq!(stats["removed"], 1);
+        let lines = hunks[0]["lines"].as_array().unwrap();
+        assert_eq!(lines[0]["type"], "ctx");
+        assert_eq!(lines[1]["type"], "del");
+        assert_eq!(lines[2]["type"], "add");
+    }
+
+    #[test]
+    fn parse_hunk_range_with_count() {
+        assert_eq!(super::parse_hunk_range("10,5"), (10, 5));
+    }
+
+    #[test]
+    fn parse_hunk_range_without_count_defaults_to_one() {
+        assert_eq!(super::parse_hunk_range("7"), (7, 1));
+    }
+
+    #[test]
+    fn is_blame_hash_line_accepts_valid() {
+        let line = "a".repeat(40) + " 1 1 1";
+        assert!(super::is_blame_hash_line(&line));
+    }
+
+    #[test]
+    fn is_blame_hash_line_rejects_short() {
+        assert!(!super::is_blame_hash_line("abc123 1 1"));
+    }
+
+    #[test]
+    fn parse_blame_porcelain_basic() {
+        let hash = "a".repeat(40);
+        let raw = format!(
+            "{hash} 1 1 1\nauthor Alice\nauthor-time 1000\nsummary Fix bug\nfilename foo.rs\n\tcontent here\n"
+        );
+        let lines = super::parse_blame_porcelain(&raw);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0]["n"], 1);
+        assert_eq!(lines[0]["content"], "content here");
+        assert_eq!(lines[0]["commit"]["author_name"], "Alice");
+        assert_eq!(lines[0]["commit"]["summary"], "Fix bug");
+    }
+
+    #[test]
+    fn parse_blame_porcelain_empty_input() {
+        assert!(super::parse_blame_porcelain("").is_empty());
+    }
+
+    #[test]
+    fn parse_log_file_output_basic() {
+        let raw = "SPLIT\tabc123\tFix the bug\tAlice\t1000\n\n3\t1\tpath/file.rs\n";
+        let commits = super::parse_log_file_output(raw);
+        assert_eq!(commits.len(), 1);
+        assert_eq!(commits[0]["hash"], "abc123");
+        assert_eq!(commits[0]["summary"], "Fix the bug");
+        assert_eq!(commits[0]["stats"]["added"], 3);
+        assert_eq!(commits[0]["stats"]["removed"], 1);
+    }
+
+    #[test]
+    fn parse_log_file_output_empty_input() {
+        assert!(super::parse_log_file_output("").is_empty());
     }
 }

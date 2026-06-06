@@ -34,7 +34,7 @@
   // Color palette is canon-aligned (Builders Cookbook design-tokens):
   //   anthropic           → amber  (Claude brand)
   //   lightarchitects     → green  (Claude Code CLI default)
-  //   lightarchitects_native → teal (lÆx0 native)
+  //   light_architect → teal (lÆx0 native)
   //   codex               → magenta (OpenAI)
   //   mistral_vibe        → orange (Mistral brand)
   //   ollama              → indigo (legacy model-backend chip)
@@ -43,7 +43,7 @@
     $authProfile === null                    ? '#6b7280' :  // gray — unauthenticated
     $authProfile === 'anthropic'             ? '#F59E0B' :  // amber
     $authProfile === 'lightarchitects'       ? '#22C55E' :  // green
-    $authProfile === 'lightarchitects_native' ? '#14B8A6' : // teal
+    $authProfile === 'light_architect' ? '#14B8A6' : // teal
     $authProfile === 'codex'                 ? '#A855F7' :  // magenta
     $authProfile === 'mistral_vibe'          ? '#FB923C' :  // mistral orange
                                                 '#6366F1'    // ollama (legacy) — indigo
@@ -52,7 +52,7 @@
     $authProfile === null                    ? 'unauthenticated' :
     $authProfile === 'anthropic'             ? 'Anthropic' :
     $authProfile === 'lightarchitects'       ? 'Claude Code' :
-    $authProfile === 'lightarchitects_native' ? 'lÆx0 CLI' :
+    $authProfile === 'light_architect' ? 'lÆx0 CLI' :
     $authProfile === 'codex'                 ? 'Codex' :
     $authProfile === 'mistral_vibe'          ? 'Mistral Vibe' :
                                                 'Ollama'
@@ -129,7 +129,7 @@
       // its own chip color + label per the StatusBar palette above).
       const profile: import('$lib/types').AuthProfile | null =
         kind === 'lightarchitects'        ? 'lightarchitects' :
-        kind === 'lightarchitects_native' ? 'lightarchitects_native' :
+        kind === 'light_architect' ? 'light_architect' :
         kind === 'codex'                  ? 'codex' :
         kind === 'mistral_vibe'           ? 'mistral_vibe' :
         kind === 'anthropic'              ? 'anthropic' :
@@ -151,7 +151,7 @@
 
   const AGENT_MAP: Record<string, { label: string; color: string }> = {
     lightarchitects:         { label: 'Claude Code',   color: '#22C55E' },
-    lightarchitects_native:  { label: 'lÆx0 Native',  color: '#14B8A6' },
+    light_architect:  { label: 'lÆx0 Native',  color: '#14B8A6' },
     codex:                   { label: 'Codex',         color: '#A855F7' },
     mistral_vibe:            { label: 'Mistral Vibe',  color: '#FB923C' },
     anthropic:               { label: 'Anthropic',     color: '#F59E0B' },
@@ -199,7 +199,7 @@
   });
 </script>
 
-<div class="absolute bottom-[12px] left-[12px] flex items-center gap-[6px] pointer-events-auto z-10 bg-[var(--la-bg-elev-1)]/80 px-2 py-1 rounded backdrop-blur-sm border border-[var(--la-drawer-border)]">
+<div class="fixed bottom-[12px] left-1/2 -translate-x-1/2 flex items-center gap-[6px] pointer-events-auto z-10 bg-[var(--la-bg-elev-1)]/80 px-2 py-1 rounded backdrop-blur-sm border border-[var(--la-drawer-border)]">
   <!-- AYIN status (also surfaces auth failures from sse.ts; banner offers recovery) -->
   <div
     class="w-[7px] h-[7px] rounded-full shrink-0"

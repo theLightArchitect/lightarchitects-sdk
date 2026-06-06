@@ -460,7 +460,9 @@
         "replay.deterministic_seed",
         "identity.handoff",
         "hmac_chain.audit_trail",
-        "negative.contract"
+        "negative.contract",
+        "mosaic.strand_matrix.v1",
+        "wave.smart_suggestions.v1"
       ],
       "description": "Discriminator for contract category. v1 = 18 kinds; v1.1 (Phase A — industry parity) adds 17 (mcp.*, auth.flow, budget.envelope, sandbox.policy, daemon.heartbeat, feature.flag, migration.schema, eval.scenario, plugin.manifest, webhook.inbound, multimodal.input, checkpoint.state, crypto.primitive, hitl.flow); v1.2 (Phase B — LA-native frontier moat) adds 12 (strand.activation, canon.evolution, witness.evidence_chain, agent.scrum_round, gate.composition, ldb.benchmark, operator_wins.gate, covenant.assertion, replay.deterministic_seed, identity.handoff, hmac_chain.audit_trail, negative.contract)."
     },
@@ -856,6 +858,28 @@
             "request_schema": {
               "type": "object",
               "description": "JSON Schema for request body (POST/PUT/PATCH). Use {} for no body."
+            },
+            "query_params": {
+              "type": "object",
+              "description": "URL query parameters this endpoint accepts. Keys are parameter names (snake_case); values declare type + default + description. Distinct from request_schema (which is for the body). First introduced 2026-06-05 alongside gateway.get.v1-platform-builds-codename-progress.",
+              "patternProperties": {
+                "^[a-z][a-z0-9_]*$": {
+                  "type": "object",
+                  "required": ["type"],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": ["string", "integer", "boolean", "number"]
+                    },
+                    "default": {},
+                    "description": { "type": "string" },
+                    "enum": { "type": "array" },
+                    "required": { "type": "boolean", "default": false }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
             },
             "response_schemas": {
               "type": "object",

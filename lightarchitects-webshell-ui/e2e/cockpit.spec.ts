@@ -38,7 +38,7 @@ const MOCK_BUILD = {
   status:     'in_progress',
   confidence: 0.88,
   updatedAt:  new Date().toISOString(),
-  agent:      { kind: 'lightarchitects_native', backend: 'lightarchitects' },
+  agent:      { kind: 'light_architect', backend: 'lightarchitects' },
 };
 
 const MOCK_DECISION = {
@@ -85,7 +85,7 @@ async function setupCockpit(page: Page): Promise<void> {
         ollama: { base_url: 'http://localhost:11434', reachable: false },
       },
       config: {
-        agent: 'lightarchitects_native', backend: 'lightarchitects',
+        agent: 'light_architect', backend: 'lightarchitects',
         model: 'claude-opus-4-7', ollama_base_url: null, api_key_stored: false,
       },
       cwd: '/tmp',

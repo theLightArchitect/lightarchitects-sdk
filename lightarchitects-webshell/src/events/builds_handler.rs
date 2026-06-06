@@ -437,8 +437,8 @@ impl AgentDescriptor {
                     crate::config::CodexBackend::OllamaLaunch(_) => "ollama_launch",
                 },
             },
-            AgentSession::LightarchitectsNative(_) => Self {
-                kind: "lightarchitects_native",
+            AgentSession::LightArchitect(_) => Self {
+                kind: "light_architect",
                 backend: "native",
             },
             AgentSession::MistralVibe(_) => Self {
@@ -555,7 +555,7 @@ pub async fn create_build_handler(
             match session.agent.kind() {
                 crate::config::AgentKind::Lightarchitects => "lightarchitects",
                 crate::config::AgentKind::Codex => "codex",
-                crate::config::AgentKind::LightarchitectsNative => "lightarchitects_native",
+                crate::config::AgentKind::LightArchitect => "light_architect",
                 crate::config::AgentKind::MistralVibe => "mistral_vibe",
             },
             None,
@@ -1678,11 +1678,11 @@ mod tests {
     }
 
     #[test]
-    fn agent_descriptor_lightarchitects_native() {
-        use crate::config::LightarchitectsNativeConfig;
-        let sess = AgentSession::LightarchitectsNative(LightarchitectsNativeConfig::default());
+    fn agent_descriptor_light_architect() {
+        use crate::config::LightArchitectConfig;
+        let sess = AgentSession::LightArchitect(LightArchitectConfig::default());
         let d = AgentDescriptor::from_session(&sess);
-        assert_eq!(d.kind, "lightarchitects_native");
+        assert_eq!(d.kind, "light_architect");
         assert_eq!(d.backend, "native");
         let json = serde_json::to_string(&d).unwrap();
         assert!(

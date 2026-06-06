@@ -127,7 +127,7 @@
 
   // --- Native agent bridge state ---
   //
-  // Phase-10 (Phase 4): native agents (`lightarchitects_native`) route through
+  // Phase-10 (Phase 4): native agents (`light_architect`) route through
   // the HTTP SSE path `POST /api/builds/:id/copilot` directly — no WebSocket
   // bridge. The bridge spawned a sub-process that immediately exited, leaving
   // the drawer stuck in a "Thinking…" state with no provider response. Other
@@ -136,11 +136,11 @@
   let buildAgentKind = $state<string | undefined>(undefined);
 
   // Wire AgentWS only for non-native agent kinds that still use the WS bridge.
-  // For `lightarchitects_native`, sendMessage() uses api.copilotChatNative
+  // For `light_architect`, sendMessage() uses api.copilotChatNative
   // directly (HTTP SSE).
   $effect(() => {
     const buildId = sharedBuildId;
-    const isLaNative = $isNativeAgent || buildAgentKind === 'lightarchitects_native';
+    const isLaNative = $isNativeAgent || buildAgentKind === 'light_architect';
     // Stay disconnected when:
     //  - no session yet
     //  - native agent (uses HTTP SSE, not WS bridge)
@@ -660,7 +660,7 @@
     // immediately, leaving the drawer with no response).  Each SSE frame is
     // routed through handleAgentEvent — the same handler the WS path used —
     // so chat UI logic stays unchanged.
-    const isNative = buildAgentKind === 'lightarchitects_native' || get(isNativeAgent);
+    const isNative = buildAgentKind === 'light_architect' || get(isNativeAgent);
     if (isNative) {
       try {
         // withSession auto-recovers on 404 (e.g. webshell restart cleared

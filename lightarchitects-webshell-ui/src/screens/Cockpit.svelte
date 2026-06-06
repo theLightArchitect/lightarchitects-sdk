@@ -8,6 +8,10 @@
   import HITLInbox from '$lib/../components/Cockpit/HITLInbox.svelte';
   import ConductorHitlPanel from '$lib/../components/Cockpit/ConductorHitlPanel.svelte';
   import WaveComposer from '$lib/../components/Cockpit/WaveComposer.svelte';
+  import NorthstarPulseCard from '$lib/../components/Cockpit/NorthstarPulseCard.svelte';
+  import StrandMosaicCard from '$lib/../components/Cockpit/StrandMosaicCard.svelte';
+  import SmartDispatchCard from '$lib/../components/Cockpit/SmartDispatchCard.svelte';
+  import SquadConstellationCard from '$lib/../components/Cockpit/SquadConstellationCard.svelte';
   import PRMetadataBlock from '$lib/../components/Cockpit/PRMetadataBlock.svelte';
   import PRVerbSurface from '$lib/../components/Cockpit/PRVerbSurface.svelte';
   import NeedsActionZone from '$lib/../components/Cockpit/zones/NeedsActionZone.svelte';
@@ -839,6 +843,31 @@
     <!-- ── WAVE COMPOSER ─────────────────────────────────────────────────────── -->
     <div class="card-wave" data-area="wave-composer">
       <WaveComposer />
+    </div>
+
+    <!-- ── COCKPIT D0 AGGREGATOR CARDS ────────────────────────────────────────── -->
+    <!-- Sourced from webshell-api-surface-v1.md §2.51–§2.54.                    -->
+    <!-- Each card self-polls; cardRoles.ts entries: northstar-pulse,           -->
+    <!-- strand-mosaic, smart-dispatch, squad-constellation (exhaustiveness     -->
+    <!-- enforced by src/__tests__/cockpit-card-roles.test.ts).                  -->
+    <div class="card card-d0" data-area="d0-northstar">
+      <div class="card-label">NORTHSTAR PULSE</div>
+      <NorthstarPulseCard />
+    </div>
+
+    <div class="card card-d0" data-area="d0-mosaic">
+      <div class="card-label">STRAND MOSAIC</div>
+      <StrandMosaicCard />
+    </div>
+
+    <div class="card card-d0" data-area="d0-dispatch">
+      <div class="card-label">SMART DISPATCH</div>
+      <SmartDispatchCard />
+    </div>
+
+    <div class="card card-d0" data-area="d0-constellation">
+      <div class="card-label">SQUAD CONSTELLATION</div>
+      <SquadConstellationCard />
     </div>
 
   </div><!-- /bento -->

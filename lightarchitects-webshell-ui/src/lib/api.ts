@@ -70,10 +70,97 @@ export function parseGroundingHeader(header: string | null): GroundingInfo | nul
 }
 
 // --- Builds ---
+// ─── Cockpit d0 aggregator types (webshell-api-surface-v1.md §2.51–§2.54) ───
+
+/** Single pillar row from `GET /api/northstar/platform-pulse` (§2.51). */
+export interface PillarPulse {
+  id:     'P1' | 'P2' | 'P3' | 'P4' | 'P5' | 'P6' | 'P7';
+  label:  string;
+  score:  number;
+  status: 'ok' | 'warn' | 'err';
+  focus:  boolean;
+  hint:   string;
+}
+
+/** Response from `GET /api/northstar/platform-pulse` (§2.51). */
+export interface PlatformPulseResponse {
+  pillars:      PillarPulse[];
+  evaluated_at: string;
+}
+
+/** Cell value in the Strand Mosaic (§2.52). */
+export type MosaicCell = 'ok' | 'warn' | 'fail' | 'na';
+
+/** Gatekeeper cell vector — one per strand column. */
+export interface GateCells {
+  a: MosaicCell; s: MosaicCell; q: MosaicCell; t: MosaicCell;
+  p: MosaicCell; d: MosaicCell; k: MosaicCell;
+}
+
+/** Single project row from `GET /api/strand-mosaic` (§2.52). */
+export interface MosaicRow {
+  id:    string;
+  label: string;
+  meta:  string;
+  cells: GateCells;
+  risk:  'OK' | 'LOW' | 'MED' | 'HIGH' | 'CRIT';
+}
+
+/** Canonical gatekeeper owner map per `canon://gatekeeper-registry`. */
+export interface GatekeeperOwners {
+  a: string; s: string; q: string; t: string;
+  p: string; d: string; k: string;
+}
+
+/** Response from `GET /api/strand-mosaic?scope=platform` (§2.52). */
+export interface MosaicResponse {
+  rows:         MosaicRow[];
+  gatekeepers:  GatekeeperOwners;
+  evaluated_at: string;
+}
+
+/** Single suggestion row from `GET /api/wave/suggestions` (§2.53). */
+export interface WaveSuggestion {
+  action:   string;
+  reason:   string;
+  domain:   string;
+  priority: boolean;
+}
+
+/** Response from `GET /api/wave/suggestions?scope=platform` (§2.53). */
+export interface WaveSuggestionsResponse {
+  suggestions:  WaveSuggestion[];
+  evaluated_at: string;
+}
+
+/** Single sibling row from `GET /api/siblings` (squad status). */
+export interface SiblingStatus {
+  id:               string;
+  status:           string;
+  binary_path:      string;
+  binary_present:   boolean;
+  last_activity:    number | null;
+  uptime:           number;
+  lastHeartbeat:    string;
+  capabilities:     string[];
+}
+
 export const api = {
   // Workspaces
   listWorkspaces: () => request<Workspace[]>('/workspaces'),
   getWorkspace:   (id: string) => request<Workspace>(`/workspaces/${id}`),
+
+  // Cockpit d0 aggregators (webshell-api-surface-v1.md §2.51–§2.54)
+  /** Aggregated P1–P7 Northstar Pulse across all active builds. §2.51. */
+  getNorthstarPulse: () => request<PlatformPulseResponse>('/northstar/platform-pulse'),
+  /** Strand-Mosaic matrix (project × gatekeeper) at given scope. §2.52. */
+  getStrandMosaic:   (scope: string = 'platform') =>
+    request<MosaicResponse>(`/strand-mosaic?scope=${encodeURIComponent(scope)}`),
+  /** Smart-dispatch suggestions composed from observable platform signals. §2.53. */
+  getWaveSuggestions: (scope: string = 'platform') =>
+    request<WaveSuggestionsResponse>(`/wave/suggestions?scope=${encodeURIComponent(scope)}`),
+  /** Squad sibling status — already shipped at /api/siblings (real_data::get_squad_status). */
+  getSquadStatus:    () => request<SiblingStatus[]>('/siblings'),
 
   // Builds (GET = helix portfolio; POST/GET :id = PTY session)
   listBuilds:     () => request<unknown>('/builds'),
@@ -118,7 +205,7 @@ export const api = {
 
   // Copilot — native SSE streaming (Phase-10).
   //
-  // For builds whose backend is `lightarchitects_native`, the POST returns a
+  // For builds whose backend is `light_architect`, the POST returns a
   // text/event-stream response from `drive_native_sse` (Rust side). This
   // helper reads that stream chunk-by-chunk and emits one parsed frame per
   // `onEvent` callback.  Replaces the prior WebSocket agent-bridge path

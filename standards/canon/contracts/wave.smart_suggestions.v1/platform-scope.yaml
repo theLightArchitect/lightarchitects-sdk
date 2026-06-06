@@ -1,0 +1,182 @@
+# Wave Smart-Dispatch suggestions — platform scope
+# Source: webshell-api-surface-v1.md §2.53
+# Handler: lightarchitects-webshell/src/server/wave_routes.rs::wave_suggestions_handler
+# Authored: 2026-06-05 (cockpit-d0-platform follow-up)
+
+schema_version: la-contracts/v1
+id: wave.smart_suggestions.v1.platform-scope
+kind: wave.smart_suggestions.v1
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P3, P6]
+
+operator_intent: |
+  Smart Dispatch is the cockpit's coaching surface. Instead of listing every
+  available slash-command as a wall of buttons, the platform composes
+  observable signals into a short, reasons-aware action list. Every
+  suggestion carries WHY it is being recommended, the Strand Mosaic domain
+  it affects, and a priority flag. The operator stays oriented in the
+  Canon XXX vocabulary and can route to dispatch with one click.
+
+prior_art:
+  - name: Operators Manual — Smart Dispatch pattern
+    url: canon://operators-manual
+    what_we_adopt: action+reason+domain ranking pattern
+    what_we_extend: gate-aware (Q for drift, S for HITL backlog, K for helix promo)
+  - name: §2.7 Dispatch Sub-Router
+    url: canon://webshell-api-surface-v1
+    what_we_adopt: existing /api/dispatch/* execute path is the action target
+    what_we_extend: pre-confirmation reasoning is now operator-legible
+
+inherits_from: []
+
+canon_refs:
+  - canon://platform-canon
+  - canon://gatekeeper-registry
+  - canon://operators-manual
+  - canon://northstar
+
+memory_refs: []
+
+inputs:
+  - name: scope
+    type: enum
+    description: "platform | project:<slug> | build:<id>"
+  - name: max_suggestions
+    type: integer
+    description: "optional cap; server-side default = 6"
+
+observable_outputs:
+  - "Suggestions are reasons-aware: each carries a `reason` field tied to ≥1 platform signal"
+  - "Suggestions are gate-aware: domain code ∈ {A,S,Q,T,P,D,K,O} from the Strand Mosaic vocabulary"
+  - "Priority order: priority-true items first; insertion-order within bucket; cap honoured"
+  - "Dedupe by `action` slug — first emission wins (priority preserved)"
+  - "/OBSERVE always emits — there is always an AYIN posture to verify"
+
+errors:
+  - condition: scope value is not recognised
+    code: E_WAVE_SCOPE_UNKNOWN
+    operator_sees: "Unknown wave scope; expected platform | project:<slug> | build:<id>"
+    forbidden: "silently returning empty suggestions for an unrecognised scope"
+    severity: MEDIUM
+  - condition: signal gathering exceeded budget
+    code: E_WAVE_SIGNAL_TIMEOUT
+    operator_sees: "Wave suggestion compose timed out; falling back to baseline rules"
+    forbidden: "blocking the cockpit on a slow upstream"
+    severity: MEDIUM
+
+observability:
+  required_spans:
+    - name: webshell.http.request
+      required_metadata: [method, path, status, duration_ms, suggestion_count]
+      parent_relationship: root
+  duration_budget_ms: 3000
+  trace_context_propagation: true
+
+persistence:
+  - path: lightarchitects-webshell/src/server/wave_routes.rs
+    schema_ref: code.handler.wave_suggestions
+    ttl: forever
+    hmac_chained: false
+
+hitl_boundaries: [none]
+
+forbidden_behaviors:
+  - "Unreasoned suggestions: every action must carry a `reason` string"
+  - "Action slugs outside the canonical set: {/BUILD, /SECURE, /VERIFY, /ENRICH, /OBSERVE, /REVIEW, /OPTIMIZE}"
+  - "Domain codes outside the Strand Mosaic vocabulary"
+  - "Suppressing /OBSERVE: the AYIN observability check is always relevant at d0"
+  - "Stale reasons: reason text must reflect the current snapshot of signals"
+
+conformance_test:
+  given: "Webshell running; AppState has supervisor_states + builds + soul_store fields populated"
+  when: "GET /api/wave/suggestions?scope=platform"
+  then:
+    - assertion: "response carries suggestions[] capped at 6 entries"
+      span_witness: webshell.http.request
+      evidence_tier_required: VERIFIED
+    - assertion: "/OBSERVE is always present"
+      span_witness: webshell.http.request
+      evidence_tier_required: VERIFIED
+    - assertion: "every suggestion has non-empty reason field"
+      span_witness: webshell.http.request
+      evidence_tier_required: VERIFIED
+    - assertion: "priority-true items appear before priority-false items"
+      span_witness: webshell.http.request
+      evidence_tier_required: VERIFIED
+    - assertion: "no duplicate action slugs"
+      span_witness: webshell.http.request
+      evidence_tier_required: VERIFIED
+  fixtures:
+    - wave.platform.example.json
+  timeout_seconds: 10
+
+status_per_provider:
+  anthropic_api:   { result: N/A, evidence_tier: VERIFIED, na_reason: "Platform-doctrine surface — provider-independent" }
+  anthropic_http:  { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  openai_api:      { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  openai_compat_generic: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  ollama_cloud:    { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  ollama_local:    { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  litellm_proxy:   { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  claude_code_cli: { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  mistral_api:     { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  groq_api:        { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+  openrouter_api:  { result: N/A, evidence_tier: VERIFIED, na_reason: "Provider-independent" }
+
+alpha_gate:
+  verdict: deferred
+  reason: |
+    v1 surface ships with a rule engine driven by observable AppState signals
+    (drift_total, supervisors, active_builds, soul_present). Alpha gate
+    requires the rule engine to consume the full evidence chain documented in
+    Strand Mosaic v0.1 (CORSO sniff, SERAPH findings, AYIN spans, coverage
+    telemetry) so each suggestion's `reason` cites a canonical evidence URI.
+    Deepening tracks in follow-up `wave-evidence-chains` build.
+
+wave_smart_suggestions:
+  schema_version: la-contracts/v1
+  scope_values: [platform, "project:<slug>", "build:<id>"]
+  action_enum: ["/BUILD", "/SECURE", "/VERIFY", "/ENRICH", "/OBSERVE", "/REVIEW", "/OPTIMIZE"]
+  domain_enum: [A, S, Q, T, P, D, K, O]
+  priority_order: priority_first_then_insertion
+  max_suggestions_default: 6
+  dedupe_by: action
+  ranking_rules:
+    - id: drift-triggers-optimize
+      trigger: "drift_total > 0"
+      action: "/OPTIMIZE"
+      domain: Q
+      priority: true
+    - id: supervisors-trigger-verify
+      trigger: "supervisors > 0"
+      action: "/VERIFY"
+      domain: T
+      priority: false
+    - id: idle-triggers-build
+      trigger: "active_builds == 0"
+      action: "/BUILD"
+      domain: A
+      priority: false
+    - id: soul-triggers-enrich
+      trigger: "soul_present"
+      action: "/ENRICH"
+      domain: K
+      priority: false
+    - id: always-observe
+      trigger: always
+      action: "/OBSERVE"
+      domain: O
+      priority: false
+    - id: builds-trigger-secure
+      trigger: "active_builds > 0"
+      action: "/SECURE"
+      domain: S
+      priority: false
+  dispatch_target_endpoint: /api/dispatch/execute
+  dispatch_payload_shape:
+    action: string
+    scope: string
+    reason: string
+    evidence: array

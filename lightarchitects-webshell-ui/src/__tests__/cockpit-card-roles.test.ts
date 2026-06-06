@@ -10,21 +10,25 @@ function readSource(rel: string): string {
 }
 
 const ANNOTATED_SOURCES: Record<CockpitCardRole, string[]> = {
-  'preset-chips':       ['src/components/Cockpit/PresetChips.svelte'],
-  'target-breadcrumb':  ['src/components/Cockpit/TargetBreadcrumb.svelte'],
-  'quick-pick-palette': ['src/components/Cockpit/QuickPickPalette.svelte'],
-  'build-health':       ['src/screens/Cockpit.svelte'],
-  'hitl-escalations':   ['src/screens/Cockpit.svelte'],
-  'worker-fleet':       ['src/screens/Cockpit.svelte'],
-  'decision-feed':      ['src/screens/Cockpit.svelte'],
-  'git-state':          ['src/screens/Cockpit.svelte'],
-  'builds-rail':        ['src/screens/Cockpit.svelte'],
-  'hitl-inbox':         ['src/screens/Cockpit.svelte'],
-  'pr-detail-panel':    ['src/screens/Cockpit.svelte'],
-  'engineer-zones':     ['src/screens/Cockpit.svelte'],
-  'copilot-drawer':     ['src/components/CopilotDrawer.svelte'],
-  'strategy-catalogue': ['src/screens/Cockpit.svelte'],
-  'wave-composer':      ['src/components/Cockpit/WaveComposer.svelte'],
+  'preset-chips':        ['src/components/Cockpit/PresetChips.svelte'],
+  'target-breadcrumb':   ['src/components/Cockpit/TargetBreadcrumb.svelte'],
+  'quick-pick-palette':  ['src/components/Cockpit/QuickPickPalette.svelte'],
+  'build-health':        ['src/screens/Cockpit.svelte'],
+  'hitl-escalations':    ['src/screens/Cockpit.svelte'],
+  'worker-fleet':        ['src/screens/Cockpit.svelte'],
+  'decision-feed':       ['src/screens/Cockpit.svelte'],
+  'git-state':           ['src/screens/Cockpit.svelte'],
+  'builds-rail':         ['src/screens/Cockpit.svelte'],
+  'hitl-inbox':          ['src/screens/Cockpit.svelte'],
+  'pr-detail-panel':     ['src/screens/Cockpit.svelte'],
+  'engineer-zones':      ['src/screens/Cockpit.svelte'],
+  'copilot-drawer':      ['src/components/CopilotDrawer.svelte'],
+  'strategy-catalogue':  ['src/screens/Cockpit.svelte'],
+  'wave-composer':       ['src/components/Cockpit/WaveComposer.svelte'],
+  'northstar-pulse':     ['src/components/Cockpit/NorthstarPulseCard.svelte'],
+  'strand-mosaic':       ['src/components/Cockpit/StrandMosaicCard.svelte'],
+  'smart-dispatch':      ['src/components/Cockpit/SmartDispatchCard.svelte'],
+  'squad-constellation': ['src/components/Cockpit/SquadConstellationCard.svelte'],
 };
 
 describe('Cockpit card-role registry', () => {
@@ -83,7 +87,35 @@ describe('Cockpit card-role registry', () => {
     }
   });
 
-  it('registry has exactly 15 roles — adding a card requires updating this test', () => {
-    expect(ALL_COCKPIT_CARD_ROLES).toHaveLength(15);
+  it('every data-card-role attribute in NorthstarPulseCard.svelte is registered', () => {
+    const src = readSource('src/components/Cockpit/NorthstarPulseCard.svelte');
+    for (const [, role] of src.matchAll(/data-card-role="([^"]+)"/g)) {
+      expect(ALL_COCKPIT_CARD_ROLES).toContain(role);
+    }
+  });
+
+  it('every data-card-role attribute in StrandMosaicCard.svelte is registered', () => {
+    const src = readSource('src/components/Cockpit/StrandMosaicCard.svelte');
+    for (const [, role] of src.matchAll(/data-card-role="([^"]+)"/g)) {
+      expect(ALL_COCKPIT_CARD_ROLES).toContain(role);
+    }
+  });
+
+  it('every data-card-role attribute in SmartDispatchCard.svelte is registered', () => {
+    const src = readSource('src/components/Cockpit/SmartDispatchCard.svelte');
+    for (const [, role] of src.matchAll(/data-card-role="([^"]+)"/g)) {
+      expect(ALL_COCKPIT_CARD_ROLES).toContain(role);
+    }
+  });
+
+  it('every data-card-role attribute in SquadConstellationCard.svelte is registered', () => {
+    const src = readSource('src/components/Cockpit/SquadConstellationCard.svelte');
+    for (const [, role] of src.matchAll(/data-card-role="([^"]+)"/g)) {
+      expect(ALL_COCKPIT_CARD_ROLES).toContain(role);
+    }
+  });
+
+  it('registry has exactly 19 roles — adding a card requires updating this test', () => {
+    expect(ALL_COCKPIT_CARD_ROLES).toHaveLength(19);
   });
 });

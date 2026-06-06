@@ -39,7 +39,7 @@ test.describe('LA Native Backend Setup Flow', () => {
     );
     await page.route('**/api/setup/models**', (route) => {
       const url = new URL(route.request().url());
-      if (url.searchParams.get('backend') === 'la-native' || url.searchParams.get('backend') === 'lightarchitects_native') {
+      if (url.searchParams.get('backend') === 'la-native' || url.searchParams.get('backend') === 'light_architect') {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(LA_NATIVE_MODELS) });
       }
       return route.continue();
@@ -89,7 +89,7 @@ test.describe('LA Native Backend Setup Flow', () => {
     }
   });
 
-  test('setup/save receives lightarchitects_native agent when LA Native selected', async ({ page }) => {
+  test('setup/save receives light_architect agent when LA Native selected', async ({ page }) => {
     let savedBody: Record<string, unknown> | null = null;
     await page.route('**/api/setup/save', async (route) => {
       const body = route.request().postDataJSON() as Record<string, unknown>;
@@ -115,14 +115,14 @@ test.describe('LA Native Backend Setup Flow', () => {
     }
 
     if (savedBody) {
-      expect(savedBody.agent).toBe('lightarchitects_native');
+      expect(savedBody.agent).toBe('light_architect');
     }
   });
 });
 
 // ── Phase-10 Phase 4: CopilotDrawer routes native agents through HTTP SSE ────
 //
-// Verifies the WS→SSE routing fix: a `lightarchitects_native` build, when a
+// Verifies the WS→SSE routing fix: a `light_architect` build, when a
 // message is sent from the CopilotDrawer, must POST to
 // /api/builds/{id}/copilot and consume the SSE response chunk-by-chunk —
 // not connect to the WebSocket agent bridge.
@@ -142,7 +142,7 @@ test.describe('CopilotDrawer native SSE routing (Phase-10)', () => {
           ...SETUP_INFO,
           setup_complete: true,
           config: {
-            agent: 'lightarchitects_native',
+            agent: 'light_architect',
             backend: 'la-native',
             model: 'nemotron-3-super:cloud',
             api_key_stored: true,

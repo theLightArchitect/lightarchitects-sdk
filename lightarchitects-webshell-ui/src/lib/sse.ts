@@ -804,7 +804,7 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
         old_agent_kind: string;
       };
       const VALID_AUTH_PROFILES = new Set<string>([
-        'anthropic', 'lightarchitects', 'lightarchitects_native', 'codex', 'mistral_vibe',
+        'anthropic', 'lightarchitects', 'light_architect', 'codex', 'mistral_vibe',
       ]);
       if (VALID_AUTH_PROFILES.has(payload.agent_kind)) {
         authProfile.set(payload.agent_kind as import('./types').AuthProfile);

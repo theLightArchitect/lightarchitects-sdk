@@ -1120,7 +1120,7 @@ pub(super) async fn call_subprocess(
     let mut guard = proc_lock.lock().await;
 
     let actor = match &session.agent {
-        AgentSession::Lightarchitects(_) | AgentSession::LightarchitectsNative(_) => "eva",
+        AgentSession::Lightarchitects(_) | AgentSession::LightArchitect(_) => "eva",
         AgentSession::Codex(_) => "codex",
         AgentSession::MistralVibe(_) => "vibe",
     };

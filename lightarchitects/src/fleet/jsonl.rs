@@ -25,7 +25,11 @@ use tokio::{
 };
 use tracing::{debug, warn};
 
-use super::{error::FleetError, span::ExitPath, tracker::FleetTracker};
+use super::{
+    error::FleetError,
+    span::{AgentWaveContext, ExitPath},
+    tracker::FleetTracker,
+};
 
 /// Poll interval for reading new JSONL lines.
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
@@ -78,6 +82,49 @@ pub(super) struct AgentToolInput {
     /// `isolation` tag — retained for future worktree-path resolution (V2+).
     #[allow(dead_code)]
     pub isolation: Option<String>,
+    /// Wave/task focus block emitted by `/BUILD` wave-dispatcher (B1 — Path B
+    /// Phase 1). When present, triggers an immediate `agent_focused_on` call
+    /// on the tracker so the spawn-then-focus pair lands atomically.
+    ///
+    /// Uses a tolerant deserializer: a malformed `wave_context` block (wrong
+    /// type, garbage payload) yields `None` rather than failing the entire
+    /// input. A buggy producer must never lose the agent spawn itself.
+    #[serde(default, deserialize_with = "deserialize_wave_context_or_none")]
+    pub wave_context: Option<WaveContextInput>,
+}
+
+/// Tolerant deserializer for [`AgentToolInput::wave_context`]. Returns `None`
+/// for any input that can't be parsed as a `WaveContextInput` — including
+/// strings, numbers, nulls, and structurally-wrong objects.
+fn deserialize_wave_context_or_none<'de, D>(
+    deserializer: D,
+) -> Result<Option<WaveContextInput>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(v.and_then(|raw| serde_json::from_value(raw).ok()))
+}
+
+/// Deserializable mirror of [`AgentWaveContext`]. All fields are optional so a
+/// partial context (e.g., just `wave_id`, no `task_id` yet) is honored verbatim.
+#[derive(Deserialize, Default)]
+pub(super) struct WaveContextInput {
+    pub build_codename: Option<String>,
+    pub wave_id: Option<String>,
+    pub task_id: Option<String>,
+    pub focus_target_fn: Option<String>,
+}
+
+impl From<WaveContextInput> for AgentWaveContext {
+    fn from(i: WaveContextInput) -> Self {
+        Self {
+            build_codename: i.build_codename,
+            wave_id: i.wave_id,
+            task_id: i.task_id,
+            focus_target_fn: i.focus_target_fn,
+        }
+    }
 }
 
 // ── Path resolution ───────────────────────────────────────────────────────────
@@ -280,10 +327,17 @@ async fn handle_assistant_record(record: JsonlRecord, tracker: &FleetTracker) {
         let description = input.description.unwrap_or_default();
         let agent_type = input.subagent_type.unwrap_or_else(|| "unknown".into());
         let run_in_background = input.run_in_background.unwrap_or(false);
+        let wave_context = input.wave_context;
 
         tracker
             .agent_spawned(id.clone(), agent_type, description, run_in_background)
             .await;
+
+        // B1: if the /BUILD wave-dispatcher tagged this spawn with a
+        // wave_context block, propagate it as a focus update immediately.
+        if let Some(ctx) = wave_context {
+            tracker.agent_focused_on(id, ctx.into());
+        }
     }
 }
 
@@ -437,6 +491,139 @@ mod tests {
         let tracker = make_tracker();
         process_line("this is not json {{{", &tracker).await;
         assert_eq!(tracker.snapshot().nodes.len(), 0);
+    }
+
+    // ── B1 — wave_context propagation ────────────────────────────────────────
+
+    #[tokio::test]
+    #[allow(clippy::unwrap_used)]
+    async fn process_assistant_propagates_wave_context_when_present() {
+        let tracker = make_tracker();
+        let line = r#"{
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": [{
+                    "type": "tool_use",
+                    "name": "Agent",
+                    "id": "corso-w3.2-test-001",
+                    "input": {
+                        "description": "cover handle_message branches",
+                        "subagent_type": "engineer",
+                        "wave_context": {
+                            "build_codename": "webshell-copilot-providers",
+                            "wave_id": "w3.2",
+                            "task_id": "t3.2.1",
+                            "focus_target_fn": "fn handle_message"
+                        }
+                    }
+                }]
+            }
+        }"#;
+        process_line(line, &tracker).await;
+
+        let snap = tracker.snapshot();
+        let node = snap
+            .nodes
+            .iter()
+            .find(|n| n.agent_id == "corso-w3.2-test-001")
+            .unwrap();
+        assert_eq!(
+            node.build_codename.as_deref(),
+            Some("webshell-copilot-providers")
+        );
+        assert_eq!(node.wave_id.as_deref(), Some("w3.2"));
+        assert_eq!(node.task_id.as_deref(), Some("t3.2.1"));
+        assert_eq!(node.focus_target_fn.as_deref(), Some("fn handle_message"));
+    }
+
+    #[tokio::test]
+    #[allow(clippy::unwrap_used)]
+    async fn process_assistant_without_wave_context_leaves_focus_unset() {
+        // Backwards compat: ad-hoc Agent calls (no /BUILD pipeline) carry no
+        // wave_context, and FleetNode focus fields must remain `None`.
+        let tracker = make_tracker();
+        let line = r#"{
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": [{
+                    "type": "tool_use",
+                    "name": "Agent",
+                    "id": "adhoc-001",
+                    "input": {
+                        "description": "ad-hoc research",
+                        "subagent_type": "researcher"
+                    }
+                }]
+            }
+        }"#;
+        process_line(line, &tracker).await;
+
+        let snap = tracker.snapshot();
+        let node = snap
+            .nodes
+            .iter()
+            .find(|n| n.agent_id == "adhoc-001")
+            .unwrap();
+        assert!(node.build_codename.is_none());
+        assert!(node.wave_id.is_none());
+        assert!(node.task_id.is_none());
+        assert!(node.focus_target_fn.is_none());
+    }
+
+    #[tokio::test]
+    #[allow(clippy::unwrap_used)]
+    async fn wave_context_with_partial_fields_propagates_what_it_has() {
+        // F-3 / B1: agent might be wave-bound but not yet task-focused.
+        let tracker = make_tracker();
+        let line = r#"{
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": [{
+                    "type": "tool_use",
+                    "name": "Agent",
+                    "id": "wave-bound-001",
+                    "input": {
+                        "description": "wave init",
+                        "subagent_type": "engineer",
+                        "wave_context": {
+                            "build_codename": "test-build",
+                            "wave_id": "w1"
+                        }
+                    }
+                }]
+            }
+        }"#;
+        process_line(line, &tracker).await;
+
+        let snap = tracker.snapshot();
+        let node = snap
+            .nodes
+            .iter()
+            .find(|n| n.agent_id == "wave-bound-001")
+            .unwrap();
+        assert_eq!(node.build_codename.as_deref(), Some("test-build"));
+        assert_eq!(node.wave_id.as_deref(), Some("w1"));
+        assert!(node.task_id.is_none());
+        assert!(node.focus_target_fn.is_none());
+    }
+
+    #[tokio::test]
+    #[allow(clippy::expect_used)]
+    async fn wave_context_malformed_does_not_block_spawn() {
+        // Robustness: if the wave_context block is malformed JSON, spawn must
+        // still succeed and the focus fields stay None — never lose the agent.
+        let input_json: serde_json::Value = serde_json::from_str(
+            r#"{"description":"x","subagent_type":"engineer","wave_context":"not an object"}"#,
+        )
+        .expect("input_json parses");
+        let input = extract_agent_input(Some(&input_json));
+        // The serde Option<WaveContextInput> deserializer returns None on type
+        // mismatch (since we don't deny_unknown_fields), so wave_context is None.
+        assert!(input.wave_context.is_none());
+        assert_eq!(input.description.as_deref(), Some("x"));
     }
 
     // ── File tailer integration ───────────────────────────────────────────────

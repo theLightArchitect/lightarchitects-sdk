@@ -66,12 +66,16 @@ pub mod git_routes;
 pub mod litellm_chat;
 pub mod litellm_state;
 pub mod mcp_routes;
+pub mod mosaic_routes;
+pub mod northstar_routes;
 pub mod observability_spans;
 pub mod program_routes;
 pub mod pty_respawn;
 pub mod question_routes;
 pub mod roadmap;
 pub mod spawn_reaper;
+pub mod squad_routes;
+pub mod wave_routes;
 
 /// Snapshot of the browser UI state, periodically reported by the frontend.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -364,7 +368,7 @@ pub struct AppState {
     /// merge gate `OLLAMA_API_KEY_TOCTOU`.  `None` when the env var is unset
     /// or empty at server startup.
     pub la_native_api_key: Option<secrecy::SecretString>,
-    /// Persistent native-session pool for `lightarchitects_native` builds.
+    /// Persistent native-session pool for `light_architect` builds.
     ///
     /// Keyed by build UUID.  Each entry is an `Arc<Mutex<NativeSession>>` —
     /// a live [`crate::copilot::native_session::NativeSession`] whose
@@ -1285,6 +1289,20 @@ pub fn build_app(state: AppState) -> Router {
             "/api/conductor/hitl/{task_id}/resolve",
             post(conductor_routes::resolve_hitl_handler),
         )
+        // ── Cockpit d0 platform aggregators (cockpit-d0-platform — 2026-06-05) ─
+        .route(
+            "/api/northstar/platform-pulse",
+            get(northstar_routes::platform_pulse_handler),
+        )
+        .route(
+            "/api/strand-mosaic",
+            get(mosaic_routes::strand_mosaic_handler),
+        )
+        .route(
+            "/api/wave/suggestions",
+            get(wave_routes::wave_suggestions_handler),
+        )
+        .route("/api/squad/a2a", get(squad_routes::squad_a2a_sse_handler))
         .route("/api/arena/status", get(real_data::get_arena_status))
         .route("/api/mcp-servers", get(real_data::list_mcp_servers))
         .route(
@@ -1440,6 +1458,9 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/git/pr/review", post(git_routes::review_pr_handler))
         .route("/api/git/worktrees", post(git_routes::worktrees_handler))
         .route("/api/git/log", get(git_routes::log_handler))
+        .route("/api/git/diff-file", post(git_routes::diff_file_handler))
+        .route("/api/git/blame", post(git_routes::blame_handler))
+        .route("/api/git/log-file", post(git_routes::log_file_handler))
         // ── Roadmap artifact (webshell-roadmap-rendering) ────────────────────
         .route("/api/roadmap", get(roadmap::roadmap_handler))
         // ── Alpha program manifest (webshell-program-and-comms-wiring) ────────
@@ -2126,7 +2147,7 @@ async fn auth_nonce_exchange(
 /// Response shape:
 /// ```json
 /// {
-///   "kind": "lightarchitects" | "codex" | "lightarchitects_native" | "mistral_vibe",
+///   "kind": "lightarchitects" | "codex" | "light_architect" | "mistral_vibe",
 ///   "connected_providers": ["anthropic", "openai", "mistral"]
 /// }
 /// ```
@@ -2142,7 +2163,7 @@ async fn agent_current_handler(
     let kind = match agent.kind() {
         crate::config::AgentKind::Lightarchitects => "lightarchitects",
         crate::config::AgentKind::Codex => "codex",
-        crate::config::AgentKind::LightarchitectsNative => "lightarchitects_native",
+        crate::config::AgentKind::LightArchitect => "light_architect",
         crate::config::AgentKind::MistralVibe => "mistral_vibe",
     };
 
@@ -2199,7 +2220,7 @@ async fn agent_current_handler(
 /// ```json
 /// {
 ///   "session_id": "16d86faa-0e56-4642-bfec-c76f50f74fcb" | null,
-///   "agent_kind": "lightarchitects" | "codex" | "lightarchitects_native" | "mistral_vibe",
+///   "agent_kind": "lightarchitects" | "codex" | "light_architect" | "mistral_vibe",
 ///   "port": 8733
 /// }
 /// ```
@@ -2211,7 +2232,7 @@ async fn session_current_handler(
     let kind = match agent.kind() {
         crate::config::AgentKind::Lightarchitects => "lightarchitects",
         crate::config::AgentKind::Codex => "codex",
-        crate::config::AgentKind::LightarchitectsNative => "lightarchitects_native",
+        crate::config::AgentKind::LightArchitect => "light_architect",
         crate::config::AgentKind::MistralVibe => "mistral_vibe",
     };
     axum::Json(serde_json::json!({

@@ -110,7 +110,7 @@ test.describe('Fleet panel E2E', () => {
                 ollama: { base_url: 'http://localhost:11434', reachable: false },
               },
               config: {
-                agent: 'lightarchitects_native', backend: 'lightarchitects',
+                agent: 'light_architect', backend: 'lightarchitects',
                 model: 'claude-opus-4-7', ollama_base_url: null, api_key_stored: false,
               },
               cwd: '/tmp',

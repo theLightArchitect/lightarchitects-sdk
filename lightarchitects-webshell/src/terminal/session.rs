@@ -92,7 +92,7 @@ pub async fn run_session(
     }
 
     let result = if let Some(session) = build {
-        if let AgentSession::LightarchitectsNative(_) = &session.agent {
+        if let AgentSession::LightArchitect(_) = &session.agent {
             run_agent_persistent(socket, &session).await
         } else {
             run_persistent(socket, &config, &session).await
@@ -120,7 +120,7 @@ async fn run_persistent(
     config: &Config,
     session: &BuildSession,
 ) -> Result<(), anyhow::Error> {
-    if let AgentSession::LightarchitectsNative(_) = &session.agent {
+    if let AgentSession::LightArchitect(_) = &session.agent {
         run_agent_persistent(socket, session).await
     } else {
         ensure_pty_started(session, config).await?;

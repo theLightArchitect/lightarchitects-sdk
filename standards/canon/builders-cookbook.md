@@ -6667,7 +6667,7 @@ The nine dimensions and what 5 stars actually means for each. Derived from compe
 
 ---
 
-## §63 Untrusted-Input Operational Patterns (P1–P4)
+## §63 Untrusted-Input Operational Patterns (P1–P5)
 
 > "The simple believeth every word: but the prudent man looketh well to his going." — Proverbs 14:15
 
@@ -6716,6 +6716,41 @@ Four operational patterns for tools that ingest user/operator-controlled input. 
 | **Mitigation** | (1) Walk path per-segment; (2) `symlink_metadata()` each segment; reject if `is_symlink()`; (3) THEN `canonicalize()`; (4) THEN **post-canonicalize root re-check** under allowlist (defeats TOCTOU race where a directory becomes a symlink between segment walk and canonicalize) |
 | **Static-lint rule** | Forbid `std::fs::canonicalize()` followed by `is_symlink()` check; require canonicalize wrapped in per-segment symlink reject + post-canonicalize root validation |
 | **Test vector** | 10K mutated path inputs including `..` traversal, symlink chains (`a -> b -> c -> /etc/passwd`), symlink-bomb fixtures (`fixture.rs -> /etc/passwd`), race-window injection (concurrent symlink creation during walk); assert all rejected before contents read |
+
+### §63.P5 — Tolerant deserialization for SCR1-F1 untrusted-producer JSONL/IPC
+
+**Ratified**: 2026-06-05 (Kevin direct, LÆX RATIFY WITH CONDITIONS — §63 schema reframing applied; PROVISIONALLY_VALID N=1; scope-clarified vs Security-Guardrails §3).
+
+| Field | Content |
+|-------|---------|
+| **Threat** | CWE-20 Improper Input Validation — silent loss of an entire parse record when an upstream producer emits one malformed sub-field |
+| **Vector** | New `Option<T>` field added to a JSONL/IPC parse struct receiving from an untrusted producer (Claude Code session JSONL, `/BUILD` wave-dispatcher emissions, sibling subprocess stdout, webhook payloads). Bare `Option<T>` causes serde to fail the **entire** struct deserialization when THAT field is malformed (wrong type, garbage payload). Critical sibling fields are lost; the record disappears from downstream tracking |
+| **Mitigation** | `#[serde(default, deserialize_with = "tolerant_or_none")]` with a helper that returns `Option<T>`: deserialize to `serde_json::Value` first, attempt typed conversion, fall to `None` on any error. Field-level failures stay isolated; the record persists. **Scope**: applies ONLY where `deny_unknown_fields` is intentionally absent for SCR1-F1 forward-compat. For strict HTTP request bodies, Security-Guardrails §3 `deny_unknown_fields` remains canonical — do NOT extend this pattern there |
+| **Static-lint rule** | On any struct annotated `// SCR1-F1 untrusted-producer parse target`, forbid bare `Option<T>` on new `Deserialize` fields without a tolerant `deserialize_with`. CI lint complements §S48.2n (`#[serde(default)]`) |
+| **Test vector** | Inject field-level malformed payloads (wrong JSON type for declared field, garbage bytes, null-on-required-shape); assert critical sibling fields still parse AND the record reaches downstream tracking; assert the tolerant field renders as `None` |
+
+**Reference implementation pattern:**
+
+```rust
+#[derive(Deserialize)]
+pub(crate) struct ParseTarget {
+    pub critical_field: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_X_or_none")]
+    pub optional_new_field: Option<X>,
+}
+
+fn deserialize_X_or_none<'de, D>(d: D) -> Result<Option<X>, D::Error>
+where D: serde::Deserializer<'de> {
+    let v = Option::<serde_json::Value>::deserialize(d)?;
+    Ok(v.and_then(|raw| serde_json::from_value(raw).ok()))
+}
+```
+
+**Provisional framing (N=1)**: Source moment — Path B Phase 1 (B1) — `wave_context` field on `AgentToolInput` in `lightarchitects/src/fleet/jsonl.rs`. Initial bare-`Option` impl lost the entire agent spawn when wave_context was malformed; the `wave_context_malformed_does_not_block_spawn` test surfaced this; tolerant deserializer landed in the same PR. Promote to VALIDATED on second independent instance in another untrusted-producer parse path.
+
+**Cross-references**:
+- **Companion lint**: §S48.2n requires `#[serde(default)]` on new `Deserialize` fields — this pattern extends it for the untrusted-producer subset.
+- **Boundary rule**: Security-Guardrails §3 `serde deny_unknown_fields` is canonical for strict-validation surfaces (HTTP request bodies, etc.). This §63.P5 applies in the explicitly-different SCR1-F1 zone where forward-compat tolerance is the goal.
 
 ### Cross-references
 

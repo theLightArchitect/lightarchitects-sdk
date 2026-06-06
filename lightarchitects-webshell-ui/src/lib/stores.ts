@@ -490,9 +490,9 @@ export const activeBuild = derived(
   ([$builds, $id]) => $id ? $builds.find(b => b.id === $id) ?? null : null
 );
 
-// Whether the active build uses the native agent bridge (kind === 'lightarchitects_native')
+// Whether the active build uses the native agent bridge (kind === 'light_architect')
 export const isNativeAgent = derived(activeBuild, ($build) =>
-  $build?.agent?.kind === 'lightarchitects_native'
+  $build?.agent?.kind === 'light_architect'
 );
 
 // --- Derived: project groups (LASDLC — groups builds by project path) ---

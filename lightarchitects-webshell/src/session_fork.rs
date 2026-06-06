@@ -128,9 +128,9 @@ pub async fn fork_handler(
             .into_response();
     }
     let (agent_label, command) = match session.agent.kind() {
-        AgentKind::Lightarchitects | AgentKind::LightarchitectsNative => (
+        AgentKind::Lightarchitects | AgentKind::LightArchitect => (
             match session.agent {
-                AgentSession::LightarchitectsNative(_) => "lightarchitects_native",
+                AgentSession::LightArchitect(_) => "light_architect",
                 _ => "lightarchitects",
             },
             format!("cd '{cwd_str}' && claude --resume {session_id}"),

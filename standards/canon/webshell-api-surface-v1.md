@@ -1940,6 +1940,195 @@ Contracts: `wire.http/webshell.post.api-pty-respawn.yaml`, `event.bus/webshell.e
 
 ---
 
+### §2.51 Northstar Platform Pulse (cockpit-d0-platform — 2026-06-05 ADDITION)
+
+Aggregates per-build Northstar supervisor state (§2.13) into a 7-pillar (P1–P7) platform-health snapshot consumed by the Cockpit `NorthstarPulseCard` at d0.
+
+**Route**: `GET /api/northstar/platform-pulse` (authenticated)
+
+**Auth**: `AuthGuard` (Bearer token or `la_session` cookie).
+
+**Response** (`200 OK`):
+```json
+{
+  "pillars": [
+    { "id": "P1", "label": "E2E Engineering Surface",     "score": 93,  "status": "ok",   "focus": false, "hint": "2 active builds" },
+    { "id": "P2", "label": "Secure-by-Default Orchestration", "score": 58, "status": "warn", "focus": true,  "hint": "3 consecutive drift wave(s) across supervisors" },
+    { "id": "P3", "label": "Mixture-of-Experts Platform", "score": 91, "status": "ok", "focus": false, "hint": "expert.selection_rationale emitted per dispatch" }
+  ],
+  "evaluated_at": "2026-06-05T21:30:00+00:00"
+}
+```
+
+**Status discriminator**: `"ok"` (≥80), `"warn"` (50–79), `"err"` (<50).
+**Focus**: lowest-scoring pillar (ties broken by canonical P1..P7 order).
+**Error codes**: `401 Unauthorized` (missing/invalid bearer).
+
+**Aggregation source**: iterates `AppState.supervisor_states` and `AppState.builds` to derive observable signals (active_builds, supervisors, drift_total, soul_present). Scoring is monotone in each input — drift never raises P2, soul absence never raises P5.
+
+**Handler**: `lightarchitects-webshell/src/server/northstar_routes.rs::platform_pulse_handler`.
+
+**Frontend wiring**: `src/lib/cockpit/NorthstarPulseCard.svelte` polls every 30 s OR re-fetches on `v1.build.supervisor.update` SSE.
+
+**Contracts**: `wire.http/webshell.get.api-northstar-platform-pulse.yaml`.
+
+---
+
+### §2.52 Strand Mosaic (cockpit-d0-platform — 2026-06-05 ADDITION)
+
+Project × Gatekeeper risk matrix consumed by the Cockpit `StrandMosaicCard` at d0. Canon source: `canon://platform-canon` Canon XXX (strand mosaic invariant) + `canon://gatekeeper-registry`.
+
+**Route**: `GET /api/strand-mosaic?scope=platform` (authenticated)
+
+**Auth**: `AuthGuard`.
+
+**Query params**:
+- `scope` — `"platform"` (default). Reserved for future `project:<slug>` and `build:<id>` scopes.
+
+**Response** (`200 OK`):
+```json
+{
+  "rows": [
+    {
+      "id": "lightarchitects-sdk",
+      "label": "lightarchitects-sdk",
+      "meta": "main",
+      "cells": { "a": "ok", "s": "ok", "q": "ok", "t": "warn", "p": "na", "d": "ok", "k": "ok" },
+      "risk": "LOW"
+    }
+  ],
+  "gatekeepers": {
+    "a": "CORSO", "s": "SERAPH", "q": "CORSO+LÆX", "t": "CORSO",
+    "p": "EVA+AYIN", "d": "SOUL+EVA", "k": "SOUL"
+  },
+  "evaluated_at": "2026-06-05T21:30:00+00:00"
+}
+```
+
+**Cell values**: `"ok"` | `"warn"` | `"fail"` | `"na"`. Frontend renders as glyphs `●` / `◑` / `○` / `·`.
+
+**Risk roll-up** (per-row, worst non-na cell wins): any `fail` → `"HIGH"`, ≥2 `warn` → `"MED"`, 1 `warn` → `"LOW"`, else `"OK"`.
+
+**Row source**: filesystem scan of `~/Projects/*/.lightarchitects/project.toml` — same enumeration as `GET /api/projects` (§2.34). Each project's cells derive from observable signals (supervisor presence, active builds, SOUL availability).
+
+**Rows are sorted**: HIGH/MED first, then alphabetical.
+
+**Handler**: `lightarchitects-webshell/src/server/mosaic_routes.rs::strand_mosaic_handler`.
+
+**Frontend wiring**: `src/lib/cockpit/StrandMosaicCard.svelte` polls every 60 s OR re-fetches on `v1.build.update` + `v1.helix.entry.changed`.
+
+**Contracts**: `wire.http/webshell.get.api-strand-mosaic.yaml`, `mosaic.strand_matrix.v1` (la-contracts kind — schema amend 2026-06-05).
+
+---
+
+### §2.53 Wave Smart Suggestions (cockpit-d0-platform — 2026-06-05 ADDITION)
+
+Gate-aware, reasons-aware dispatch coach consumed by the Cockpit `SmartDispatchCard` at d0. Composes observable platform signals into ordered action suggestions, each with a human-readable reason and Strand-Mosaic domain code.
+
+**Route**: `GET /api/wave/suggestions?scope=platform` (authenticated)
+
+**Auth**: `AuthGuard`.
+
+**Query params**:
+- `scope` — `"platform"` (default). Reserved for `project:<slug>` / `build:<id>`.
+
+**Response** (`200 OK`):
+```json
+{
+  "suggestions": [
+    {
+      "action":   "/OPTIMIZE",
+      "reason":   "3 consecutive drift wave(s) across supervisors — review against northstar",
+      "domain":   "Q",
+      "priority": true
+    },
+    {
+      "action":   "/VERIFY",
+      "reason":   "2 supervisor state(s) tracked — re-run gate verifications",
+      "domain":   "T",
+      "priority": false
+    }
+  ],
+  "evaluated_at": "2026-06-05T21:30:00+00:00"
+}
+```
+
+**Action slugs**: `/BUILD`, `/SECURE`, `/VERIFY`, `/ENRICH`, `/OBSERVE`, `/REVIEW`, `/OPTIMIZE`.
+**Domain codes**: `A`, `S`, `Q`, `T`, `P`, `D`, `K`, `O` (Strand Mosaic columns + Operations).
+**Priority order**: priority-true items first, then insertion order. Capped at 6 suggestions.
+
+**Rule engine v1** is rule-based on observable signals:
+| Trigger                      | Action     | Domain | Priority |
+|-----------------------------|------------|--------|----------|
+| `drift_total > 0`           | `/OPTIMIZE`| Q      | yes      |
+| `supervisors > 0`           | `/VERIFY`  | T      | no       |
+| `active_builds == 0`        | `/BUILD`   | A      | no       |
+| `soul_present`              | `/ENRICH`  | K      | no       |
+| always                      | `/OBSERVE` | O      | no       |
+| `active_builds > 0`         | `/SECURE`  | S      | no       |
+
+**Dispatch on confirm**: operator click → `POST /api/dispatch/execute` (§2.7) with `{ action, scope, reason, evidence }`.
+
+**Handler**: `lightarchitects-webshell/src/server/wave_routes.rs::wave_suggestions_handler`.
+
+**Frontend wiring**: `src/lib/cockpit/SmartDispatchCard.svelte` polls every 45 s OR re-fetches on `v1.build.update` + `v1.conductor.escalation`.
+
+**Contracts**: `wire.http/webshell.get.api-wave-suggestions.yaml`, `wave.smart_suggestions.v1` (la-contracts kind — schema amend 2026-06-05).
+
+---
+
+### §2.54 Squad A2A Stream (cockpit-d0-platform — 2026-06-05 ADDITION)
+
+SSE stream of agent-to-agent (A2A) link edges across the platform. Consumed by the Cockpit `SquadConstellationCard` at d0 to animate cross-sibling activity links. Per-build `/api/builds/{id}/fleet` (§2.23) covers per-build agent activity; this endpoint lifts the link-edge view to platform scope.
+
+**Route**: `GET /api/squad/a2a` (authenticated, SSE)
+
+**Auth**: `AuthGuard` (Bearer or `la_session`); `EventSource` clients use the cookie scheme.
+
+**Response**: `200 OK`, `Content-Type: text/event-stream`.
+
+First event: `event: snapshot` — canonical sibling roster.
+Subsequent: `event: link` — A2A link edge between two siblings.
+`event: lag` — receiver backpressure (skipped count).
+Keepalive: `data: keep-alive` every 30 s.
+
+**Snapshot shape**:
+```json
+{ "siblings": ["CORSO","EVA","SOUL","QUANTUM","SERAPH","AYIN","LÆX"],
+  "captured_at": "2026-06-05T21:30:00+00:00" }
+```
+
+**Link shape**:
+```json
+{ "from": "SOUL",
+  "to":   "CORSO",
+  "kind": "context",
+  "build_id": "550e8400-e29b-41d4-a716-446655440000",
+  "ts": "2026-06-05T21:30:04+00:00" }
+```
+
+**Link `kind` enum**: `"enrich"` | `"context"` | `"canon"` | `"span"` | `"dispatch"` | `"unknown"`.
+
+**Correlation model**: two consecutive `WebEventV2` events from different siblings sharing the same `build_id`, within a `A2A_CORRELATION_MS` window (default 6 000 ms), form a link edge. Sibling attribution derives from event `topic` via the canonical map:
+
+| Topic                                         | Sibling | Kind     |
+|----------------------------------------------|---------|----------|
+| `v1.helix.entry.{changed,promoted}`          | SOUL    | enrich   |
+| `v1.build.update`, `v1.build.supervisor.update`, `v1.worktree.update` | CORSO | context |
+| `v1.conductor.{escalation,tick}`             | CORSO   | dispatch |
+| `v1.agent.ayin.{connected,disconnected,reconnecting}` | AYIN | span |
+| `v1.agent.claude.activity`                   | EVA     | context  |
+
+**Error codes**: `401 Unauthorized` (missing bearer/cookie).
+
+**Handler**: `lightarchitects-webshell/src/server/squad_routes.rs::squad_a2a_sse_handler`.
+
+**Frontend wiring**: `src/lib/cockpit/SquadConstellationCard.svelte` subscribes via `EventSource('/api/squad/a2a')`; receives snapshot on connect, then animates link draw-in on each `event: link`.
+
+**Contracts**: `wire.http/webshell.sse.api-squad-a2a.yaml`, `event.bus/webshell.event.a2a-link.yaml`, `agent.a2a` (existing la-contracts kind).
+
+---
+
 ## Part III — Frontend Route Catalogue
 
 ### §3.1 Router Implementation

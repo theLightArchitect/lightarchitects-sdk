@@ -16,7 +16,7 @@
       description: 'Anthropic Claude Code CLI (claude)',
     },
     {
-      kind: 'lightarchitects_native',
+      kind: 'light_architect',
       label: 'lÆx0 Native',
       color: '#14B8A6',
       description: 'lightarchitects-cli native binary',

@@ -800,7 +800,7 @@ export interface PillarUpdatePayload {
 export type AuthProfile =
   | 'anthropic'               // Claude API direct
   | 'lightarchitects'         // Claude Code CLI → lightarchitects gateway
-  | 'lightarchitects_native'  // lÆx0 native CLI (`lightarchitects-cli`)
+  | 'light_architect'  // lÆx0 native CLI (`lightarchitects-cli`)
   | 'codex'                   // OpenAI Codex CLI
   | 'mistral_vibe'            // Mistral Vibe CLI (ACP bridge: `vibe-acp`)
   | 'ollama';                 // Legacy: Ollama-backed chat model

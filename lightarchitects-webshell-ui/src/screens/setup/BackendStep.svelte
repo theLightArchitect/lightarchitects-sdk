@@ -13,7 +13,7 @@
   const backends = [
     {
       id: 'la-native',
-      agent: 'lightarchitects_native',
+      agent: 'light_architect',
       label: 'LA Native',
       description: 'Nemotron / Qwen3 via Ollama Cloud (1M ctx, tool-use)',
       polytopeType: 'icositetrachoron',

@@ -8,6 +8,7 @@
   import CopilotSurface from './components/CopilotSurface.svelte';
   import MemoryDrawer from './components/MemoryDrawer.svelte';
   import PolytopeButton from './components/PolytopeButton.svelte';
+  import CopilotCornerButton from './components/CopilotCornerButton.svelte';
   import StreamButton from './components/StreamButton.svelte';
   import StreamDrawer from './components/StreamDrawer.svelte';
   import NavDropdown from './components/NavDropdown.svelte';
@@ -588,7 +589,7 @@
       {/if}
       <!-- Status bar — PTY status · active backend chip · credential indicators -->
       <StatusBar />
-      <!-- Corner-button zone: 56px reserved so screens never hide beneath the polytope buttons -->
+      <!-- Bottom reserve: keeps content clear of the fixed corner elements (polytope + copilot) -->
       <div class="shrink-0" style="height: 56px;" aria-hidden="true"></div>
     </div>
 
@@ -632,6 +633,8 @@
   <GlobalEventsOverlay route={activeRoute} />
   <CommandPalette />
   <CopilotDrawer />
+  <!-- Corner elements: fixed position, immune to drawer padding, never move -->
+  <CopilotCornerButton />
   <PolytopeButton />
   <MemoryDrawer />
   <StreamDrawer />

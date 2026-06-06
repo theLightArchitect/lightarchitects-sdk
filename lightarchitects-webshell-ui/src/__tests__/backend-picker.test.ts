@@ -11,7 +11,7 @@ import type { AuthProfile } from '$lib/types';
 // has the required fields and a valid serde-snake_case kind.
 const AGENTS = [
   { kind: 'lightarchitects',        label: 'Claude Code',   color: '#22C55E' },
-  { kind: 'lightarchitects_native', label: 'lÆx0 Native',  color: '#14B8A6' },
+  { kind: 'light_architect', label: 'lÆx0 Native',  color: '#14B8A6' },
   { kind: 'codex',                  label: 'Codex',         color: '#A855F7' },
   { kind: 'mistral_vibe',           label: 'Mistral Vibe',  color: '#FB923C' },
 ] as const;
@@ -19,7 +19,7 @@ const AGENTS = [
 // Mirror of StatusBar's AGENT_MAP for color/label derivation.
 const AGENT_MAP: Record<string, { label: string; color: string }> = {
   lightarchitects:         { label: 'Claude Code',   color: '#22C55E' },
-  lightarchitects_native:  { label: 'lÆx0 Native',  color: '#14B8A6' },
+  light_architect:  { label: 'lÆx0 Native',  color: '#14B8A6' },
   codex:                   { label: 'Codex',         color: '#A855F7' },
   mistral_vibe:            { label: 'Mistral Vibe',  color: '#FB923C' },
   anthropic:               { label: 'Anthropic',     color: '#F59E0B' },
@@ -41,7 +41,7 @@ describe('BackendPicker — agent list', () => {
 
   it('kind values are valid AuthProfile enum members', () => {
     const validProfiles = new Set<string>([
-      'anthropic', 'lightarchitects', 'lightarchitects_native',
+      'anthropic', 'lightarchitects', 'light_architect',
       'codex', 'mistral_vibe', 'ollama',
     ]);
     for (const agent of AGENTS) {
@@ -104,8 +104,8 @@ describe('BackendPicker — AGENT_MAP lookup (StatusBar derivation)', () => {
     }
   });
 
-  it('AGENT_MAP returns correct label for lightarchitects_native', () => {
-    expect(AGENT_MAP['lightarchitects_native']?.label).toBe('lÆx0 Native');
+  it('AGENT_MAP returns correct label for light_architect', () => {
+    expect(AGENT_MAP['light_architect']?.label).toBe('lÆx0 Native');
   });
 
   it('unknown kind returns undefined from AGENT_MAP (no crash)', () => {

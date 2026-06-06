@@ -1,4 +1,4 @@
-//! Persistent CLI subprocess handle for `lightarchitects_native` copilot sessions.
+//! Persistent CLI subprocess handle for `light_architect` copilot sessions.
 //!
 //! Each [`CliSubprocessHandle`] owns a `lightarchitects --output-format stream-json`
 //! child process that persists across HTTP turns for a given build UUID: prompts

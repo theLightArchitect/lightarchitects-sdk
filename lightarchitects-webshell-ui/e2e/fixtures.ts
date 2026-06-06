@@ -54,7 +54,7 @@ export const test = base.extend<E2EFixtures>({
         const raw = localStorage.getItem('la_webshell_settings');
         const s = raw ? JSON.parse(raw) : {};
         if (!s.selectedBackend || s.selectedBackend === 'deepseek') {
-          s.selectedBackend = 'lightarchitects_native';
+          s.selectedBackend = 'light_architect';
           localStorage.setItem('la_webshell_settings', JSON.stringify(s));
         }
       } catch {
@@ -202,7 +202,7 @@ export const REAL_VAULT = {
 export const SETUP_INFO = {
   setup_complete: true,
   config: {
-    agent: 'lightarchitects_native',
+    agent: 'light_architect',
     backend: 'lightarchitects',
     model: 'nemotron-3-super:cloud',
     ollama_base_url: null,

@@ -17,13 +17,16 @@ use dashmap::DashMap;
 use serde::Serialize;
 use tokio::sync::Mutex;
 
-use super::span::{ExitPath, FleetSpan, FleetStatus};
+use super::span::{AgentWaveContext, ExitPath, FleetSpan, FleetStatus};
 
 /// Serialisable view of a `FleetSpan` — the payload emitted over SSE.
 ///
 /// Derived from `FleetSpan` via [`From<&FleetSpan>`].  Intentionally omits
 /// `spawned_at` / `completed_at` to keep the SSE payload compact; the full
 /// timestamps are available in the internal span if required later.
+///
+/// Wave/task focus fields are skipped from serialization when `None` so
+/// existing dashboard consumers see no schema change until producers populate them.
 #[derive(Debug, Clone, Serialize)]
 pub struct FleetNode {
     /// Stable unique identifier for this agent invocation.
@@ -46,6 +49,20 @@ pub struct FleetNode {
     pub elapsed_ms: u64,
     /// How the agent exited — `None` while running.
     pub exit_path: Option<ExitPath>,
+
+    // ── Wave/task focus context (Path A · F-1..F-3) ─────────────────────
+    /// Build codename this agent is working under, when applicable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub build_codename: Option<String>,
+    /// Wave ID within the build.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wave_id: Option<String>,
+    /// Task ID within the wave — `None` when wave-bound but task-idle (F-3).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+    /// Symbol focus (e.g. `"fn handle_message"`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub focus_target_fn: Option<String>,
 }
 
 impl From<&FleetSpan> for FleetNode {
@@ -61,6 +78,10 @@ impl From<&FleetSpan> for FleetNode {
             turns: span.turns,
             elapsed_ms: span.elapsed_ms,
             exit_path: span.exit_path.clone(),
+            build_codename: span.build_codename.clone(),
+            wave_id: span.wave_id.clone(),
+            task_id: span.task_id.clone(),
+            focus_target_fn: span.focus_target_fn.clone(),
         }
     }
 }
@@ -152,6 +173,24 @@ impl FleetTracker {
 
         let mut stack = self.active_stack.lock().await;
         stack.retain(|id| id != agent_id);
+    }
+
+    /// Attach (or update) wave/task focus context for a running agent.
+    ///
+    /// Per F-2, this mutates the existing span in place — agent identity is stable
+    /// across task transitions within a wave; only its focus shifts. Per F-3,
+    /// passing `AgentWaveContext::default()` (all-`None`) clears all four
+    /// dimensions — there is no sentinel `"idle"` value.
+    ///
+    /// No-ops silently if `agent_id` was never spawned (e.g. focus event arrives
+    /// before the corresponding spawn event in JSONL replay).
+    pub fn agent_focused_on(&self, agent_id: &str, ctx: AgentWaveContext) {
+        if let Some(mut span) = self.spans.get_mut(agent_id) {
+            span.build_codename = ctx.build_codename;
+            span.wave_id = ctx.wave_id;
+            span.task_id = ctx.task_id;
+            span.focus_target_fn = ctx.focus_target_fn;
+        }
     }
 
     /// Add `delta_ms` to `elapsed_ms` for every span in [`FleetStatus::Running`].
@@ -317,5 +356,136 @@ mod tests {
         assert_eq!(node.parent_agent_id, Some("parent_x".into()));
         assert_eq!(node.status, FleetStatus::Running);
         assert!(node.worktree_path.is_none());
+    }
+
+    // ── Wave/task focus (Path A · F-1..F-3) ──────────────────────────────────
+
+    #[tokio::test]
+    #[allow(clippy::unwrap_used)]
+    async fn agent_focused_on_sets_wave_context() {
+        let tracker = FleetTracker::new();
+        tracker
+            .agent_spawned(
+                "corso-w3.2-test".into(),
+                "engineer".into(),
+                "cover branches".into(),
+                false,
+            )
+            .await;
+
+        tracker.agent_focused_on(
+            "corso-w3.2-test",
+            AgentWaveContext {
+                build_codename: Some("webshell-copilot-providers".into()),
+                wave_id: Some("w3.2".into()),
+                task_id: Some("t3.2.1".into()),
+                focus_target_fn: Some("fn handle_message".into()),
+            },
+        );
+
+        let snap = tracker.snapshot();
+        let node = snap
+            .nodes
+            .iter()
+            .find(|n| n.agent_id == "corso-w3.2-test")
+            .unwrap();
+        assert_eq!(
+            node.build_codename.as_deref(),
+            Some("webshell-copilot-providers")
+        );
+        assert_eq!(node.wave_id.as_deref(), Some("w3.2"));
+        assert_eq!(node.task_id.as_deref(), Some("t3.2.1"));
+        assert_eq!(node.focus_target_fn.as_deref(), Some("fn handle_message"));
+    }
+
+    #[tokio::test]
+    #[allow(clippy::unwrap_used)]
+    async fn agent_focused_on_can_clear_task_keeping_wave() {
+        // F-2: task transition within a wave; F-3: None clears, no sentinel.
+        let tracker = FleetTracker::new();
+        tracker
+            .agent_spawned("agent1".into(), "engineer".into(), "task".into(), false)
+            .await;
+        tracker.agent_focused_on(
+            "agent1",
+            AgentWaveContext {
+                build_codename: Some("b1".into()),
+                wave_id: Some("w1".into()),
+                task_id: Some("t1".into()),
+                focus_target_fn: None,
+            },
+        );
+        // Transition: clear task_id but keep wave.
+        tracker.agent_focused_on(
+            "agent1",
+            AgentWaveContext {
+                build_codename: Some("b1".into()),
+                wave_id: Some("w1".into()),
+                task_id: None,
+                focus_target_fn: None,
+            },
+        );
+
+        let snap = tracker.snapshot();
+        let node = snap.nodes.iter().find(|n| n.agent_id == "agent1").unwrap();
+        assert_eq!(node.wave_id.as_deref(), Some("w1"));
+        assert!(node.task_id.is_none()); // F-3: cleared, not sentinel
+    }
+
+    #[tokio::test]
+    async fn agent_focused_on_unknown_agent_is_noop() {
+        let tracker = FleetTracker::new();
+        // Must not panic when the agent isn't tracked yet (JSONL race).
+        tracker.agent_focused_on(
+            "ghost-agent",
+            AgentWaveContext {
+                wave_id: Some("w1".into()),
+                ..Default::default()
+            },
+        );
+        assert_eq!(tracker.snapshot().nodes.len(), 0);
+    }
+
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn fleet_node_serialization_skips_none_wave_context() {
+        // Backwards compat: AYIN dashboards parsing FleetNode pre-extension
+        // must not see new keys when no wave context is attached.
+        let span = FleetSpan::new(
+            "bare".into(),
+            "researcher".into(),
+            "scratch".into(),
+            None,
+            false,
+        );
+        let node = FleetNode::from(&span);
+        let json = serde_json::to_string(&node).expect("serialize");
+        assert!(!json.contains("build_codename"), "json: {json}");
+        assert!(!json.contains("wave_id"), "json: {json}");
+        assert!(!json.contains("task_id"), "json: {json}");
+        assert!(!json.contains("focus_target_fn"), "json: {json}");
+    }
+
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn fleet_node_serialization_includes_wave_context_when_some() {
+        let mut span = FleetSpan::new("a".into(), "engineer".into(), "task".into(), None, false);
+        span.build_codename = Some("webshell-copilot-providers".into());
+        span.wave_id = Some("w3.2".into());
+        span.task_id = Some("t3.2.1".into());
+        span.focus_target_fn = Some("fn handle_message".into());
+
+        let node = FleetNode::from(&span);
+        let json = serde_json::to_string(&node).expect("serialize");
+        assert!(
+            json.contains("\"build_codename\":\"webshell-copilot-providers\""),
+            "json: {json}"
+        );
+        assert!(json.contains("\"wave_id\":\"w3.2\""), "json: {json}");
+        assert!(json.contains("\"task_id\":\"t3.2.1\""), "json: {json}");
+        assert!(
+            json.contains("\"focus_target_fn\":\"fn handle_message\""),
+            "json: {json}"
+        );
     }
 }

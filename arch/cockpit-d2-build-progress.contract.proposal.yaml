@@ -1,0 +1,348 @@
+# PROPOSAL — keystone contract for D2 BUILD PROGRESS cockpit drawer
+# Once ratified, move to: standards/canon/contracts/wire.http/gateway.get.v1-platform-builds-codename-progress.yaml
+#
+# This contract defines the response shape for the build-scope drawer
+# at /Users/kft/Projects/lightarchitects-sdk/arch/cockpit-depth-recursive.html.
+#
+# Companion proposals (all needed together to satisfy this contract):
+#   - arch/cockpit-d2-manifest-extension.proposal.yaml   (data source layer)
+#   - arch/cockpit-d2-fleet-extension.proposal.md         (live-agent layer)
+#
+# After ratification, gateway handler lives at:
+#   lightarchitects-gateway/src/http/routes/builds.rs::builds_progress_get
+# pattern-cloned from platform.rs::helix_query.
+
+schema_version: la-contracts/v1
+id: wire.http.v1-platform-builds-codename-progress.get
+kind: wire.http
+version: 0.1.0
+status: draft
+uuid: 7b3a9f4c-2e1d-4a8b-9c5e-f02e8a4d3b1a  # generate fresh on ratification
+
+northstar_pillars:
+  - P2  # Platform orchestration: build-scope operator awareness
+
+operator_intent: >-
+  Return a hierarchical snapshot of an active build's progress:
+  phases × waves × tasks, joined with live git state, live agent fleet,
+  and structured plan amendments. The cockpit's D2 drawer renders the
+  tree from this snapshot; every selectable node carries enough metadata
+  to drill into D3 (file view) without a second request.
+
+observable_outputs:
+  - Response status 200 (or one of the documented errors) within the duration budget
+  - 'Operator-visible effect: D2 BUILD PROGRESS tree renders with live wave/task state, commits per wave, agent focus, and amendment history'
+  - AYIN platform.http.request span emitted with {method, path, status, duration_ms, codename}
+  - AYIN platform.builds.progress.assembled span emitted with {codename, phases_count, waves_active, fleet_join_ms, git_query_ms}
+
+errors:
+  - http_status: 404
+    condition: codename does not exist in $HELIX/corso/builds/
+    code: E_BUILD_NOT_FOUND
+    operator_sees: 'No build named "{codename}" — check /v1/platform/builds for the list'
+    forbidden: returning empty progress object for unknown codenames
+    severity: MEDIUM
+  - http_status: 409
+    condition: manifest.yaml exists but is malformed or fails schema validation
+    code: E_MANIFEST_INVALID
+    operator_sees: 'Build "{codename}" manifest is invalid — see /v1/platform/builds/{codename}/manifest/lint'
+    forbidden: returning partial progress with silent schema coercion
+    severity: HIGH
+  - http_status: 503
+    condition: AYIN fleet endpoint unreachable AND fleet_required=true query param
+    code: E_FLEET_UNAVAILABLE
+    operator_sees: 'Live agent state unavailable — pass fleet_required=false for snapshot-only response'
+    forbidden: blocking the response on fleet when fleet_required=false (default)
+    severity: LOW
+  - http_status: 400
+    condition: codename contains invalid characters (must be kebab-case, no path traversal)
+    code: E_BAD_REQUEST
+    operator_sees: 'Codename must match ^[a-z0-9][a-z0-9-]{1,63}$'
+    forbidden: silently sanitizing the codename
+    severity: MEDIUM
+
+observability:
+  required_spans:
+    - name: platform.http.request
+      required_metadata: [method, path, status, duration_ms, codename]
+      parent_relationship: root
+    - name: platform.builds.progress.assembled
+      required_metadata:
+        - codename
+        - phases_count
+        - waves_active
+        - fleet_join_ms      # how long the AYIN fleet join took
+        - git_query_ms       # how long the local git walk took
+        - manifest_load_ms   # how long manifest.yaml parse took
+      parent_relationship: child_of:platform.http.request
+  trace_context_propagation: true
+  duration_budget_ms: 800   # snapshot, not streamed — must be fast
+
+hitl_boundaries:
+  - none
+
+conformance_test:
+  given: >-
+    A build exists at $HELIX/corso/builds/test-fixture-build/manifest.yaml with
+    one complete phase (1 wave, 2 commits), one active phase (2 waves, 1 active
+    with 1 task at coverage 42%), and one pending phase. Worktree is clean.
+    AYIN fleet has 1 running agent with focus_task_id matching the active task.
+  when: GET /v1/platform/builds/test-fixture-build/progress
+  then:
+    - assertion: response status is 200
+      span_witness: platform.http.request
+      evidence_tier_required: VERIFIED
+    - assertion: response.phases.length === 3
+      span_witness: platform.builds.progress.assembled
+      evidence_tier_required: VERIFIED
+    - assertion: response.phases[1].waves[1].agents[0].focus_task_id === response.phases[1].waves[1].tasks[0].id
+      span_witness: platform.builds.progress.assembled
+      evidence_tier_required: VERIFIED
+    - assertion: response.git.head matches `git -C <worktree> rev-parse HEAD`
+      span_witness: platform.builds.progress.assembled
+      evidence_tier_required: VERIFIED
+  fixtures:
+    - $HELIX/corso/builds/test-fixture-build/  # ratification creates this fixture
+  timeout_seconds: 5
+
+status_per_provider:
+  anthropic_api: {result: N/A, evidence_tier: VERIFIED, na_reason: 'wire.http endpoint below provider abstraction layer'}
+  openai_api:    {result: N/A, evidence_tier: VERIFIED, na_reason: 'wire.http endpoint below provider abstraction layer'}
+  ollama_cloud:  {result: N/A, evidence_tier: VERIFIED, na_reason: 'wire.http endpoint below provider abstraction layer'}
+  ollama_local:  {result: N/A, evidence_tier: VERIFIED, na_reason: 'wire.http endpoint below provider abstraction layer'}
+  mistral_api:   {result: N/A, evidence_tier: VERIFIED, na_reason: 'wire.http endpoint below provider abstraction layer'}
+  groq_api:      {result: N/A, evidence_tier: VERIFIED, na_reason: 'wire.http endpoint below provider abstraction layer'}
+  openrouter_api: {result: N/A, evidence_tier: VERIFIED, na_reason: 'wire.http endpoint below provider abstraction layer'}
+
+alpha_gate:
+  verdict: pass
+  reason: >-
+    Provider-agnostic wire endpoint with intent, errors, observability fully declared.
+    Conformance harness upgrades from declared-pass to runtime-verified once
+    test-fixture-build/manifest.yaml lands and gateway handler is wired.
+
+wire_http:
+  path: /v1/platform/builds/{codename}/progress
+  method: GET
+  auth_required: none           # localhost trust model; same as other platform routes
+  idempotency: idempotent
+  cors_class: same_origin
+  sse_streaming: false          # v0.1.0: snapshot only; v0.2.0 planned: /progress/stream SSE for live updates
+
+  # Query parameters
+  query_params:
+    fleet_required:
+      type: boolean
+      default: false
+      description: >-
+        If true, fail with 503 when AYIN fleet unreachable.
+        If false (default), return progress with agents[].state set to 'unknown' on fleet miss.
+    include_pr_state:
+      type: boolean
+      default: true
+      description: >-
+        If true, query gh CLI for PR state. Adds ~200-500ms to response.
+        If false, pr field is omitted from response.
+
+  response_schemas:
+    '200':
+      type: object
+      required: [codename, status, elapsed_ms, phases, captured_at]
+      properties:
+
+        # ── Build identity (from manifest.yaml top-level) ────────────
+        codename: {type: string, pattern: '^[a-z0-9][a-z0-9-]{1,63}$'}
+        title:    {type: string, description: 'Human-readable title from manifest.title (defaults to codename if absent)'}
+        tier:     {enum: [SMALL, MEDIUM, LARGE, XL]}
+        template_version: {type: string, description: 'LASDLC template version, e.g. "2.8.2"'}
+        started_at: {type: string, format: date-time}
+        elapsed_ms: {type: integer, minimum: 0}
+        status:    {enum: [pending, active, complete, failed], description: 'Aggregate build status; derived from phases'}
+
+        # ── Local git state (from libgit2 / git CLI on worktree) ────
+        git:
+          type: object
+          required: [worktree, feature_branch, base_branch, head]
+          properties:
+            worktree:       {type: string, description: 'Absolute path or ~-prefixed worktree path'}
+            feature_branch: {type: string}
+            base_branch:    {type: string, description: 'Branch the feature was forked from (usually "main")'}
+            ahead:  {type: integer, minimum: 0, description: 'Commits feature_branch is ahead of base_branch'}
+            behind: {type: integer, minimum: 0}
+            dirty:  {type: boolean, description: 'True if worktree has uncommitted changes (any path)'}
+            head:   {type: string, pattern: '^[0-9a-f]{7,40}$'}
+
+        # ── Remote PR state (from gh CLI; absent if include_pr_state=false) ──
+        pr:
+          type: object
+          nullable: true
+          required: [number, state, repo]
+          properties:
+            number: {type: integer, minimum: 1}
+            state:  {enum: [draft, open, merged, closed]}
+            repo:   {type: string, pattern: '^[^/]+/[^/]+$', description: 'owner/repo'}
+            url:    {type: string, format: uri}
+            last_sync_ms_ago: {type: integer, description: 'Staleness indicator — how long ago the PR state was fetched'}
+
+        # ── Phases (the load-bearing tree) ──────────────────────────
+        phases:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [id, name, status]
+            properties:
+              id:     {type: string, description: 'e.g., "p1", "phase-1"'}
+              name:   {type: string, description: 'e.g., "Phase 1 · Discovery"'}
+              status: {enum: [pending, active, complete, failed]}
+              blocked_on: {type: string, nullable: true, description: 'phase.id that must complete first'}
+
+              timing:
+                type: object
+                properties:
+                  est_ms:     {type: integer, minimum: 0, description: 'Estimated duration from plan'}
+                  actual_ms:  {type: integer, minimum: 0, nullable: true, description: 'Actual elapsed; null if not started'}
+                  drift_ms:   {type: integer, description: 'actual_ms - est_ms; negative = under, positive = over'}
+
+              # Phase-level gates: A/S/Q/T/P/D/K/O each → pass|run|pend|fail|warn
+              gates:
+                type: object
+                additionalProperties:
+                  enum: [pass, run, pend, fail, warn]
+                example: {A: pass, S: pass, Q: pass, T: run, O: pend}
+
+              # NEW: structured plan amendments (distinct from canon_amendments)
+              # See arch/cockpit-d2-manifest-extension.proposal.yaml for source format.
+              amendments:
+                type: array
+                items: {$ref: '#/$defs/amendment'}
+
+              waves:
+                type: array
+                items: {$ref: '#/$defs/wave'}
+
+        # ── Snapshot timestamp ──────────────────────────────────────
+        captured_at: {type: string, format: date-time, description: 'When the snapshot was assembled by the gateway'}
+
+      # ────────────────────────────────────────────────────────────
+      # Shared shapes — referenced from phases above
+      # ────────────────────────────────────────────────────────────
+      $defs:
+
+        wave:
+          type: object
+          required: [id, name, status]
+          properties:
+            id:     {type: string, description: 'e.g., "w3.2", "wave-2"'}
+            name:   {type: string, description: 'e.g., "wave-2 · TEST · cover error branches"'}
+            status: {enum: [queued, active, complete, failed]}
+            blocked_on: {type: string, nullable: true, description: 'wave.id that must complete first'}
+
+            timing:
+              type: object
+              properties:
+                started_at: {type: string, format: date-time, nullable: true}
+                est_ms:     {type: integer, minimum: 0}
+                elapsed_ms: {type: integer, minimum: 0, nullable: true}
+
+            # NEW: explicit wave→commit mapping (currently missing in manifest.yaml)
+            commits:
+              type: array
+              description: >-
+                Commits produced by this wave, in chronological order.
+                See arch/cockpit-d2-manifest-extension.proposal.yaml for the source-side
+                contract on how waves get annotated with their commits.
+              items:
+                type: object
+                required: [sha, msg]
+                properties:
+                  sha:         {type: string, pattern: '^[0-9a-f]{40}$'}
+                  short:       {type: string, pattern: '^[0-9a-f]{7,12}$'}
+                  msg:         {type: string, maxLength: 200}
+                  ago:         {type: string, description: 'Human-formatted, e.g. "14m", "2h", "3d"'}
+                  authored_at: {type: string, format: date-time}
+                  files_count: {type: integer, minimum: 0}
+                  net_diff:
+                    type: object
+                    properties:
+                      added:   {type: integer, minimum: 0}
+                      removed: {type: integer, minimum: 0}
+
+            # Live agent state — joined from AYIN /api/fleet
+            # Requires FleetNode extensions; see arch/cockpit-d2-fleet-extension.proposal.md
+            agents:
+              type: array
+              items: {$ref: '#/$defs/agent_state'}
+
+            tasks:
+              type: array
+              items: {$ref: '#/$defs/task'}
+
+        task:
+          type: object
+          required: [id, name, status]
+          properties:
+            id:     {type: string, description: 'e.g., "t3.2.1"'}
+            name:   {type: string, description: 'e.g., "Cover handle_message error branches"'}
+            status: {enum: [pending, active, complete, failed]}
+            blocked_on: {type: string, nullable: true, description: 'task.id this depends on'}
+
+            # The git commit that completed this task (null if active/pending)
+            commit: {type: string, pattern: '^[0-9a-f]{7,40}$', nullable: true}
+
+            # File scope — what code this task touches
+            files:
+              type: array
+              items: {type: string, description: 'Repo-relative path, e.g. "src/copilot/mod.rs"'}
+
+            # Symbol-level focus — for tasks targeting a specific function/struct
+            target_fn: {type: string, nullable: true, description: 'e.g. "fn handle_message"'}
+
+            # Coverage-task fields (for TEST-domain tasks)
+            current_coverage_pct: {type: integer, minimum: 0, maximum: 100, nullable: true}
+            target_coverage_pct:  {type: integer, minimum: 0, maximum: 100, nullable: true}
+
+            # Domain attribution — for risk/gate analysis
+            domain: {enum: [A, S, Q, T, P, D, K, O], description: 'Primary gatekeeper domain owning this task'}
+
+            # Security-specific tagging
+            cwe: {type: string, pattern: '^CWE-\d+$', nullable: true}
+
+            # Gate this task is blocking (e.g. "[T]" if T gate can't pass until done)
+            blocking_gate: {type: string, nullable: true}
+
+            # Diff stats (from git, when commit is set)
+            diff:
+              type: object
+              nullable: true
+              properties:
+                added:   {type: integer, minimum: 0}
+                removed: {type: integer, minimum: 0}
+
+        agent_state:
+          type: object
+          required: [name, role, state]
+          properties:
+            name:  {type: string, description: 'Display name, e.g. "CORSO wave-2 TEST"'}
+            agent_id: {type: string, description: 'Stable AYIN fleet ID — for cross-reference'}
+            role:  {enum: [I, T, R, D, S, A, K, P], description: 'I=Impl T=Test R=Review D=Deploy S=Security A=Architecture K=Knowledge P=Perf'}
+            state: {enum: [standing, running, done, failed, unknown]}
+
+            # NEW: requires FleetNode extension
+            # See arch/cockpit-d2-fleet-extension.proposal.md
+            focus_task_id: {type: string, nullable: true, description: 'The task.id this agent is currently working on'}
+            running_ms:    {type: integer, minimum: 0, nullable: true, description: 'How long the agent has been in current state'}
+
+        amendment:
+          type: object
+          description: >-
+            A structured plan amendment captured during build execution.
+            Distinct from manifest.yaml `canon_amendments` (which are LÆX canon proposals).
+            Build amendments are wave-scoped pivots discovered during impl that change scope.
+          required: [wave, when, desc, impact]
+          properties:
+            wave:   {type: string, description: 'wave.id that surfaced the amendment'}
+            when:   {type: string, format: date-time}
+            desc:   {type: string, maxLength: 500, description: 'What was discovered or proposed'}
+            impact: {type: string, maxLength: 500, description: 'How the plan changed in response'}
+            authorized_by: {type: string, nullable: true, description: 'Operator/agent that approved the change'}

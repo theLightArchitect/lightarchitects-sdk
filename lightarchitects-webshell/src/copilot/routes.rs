@@ -210,7 +210,7 @@ pub async fn copilot_chat_handler(
     // subprocess, which handles its own grounding via HelixSessionMemory.
     // The prelude is not injected into stdin — the CLI reads stdin line-by-line
     // and a multi-line prelude would be split into multiple turns.
-    if matches!(session.agent, AgentSession::LightarchitectsNative(_)) {
+    if matches!(session.agent, AgentSession::LightArchitect(_)) {
         return drive_native_sse(
             id,
             &body.message,
@@ -248,8 +248,8 @@ pub async fn copilot_chat_handler(
             )
             .await
         }
-        // Guarded above by the `if matches!(…LightarchitectsNative…)` early return.
-        AgentSession::LightarchitectsNative(_) => unreachable!("native session not intercepted"),
+        // Guarded above by the `if matches!(…LightArchitect…)` early return.
+        AgentSession::LightArchitect(_) => unreachable!("native session not intercepted"),
     };
 
     match result {

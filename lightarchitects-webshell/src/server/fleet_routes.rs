@@ -309,6 +309,10 @@ mod tests {
             turns: 0,
             elapsed_ms: 0,
             exit_path: None,
+            build_codename: None,
+            wave_id: None,
+            task_id: None,
+            focus_target_fn: None,
         };
         let cases = vec![
             (

@@ -63,7 +63,7 @@ const MOCK_BUILDS = [{
   id: 'cockpit-e2e-build', codename: 'cockpit-e2e', name: 'Cockpit E2E Test Build',
   meta_skill: '/BUILD', status: 'in_progress', confidence: 0.88,
   updatedAt: new Date().toISOString(),
-  agent: { kind: 'lightarchitects_native', backend: 'lightarchitects' },
+  agent: { kind: 'light_architect', backend: 'lightarchitects' },
 }];
 
 /** Sets up auth + all background API mocks required for cockpit to render. */
@@ -97,7 +97,7 @@ async function setupCockpit(page: Page, opts: {
         codex:  { has_keychain_auth: false, has_api_key: false, login_method: 'none' },
         ollama: { base_url: 'http://localhost:11434', reachable: false },
       },
-      config: { agent: 'lightarchitects_native', backend: 'lightarchitects', model: 'claude-opus-4-7', ollama_base_url: null, api_key_stored: false },
+      config: { agent: 'light_architect', backend: 'lightarchitects', model: 'claude-opus-4-7', ollama_base_url: null, api_key_stored: false },
       cwd: '/tmp',
     }),
   }));

@@ -8,7 +8,40 @@ Companion changelog for `builders-cookbook.md`. The cookbook holds **current sta
 
 ---
 
-## v3.13.0 — §50.10 Two-Envvar Opt-In landed + §69.1 Integration Claim Verification (2026-05-31, litellm-platform-integration /REFLECT — both stamped)
+## v3.14.0 — §63.P5 Tolerant deserialization for SCR1-F1 untrusted-producer JSONL/IPC (2026-06-05, Path B Phase 1 /REFLECT → LÆX ratification — stamped)
+
+**Source**: /REFLECT session 2026-06-05 after Path A (D2 cockpit drawer keystone contract) + Path B Phase 1 (B1 JSONL wave_context propagation + B2 gh CLI PR fetch). One promotion candidate ratified, one rejected.
+
+### §63.P5 — Tolerant deserialization for SCR1-F1 untrusted-producer JSONL/IPC (NEW pattern)
+
+**Background**: During B1 implementation (`lightarchitects/src/fleet/jsonl.rs` `wave_context` field on `AgentToolInput`), the initial bare `Option<WaveContextInput>` field caused the entire `AgentToolInput` deserialization to fail when wave_context was malformed (wrong JSON type). Result: critical sibling fields (description, subagent_type) were lost, `agent_spawned` never fired, the agent silently disappeared from fleet tracking.
+
+The `wave_context_malformed_does_not_block_spawn` test surfaced this. Fix landed in the same PR via a `deserialize_with` helper: `deserialize_wave_context_or_none` deserializes to `serde_json::Value` first, attempts typed conversion, falls to `None` on any error.
+
+**Rule** (§63 uniform schema):
+- **Threat**: CWE-20 Improper Input Validation — silent loss of an entire parse record when an upstream producer emits one malformed sub-field
+- **Vector**: New `Option<T>` field on JSONL/IPC parse struct from untrusted producer (`/BUILD` wave-dispatcher, Claude Code session JSONL, sibling subprocess stdout, webhook payloads)
+- **Mitigation**: `#[serde(default, deserialize_with = "tolerant_or_none")]` with the Value-first helper pattern
+- **Static-lint rule**: forbid bare `Option<T>` on new Deserialize fields where SCR1-F1 forward-compat tolerance is the stated goal
+- **Test vector**: malformed-field test asserting whole-record preservation
+
+**Boundary clarification (LÆX condition)**: This pattern applies ONLY where `deny_unknown_fields` is intentionally absent for SCR1-F1 forward-compat. For strict HTTP request bodies, Security-Guardrails §3 `deny_unknown_fields` remains canonical — §63.P5 does NOT extend there.
+
+**Evidence**: PROVISIONALLY_VALID (N=1). Promote to VALIDATED on second independent instance in another untrusted-producer parse path.
+
+**LÆX verdict**: CONDITIONALLY_RATIFIED — conditions applied: (1) §63 uniform schema reframing, (2) PROVISIONALLY_VALID N=1 framing, (3) scope-clarification against Security-Guardrails §3.
+
+**Operator stamp**: Kevin, 2026-06-05 — RATIFIED with LÆX conditions.
+
+### Rejected from same /REFLECT batch — for traceability
+
+**Axum `Path` vs `std::path::Path` collision in route modules** — REJECTED from §63 promotion by LÆX. §63 schema requires CWE anchor; the collision pattern is ergonomics/readability with no threat surface. No existing Rust handler-conventions canon section to house it. Re-routed to memory entry `feedback_axum_path_filesystem_collision.md`. DEFERRED for future canon promotion if a Rust handler-conventions section is created with ≥3 conventions justifying the substrate.
+
+**Source documents**:
+- Promotion candidates: `~/Projects/lightarchitects-sdk/arch/cookbook-63-promotion-candidates-2026-06-05.md` (now status: RATIFIED for C1 / REJECTED→memory for C2)
+- LÆX session log: `helix/laex0/journal/invocations/2026-06-05/{HH-MM}-canon_ratification.md`
+
+
 
 **Source**: /REFLECT session post `litellm-platform-integration` plan-authoring (6 iterations). Two canon sections landed and stamped in this batch:
 

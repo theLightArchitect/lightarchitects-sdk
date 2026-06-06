@@ -251,7 +251,7 @@ fn validate_model(model: &str) -> bool {
 fn resolve_host_cmd(agent: AgentKind, config: &Config) -> PathBuf {
     match agent {
         AgentKind::Lightarchitects => PathBuf::from(&config.host_cmd),
-        AgentKind::LightarchitectsNative => PathBuf::from("lightarchitects-cli"),
+        AgentKind::LightArchitect => PathBuf::from("lightarchitect"),
         AgentKind::Codex => PathBuf::from("codex"),
         AgentKind::MistralVibe => PathBuf::from("vibe"),
     }
@@ -264,7 +264,7 @@ fn resolve_host_cmd(agent: AgentKind, config: &Config) -> PathBuf {
 fn verify_credential_for(agent: AgentKind, state: &AppState) -> Result<(), String> {
     let provider_key = match agent {
         // LA native and LA claude both read from the Anthropic credential slot.
-        AgentKind::Lightarchitects | AgentKind::LightarchitectsNative => "anthropic",
+        AgentKind::Lightarchitects | AgentKind::LightArchitect => "anthropic",
         AgentKind::Codex => "openai",
         AgentKind::MistralVibe => "mistral",
     };
@@ -276,7 +276,7 @@ fn verify_credential_for(agent: AgentKind, state: &AppState) -> Result<(), Strin
     // Degrade gracefully: if no credential store entry, check the environment.
     // This keeps the handler usable in dev mode without explicit credential setup.
     let env_present = match agent {
-        AgentKind::Lightarchitects | AgentKind::LightarchitectsNative => {
+        AgentKind::Lightarchitects | AgentKind::LightArchitect => {
             std::env::var("ANTHROPIC_API_KEY").is_ok()
         }
         AgentKind::Codex => std::env::var("OPENAI_API_KEY").is_ok(),
