@@ -34,6 +34,8 @@
 pub mod cache;
 pub mod canon;
 pub mod client;
+#[cfg(feature = "turbovec-semantic")]
+pub mod content_store;
 pub mod db;
 pub mod embedding;
 pub mod generation;

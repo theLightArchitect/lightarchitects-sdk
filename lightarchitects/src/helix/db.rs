@@ -20,6 +20,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::core::paths;
@@ -711,6 +712,13 @@ pub struct HelixNeo4j {
     /// `None` until populated; falls back to the Neo4j HNSW path when `None`.
     #[cfg(feature = "turbovec-semantic")]
     pub(crate) turbo: tokio::sync::RwLock<Option<crate::helix::turbovec_index::TurboVecIndex>>,
+    /// Two-tier content-addressed step cache.
+    ///
+    /// Tier 1 eliminates the Neo4j round-trip for post-ANN step hydration.
+    /// Tier 2 memoizes repeated graph traversal results.
+    /// Write-evicted on every `upsert_step`.
+    #[cfg(feature = "turbovec-semantic")]
+    pub(crate) content_store: tokio::sync::Mutex<crate::helix::content_store::ContentStore>,
 }
 
 impl std::fmt::Debug for HelixNeo4j {
@@ -774,6 +782,8 @@ impl HelixNeo4j {
             backend,
             #[cfg(feature = "turbovec-semantic")]
             turbo: tokio::sync::RwLock::new(None),
+            #[cfg(feature = "turbovec-semantic")]
+            content_store: tokio::sync::Mutex::new(crate::helix::content_store::ContentStore::new()),
         })
     }
 
@@ -1703,6 +1713,14 @@ impl HelixDb for HelixNeo4j {
         self.timed_execute("upsert_step_rel", rel_cypher, rel_params)
             .await?;
 
+        // Evict stale Tier 1 + Tier 2 cache entries so the next get_steps_by_ids
+        // call fetches fresh data from Neo4j.
+        #[cfg(feature = "turbovec-semantic")]
+        {
+            let mut store = self.content_store.lock().await;
+            store.evict(&id);
+        }
+
         Ok((id, was_created))
     }
 
@@ -2093,8 +2111,28 @@ impl HelixDb for HelixNeo4j {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
+
+        // ── Tier 1: content store fast path ──────────────────────────────────
+        // Check the in-process cache first; only fetch missed IDs from Neo4j.
+        #[cfg(feature = "turbovec-semantic")]
+        let (cached, fetch_ids): (Vec<Arc<Step>>, Vec<String>) = {
+            let store = self.content_store.lock().await;
+            let (found, missed) = store.get_batch(ids);
+            let missed_owned = missed.iter().map(|&s| s.to_owned()).collect();
+            (found, missed_owned)
+        };
+
+        #[cfg(not(feature = "turbovec-semantic"))]
+        let (cached, fetch_ids): (Vec<Arc<Step>>, Vec<String>) = (Vec::new(), ids.to_vec());
+
+        if fetch_ids.is_empty() {
+            // Full cache hit — zero Neo4j round-trips.
+            return Ok(cached.into_iter().map(|s| (*s).clone()).collect());
+        }
+
+        // ── Neo4j fetch for cache misses ─────────────────────────────────────
         // §3.6: LIMIT via $limit parameter — no string interpolation into Cypher.
-        let limit = i64::try_from(ids.len()).unwrap_or(i64::MAX);
+        let limit = i64::try_from(fetch_ids.len()).unwrap_or(i64::MAX);
         let cypher = "MATCH (s:Step) WHERE s.id IN $ids \
              RETURN s.id AS id, s.helix_id AS helix_id, s.title AS title, \
                     s.content AS content, s.significance AS significance, \
@@ -2105,12 +2143,26 @@ impl HelixDb for HelixNeo4j {
              LIMIT $limit"
             .to_owned();
         let mut params = std::collections::BTreeMap::new();
-        params.insert("ids".into(), serde_json::json!(ids));
+        params.insert("ids".into(), serde_json::json!(fetch_ids));
         params.insert("limit".into(), serde_json::json!(limit));
         let records = self
             .timed_execute("get_steps_by_ids", &cypher, params)
             .await?;
-        Ok(records.iter().filter_map(Self::record_to_step).collect())
+        let fetched: Vec<Step> = records.iter().filter_map(Self::record_to_step).collect();
+
+        // Populate Tier 1 with Neo4j results for future cache hits.
+        #[cfg(feature = "turbovec-semantic")]
+        {
+            let mut store = self.content_store.lock().await;
+            for step in &fetched {
+                store.insert(Arc::new(step.clone()));
+            }
+        }
+
+        // Merge Tier 1 hits with Neo4j-fetched results.
+        let mut result: Vec<Step> = cached.into_iter().map(|s| (*s).clone()).collect();
+        result.extend(fetched);
+        Ok(result)
     }
 
     #[instrument(skip(self, steps), fields(neo4j.operation = "batch_upsert_steps", count = steps.len()))]

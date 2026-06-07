@@ -13,6 +13,7 @@
 //! concrete implementations (Ollama, Cloud, TEI, `FastEmbed`, Mock) live in
 //! this module as server infrastructure.
 
+pub mod cached;
 pub mod chunker;
 pub mod cloud;
 pub mod factory;
@@ -29,6 +30,7 @@ pub mod tei;
 pub use crate::soul::{EmbeddingError, EmbeddingProvider, EmbeddingResult, PrivacyLevel};
 
 // ── Re-export concrete implementations ───────────────────────────────────────
+pub use cached::CachedEmbeddingProvider;
 pub use chunker::{Chunk, Chunker, ChunkerConfig};
 pub use cloud::CloudEmbeddingProvider;
 pub use factory::{EmbeddingConfig, create_embedding_provider};

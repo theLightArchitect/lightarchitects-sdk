@@ -1,16 +1,22 @@
 //! In-process `TurboQuant` semantic index for helix step embeddings.
 //!
-//! Wraps [`turbovec::TurboQuantIndex`] with the slot-to-step-id and
-//! helix-to-slots mappings needed to translate turbovec's `i64` slot
-//! indices back to SOUL's string step IDs, and to restrict ANN search
-//! to a single helix via [`TurboQuantIndex::search_with_mask`].
+//! Wraps [`turbovec::TurboQuantIndex`] with:
+//! - Slot↔ID and helix-slot mappings for translating turbovec's `i64` slot
+//!   indices back to SOUL's string step IDs.
+//! - A **per-helix fleet** of micro-indexes — one `TurboQuantIndex` per helix,
+//!   holding only that helix's vectors. `search_helix` hits the fleet directly
+//!   (O(|helix|) SIMD scan, no mask allocation) instead of constructing a global
+//!   boolean mask over all N vectors.
 //!
 //! # Memory profile (nomic-embed-text, 768-dim, 4-bit)
 //!
-//! | Vectors | Index | Rotation matrix |
-//! |---------|-------|-----------------|
-//! | 50 K    | ~20 MB | 2.4 MB (shared) |
-//! | 200 K   | ~80 MB | 2.4 MB (shared) |
+//! | Vectors | Global index | Per-helix fleet (500 vecs/helix) |
+//! |---------|-------------|----------------------------------|
+//! | 50 K    | ~20 MB      | ~192 KB per helix (L2-resident)  |
+//! | 200 K   | ~80 MB      | ~192 KB per helix (L2-resident)  |
+//!
+//! The fleet reduces the helix-search working set ~100× (19 MB → 192 KB),
+//! fitting comfortably in L2 cache (~512 KB/core on M4 Pro).
 //!
 //! # Thread safety
 //!
@@ -36,14 +42,23 @@ pub struct TurboVecIndex {
     slot_to_step_id: Vec<String>,
     /// Maps SOUL step ID → turbovec slot index (for idempotent upsert).
     step_id_to_slot: HashMap<String, usize>,
-    /// Maps `helix_id` → [slot indices] for masked per-helix ANN search.
+    /// Maps `helix_id` → [slot indices] for masked per-helix ANN search (fallback).
     helix_slots: HashMap<String, Vec<usize>>,
     /// Contiguous slot ranges `[start, end)` computed by `prepare()` for
     /// helixes whose slots are fully consecutive (i.e. bulk-loaded in
     /// `helix_id` order via `fetch_all_embeddings ORDER BY helix_id`).
-    /// Used in `search_helix` to replace scattered writes with one `fill`.
+    /// Used in the masked fallback path of `search_helix`.
     /// Cleared on any post-prepare `upsert` for the affected helix.
     helix_ranges: HashMap<String, (usize, usize)>,
+    /// Per-helix micro-index fleet.
+    ///
+    /// Each entry holds only the vectors belonging to that helix, keyed by
+    /// helix-local slot index. `search_helix` hits the fleet directly
+    /// (no mask construction, no global index scan) when the fleet is warmed.
+    /// Built incrementally by dual-writing in `upsert()`.
+    fleet: HashMap<String, TurboQuantIndex>,
+    /// Per-helix fleet slot → step ID (local numbering, independent of global slots).
+    fleet_slot_ids: HashMap<String, Vec<String>>,
 }
 
 impl TurboVecIndex {
@@ -60,6 +75,8 @@ impl TurboVecIndex {
             step_id_to_slot: HashMap::new(),
             helix_slots: HashMap::new(),
             helix_ranges: HashMap::new(),
+            fleet: HashMap::new(),
+            fleet_slot_ids: HashMap::new(),
         })
     }
 
@@ -87,8 +104,28 @@ impl TurboVecIndex {
             .or_default()
             .push(slot);
         // A new slot after prepare() breaks the cached contiguous range for
-        // this helix. Remove it so search_helix falls back to scattered writes.
+        // this helix. Remove it so the masked fallback uses scattered writes.
         self.helix_ranges.remove(helix_id);
+
+        // Dual-write to the per-helix fleet micro-index.
+        // Fleet slots are independently numbered (0, 1, ...) per helix so
+        // fleet_slot_ids[helix_id][fleet_slot] → step_id.
+        let fleet_idx = match self.fleet.entry(helix_id.to_owned()) {
+            std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
+            std::collections::hash_map::Entry::Vacant(e) => {
+                match TurboQuantIndex::new(HELIX_DIM, BIT_WIDTH) {
+                    Ok(idx) => e.insert(idx),
+                    // HELIX_DIM=768 and BIT_WIDTH=4 are compile-time constants that
+                    // satisfy all TurboQuantIndex constraints — this branch is unreachable.
+                    Err(_) => return,
+                }
+            }
+        };
+        fleet_idx.add(embedding);
+        self.fleet_slot_ids
+            .entry(helix_id.to_owned())
+            .or_default()
+            .push(step_id.to_owned());
     }
 
     /// Global ANN search — no helix filter.
@@ -111,20 +148,42 @@ impl TurboVecIndex {
             .collect()
     }
 
-    /// Helix-scoped ANN search via boolean mask.
+    /// Helix-scoped ANN search.
     ///
-    /// Constructs a `bool` mask covering only the slots that belong to
-    /// `helix_id` and calls [`TurboQuantIndex::search_with_mask`]. This
-    /// replaces the O(n) `vector.similarity.cosine` Cypher scan with an
-    /// in-process SIMD scan over the compressed codes — no Bolt round-trip.
+    /// **Fast path (fleet)**: if the per-helix micro-index is warmed, searches
+    /// only the vectors belonging to `helix_id` — O(|helix|) SIMD scan with no
+    /// mask allocation and no global index traversal. The fleet working set is
+    /// ~192 KB per helix (500 vecs × 768-dim × 4-bit), fitting in L2 cache.
     ///
-    /// When `prepare()` has been called after a sorted bulk load
-    /// (`fetch_all_embeddings ORDER BY helix_id`), the slots for each
-    /// helix are contiguous and `fill(true)` replaces scattered writes,
-    /// eliminating the ~150 µs of scattered L3 cache misses per query.
+    /// **Fallback (global masked scan)**: if the fleet has no entry for this helix
+    /// (shouldn't happen after startup bulk-load), falls back to constructing a
+    /// boolean mask over the global index and calling `search_with_mask`.
     ///
     /// Returns an empty vec if the helix is unknown or has no embeddings.
     pub fn search_helix(&self, query: &[f32], k: usize, helix_id: &str) -> Vec<(f32, String)> {
+        // Fast path: hit the per-helix micro-index directly (no mask needed).
+        if let Some((fleet_idx, slot_ids)) = self
+            .fleet
+            .get(helix_id)
+            .zip(self.fleet_slot_ids.get(helix_id))
+        {
+            if !fleet_idx.is_empty() {
+                let res = fleet_idx.search(query, k);
+                return res
+                    .indices_for_query(0)
+                    .iter()
+                    .zip(res.scores_for_query(0))
+                    .filter_map(|(&slot, &score)| {
+                        usize::try_from(slot)
+                            .ok()
+                            .and_then(|s| slot_ids.get(s).map(|id| (score, id.clone())))
+                    })
+                    .collect();
+            }
+        }
+
+        // Fallback: global masked scan (helix not in fleet — e.g., post-load upsert
+        // before next prepare() or when turbovec-semantic is partially initialised).
         let slots = match self.helix_slots.get(helix_id) {
             Some(s) if !s.is_empty() => s,
             _ => return Vec::new(),
@@ -132,11 +191,8 @@ impl TurboVecIndex {
         let n = self.inner.len();
         let mut mask = vec![false; n];
         if let Some(&(start, end)) = self.helix_ranges.get(helix_id) {
-            // Fast path: bulk-loaded helix with contiguous slots.
-            // One cache-friendly sequential fill vs. O(|helix|) scattered writes.
             mask[start..end.min(n)].fill(true);
         } else {
-            // Slow path: post-prepare upserts or non-contiguous layout.
             for &s in slots {
                 if s < n {
                     mask[s] = true;
@@ -175,6 +231,10 @@ impl TurboVecIndex {
             if max - min + 1 == slots.len() {
                 self.helix_ranges.insert(helix_id.clone(), (min, max + 1));
             }
+        }
+        // Warm SIMD caches in all fleet micro-indexes.
+        for fleet_idx in self.fleet.values_mut() {
+            fleet_idx.prepare();
         }
     }
 
