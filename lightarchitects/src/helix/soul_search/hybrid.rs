@@ -669,24 +669,27 @@ fn rrf_fuse(
         .collect()
 }
 
-/// Add RRF contributions from one signal's ranked list.
+/// Add convex-combination contributions from one signal's result list.
+///
+/// Score contribution = `weight × item.score` (raw similarity, already in
+/// the provider's native range — cosine for semantic/structural, BM25 for
+/// fulltext). Signals with higher configured weights and higher raw scores
+/// contribute more, preserving both priority and magnitude information.
 fn add_signal_ranks(
     scores: &mut HashMap<String, FusedEntry>,
     ranked: &[ScoredId],
     weight: f64,
     signal: RetrievalSignal,
 ) {
-    for (rank, item) in ranked.iter().enumerate() {
-        #[allow(clippy::cast_precision_loss)]
-        let rrf_score = weight / (RRF_K + (rank as f64) + 1.0);
-
+    for item in ranked {
+        let contribution = weight * item.score;
         let entry = scores
             .entry(item.step_id.clone())
             .or_insert_with(|| FusedEntry {
                 score: 0.0,
                 signals: Vec::new(),
             });
-        entry.score += rrf_score;
+        entry.score += contribution;
         entry.signals.push(signal);
     }
 }
@@ -996,8 +999,9 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].step_id, "shared");
         assert_eq!(results[0].signals.len(), 2);
-        // Score should be sum of both contributions
-        let expected = 0.5 / (RRF_K + 1.0) + 0.5 / (RRF_K + 1.0);
+        // Score: weight × raw_score for each signal (convex combination).
+        // fulltext: 0.5 × 3.0 = 1.5; semantic: 0.5 × 0.9 = 0.45; total = 1.95.
+        let expected = 0.5 * 3.0 + 0.5 * 0.9;
         assert!((results[0].score - expected).abs() < 0.001);
     }
 
