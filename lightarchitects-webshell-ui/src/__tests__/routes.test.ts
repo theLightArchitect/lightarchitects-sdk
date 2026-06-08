@@ -79,11 +79,14 @@ describe('SvelteKit root layout and build config', () => {
   it('src/app.html exists (SvelteKit entry)', () =>
     expect(existsSync(resolve(process.cwd(), 'src/app.html'))).toBe(true));
 
-  it('svelte.config.js uses adapter-static with 200.html fallback', () => {
+  it('svelte.config.js uses adapter-static outputting to dist/ with index.html fallback', () => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const fs = require('fs') as typeof import('fs');
     const config = fs.readFileSync(resolve(process.cwd(), 'svelte.config.js'), 'utf-8');
     expect(config).toContain('adapter-static');
-    expect(config).toContain('200.html');
+    // Output to dist/ — required by lightarchitects-webshell rust-embed (#[folder="../lightarchitects-webshell-ui/dist/"])
+    expect(config).toContain("pages: 'dist'");
+    // SPA fallback matches static_assets.rs::serve() fallback call to Assets::get("index.html")
+    expect(config).toContain("fallback: 'index.html'");
   });
 });
