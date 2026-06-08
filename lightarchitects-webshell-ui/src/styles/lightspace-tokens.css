@@ -1,0 +1,81 @@
+/*
+ * Lightspace design tokens — scoped to .ls-root.
+ * Phase 0 finding #7: Syne NOT imported globally — scoped @import here.
+ * Existing --la-* tokens from tokens.css are inherited within .ls-root.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Azeret+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+
+.ls-root {
+  --ls-font-display: 'Syne', var(--la-font-mono, ui-monospace, monospace);
+  --ls-font-code:    'Azeret Mono', var(--la-font-mono, ui-monospace, monospace);
+
+  --ls-bg:           #0a0b0d;
+  --ls-panel:        #0f1014;
+  --ls-card:         #13151b;
+  --ls-sunken:       #090a0c;
+  --ls-elev:         #1a1d26;
+
+  --ls-border:       rgba(255,255,255,0.07);
+  --ls-border-base:  rgba(255,255,255,0.10);
+  --ls-border-strong:rgba(255,255,255,0.16);
+  --ls-border-accent:rgba(77,142,255,0.30);
+
+  --ls-text:         rgba(255,255,255,0.72);
+  --ls-text-bright:  #ffffff;
+  --ls-text-dim:     rgba(255,255,255,0.38);
+  --ls-text-mute:    rgba(255,255,255,0.22);
+  --ls-text-ghost:   rgba(255,255,255,0.12);
+
+  --ls-acc:          #4d8eff;
+  --ls-acc-green:    #3ecf8e;
+  --ls-acc-amber:    #f5a623;
+  --ls-acc-red:      #e05c5c;
+  --ls-acc-purple:   #8b5cf6;
+
+  /* Card kind accent backgrounds */
+  --ls-kind-trace:      rgba(77,142,255,0.18);
+  --ls-kind-monitor:    rgba(62,207,142,0.18);
+  --ls-kind-instrument: rgba(62,207,142,0.12);
+  --ls-kind-thinking:   rgba(139,92,246,0.18);
+  --ls-kind-toolcall:   rgba(245,166,35,0.18);
+  --ls-kind-bash:       rgba(245,166,35,0.12);
+  --ls-kind-agentspawn: rgba(77,142,255,0.22);
+  --ls-kind-diff:       rgba(224,92,92,0.18);
+  --ls-kind-artifact:   rgba(62,207,142,0.22);
+  --ls-kind-research:   rgba(139,92,246,0.15);
+  --ls-kind-archgallery:rgba(77,142,255,0.12);
+  --ls-kind-branchlane: rgba(77,142,255,0.08);
+
+  --ls-fast: 0.12s ease;
+  --ls-mid:  0.24s cubic-bezier(0.4,0,0.2,1);
+  --ls-slow: 0.45s cubic-bezier(0.4,0,0.2,1);
+
+  --ls-tk-loose: 0.12em;
+  --ls-tk-mid:   0.07em;
+  --ls-tk-tight: 0.04em;
+}
+
+.ls-root {
+  background: var(--ls-bg);
+  color: var(--ls-text);
+  font-family: var(--ls-font-code);
+  font-size: 12px;
+  letter-spacing: var(--ls-tk-tight);
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+  box-sizing: border-box;
+}
+
+.ls-root *, .ls-root *::before, .ls-root *::after { box-sizing: inherit; }
+
+/* Scan-line overlay identical to mockup body::before */
+.ls-root::before {
+  content: "";
+  position: fixed; inset: 0; pointer-events: none; z-index: 200;
+  background:
+    repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(0,0,0,0.18) 2px, rgba(0,0,0,0.18) 3px),
+    radial-gradient(ellipse at 50% -10%, rgba(77,142,255,0.04), transparent 60%);
+  mix-blend-mode: overlay; opacity: 0.55;
+}
