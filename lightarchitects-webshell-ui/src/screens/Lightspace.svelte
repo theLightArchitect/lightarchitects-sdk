@@ -1,258 +1,235 @@
 <script lang="ts">
-  // Lightspace — platform intro + workspace shell.
-  // Orchestrates the lobby → materialize → 3-panel workspace transition.
-  // State lives in ls (state.svelte.ts); each panel is a focused subcomponent.
+  /**
+   * @component Lightspace
+   * @description Root Lightspace screen — d0 entry surface. Mounts the full
+   *   bento-grid workspace from lobby through to live card streams.
+   *
+   * @contract EventType multiple → activityFeed, implCompleteEvents, mergeAgentEvents,
+   *   ironclawHitlEscalation, workerSlots, conductorState, pillarStream (all via sse.ts)
+   * @reads  lightspaceSessionStore, lightspaceCanvasStore, lightspaceFilesStore,
+   *         lightspaceUiStore, lightspaceLasdlcStore, lightspaceMetricsStore
+   * @mutates lightspaceCanvasStore (canvasAddCard on SSE), lightspaceSessionStore
+   * @api GET /api/builds/:buildId (production mode init), GET /api/builds/:id/fleet
+   *
+   * Phase 4: all structural components mounted; SSE subscription wired in Phase 5;
+   * TIMELINE demo engine wired in Phase 6.
+   */
 
-  import { ls } from '$lib/lightspace/state.svelte';
-  import { startDemo } from '$lib/lightspace/demo';
+  import '../styles/lightspace-tokens.css';
+  import { page } from '$app/state';
+  import { onMount } from 'svelte';
 
-  import Lobby      from './lightspace/Lobby.svelte';
-  import Rail       from './lightspace/Rail.svelte';
-  import Schematic  from './lightspace/Schematic.svelte';
-  import Canvas     from './lightspace/Canvas.svelte';
-  import StatusRail from './lightspace/StatusRail.svelte';
+  import {
+    lightspaceSessionStore,
+    lightspaceFilesStore,
+    lightspaceCanvasStore,
+    lightspaceUiStore,
+    canvasAddCard,
+    canvasUpsertCard,
+    lasdlcUpdateGates,
+    sessionAddConvMessage,
+  } from '$lib/lightspace-stores';
+  import { activityFeed, implCompleteEvents, mergeAgentEvents, ironclawHitlEscalation } from '$lib/stores';
+  import { subscribeFleet } from '$lib/sse';
+  import type { FleetEvent } from '$lib/types';
+  import { TimelineEngine } from '$lib/lightspace-timeline';
+  import { DEMO_TIMELINE } from '$lib/lightspace-demo-timeline';
+  import { canvasClear } from '$lib/lightspace-stores';
 
-  // Boot the demo timeline once — replaced by SSE wiring in production.
-  $effect(() => startDemo());
+  import LightspaceHeader  from '$lib/../components/lightspace/LightspaceHeader.svelte';
+  import LeftSidebar       from '$lib/../components/lightspace/LeftSidebar.svelte';
+  import BentoCanvas       from '$lib/../components/lightspace/BentoCanvas.svelte';
+  import SchematicPanel    from '$lib/../components/lightspace/SchematicPanel.svelte';
+  import FileHeroOverlay   from '$lib/../components/lightspace/FileHeroOverlay.svelte';
+  import TombHeroOverlay   from '$lib/../components/lightspace/TombHeroOverlay.svelte';
+
+  // ── HITL modal (Phase 4) — reuse existing ironclaw HitlModal ────────────
+  // Phase 5 wires the ironclawHitlEscalation store; placeholder here.
+  // import HitlModal from '$lib/../components/ironclaw/HitlModal.svelte';
+
+  // ── Route context ─────────────────────────────────────────────────────────
+  const buildId = $derived(page.params.buildId ?? null);
+
+  $effect(() => {
+    lightspaceSessionStore.update(s => ({ ...s, buildId }));
+  });
+
+  // ── Keyboard: Esc to dismiss overlays / collapse expanded card ─────────────
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key !== 'Escape') return;
+    // Priority: file hero → tomb hero → expanded card
+    if ($lightspaceFilesStore.heroFileId) {
+      lightspaceFilesStore.update(s => ({ ...s, heroFileId: null }));
+      return;
+    }
+    if ($lightspaceFilesStore.heroTombId) {
+      lightspaceFilesStore.update(s => ({ ...s, heroTombId: null }));
+      return;
+    }
+    if ($lightspaceCanvasStore.expandedCardId) {
+      lightspaceCanvasStore.update(s => ({ ...s, expandedCardId: null }));
+    }
+  }
+
+  // ── Lobby submit handler (dispatched by LobbyInput) ───────────────────────
+  function handleLobbySubmit(e: CustomEvent<{ intent: string }>) {
+    const intent = e.detail.intent.trim();
+    if (!intent) return;
+    lightspaceSessionStore.update(s => ({
+      ...s, intent, runStatus: 'connecting', materializePhase: 'begin',
+    }));
+    // Phase 5: wire to POST /api/lightshell/runs in production mode
+    // Phase 6: trigger TIMELINE engine in demo mode
+  }
+
+  // ── Phase 6: Demo TIMELINE engine ────────────────────────────────────────
+  let timeline: TimelineEngine | null = null;
+
+  $effect(() => {
+    const mode = $lightspaceSessionStore.mode;
+    if (mode === 'demo') {
+      canvasClear();
+      timeline = new TimelineEngine(DEMO_TIMELINE);
+      timeline.play();
+    } else {
+      timeline?.pause();
+      timeline = null;
+    }
+    return () => { timeline?.pause(); timeline = null; };
+  });
+
+  // ── Phase 5: SSE store subscriptions ─────────────────────────────────────
+  // sse.ts already populates all these stores. Lightspace subscribes reactively
+  // and maps new events to canvas mutations. Track array lengths to process
+  // only newly-appended events (avoids re-processing full history on each tick).
+
+  let lastActivityLen = 0;
+  $effect(() => {
+    const feed = $activityFeed;
+    const newItems = feed.slice(lastActivityLen);
+    lastActivityLen = feed.length;
+    for (const entry of newItems) {
+      // activityFeed has 3 sources: 'copilot' | 'ayin' | 'supervisor'
+      // ayin spans → AYIN observability only; supervisor alerts → supervisorAlerts store
+      if (entry.source !== 'copilot') continue;
+      const ev = entry.event;
+      const id = `trace-${ev.timestamp}-${Math.random().toString(36).slice(2,7)}`;
+      switch (ev.kind) {
+        case 'thinking':
+          canvasAddCard({ id, kind: 'thinking', span: 'span-6', title: 'Reasoning', ts: Date.now(), data: { summary: ev.summary ?? '', full: ev.summary ?? '' } });
+          break;
+        case 'tool_use': {
+          const isBash = (ev.raw as Record<string, unknown>)?.name?.toString().startsWith('Bash');
+          if (isBash) {
+            canvasAddCard({ id, kind: 'bash', span: 'span-4', title: 'Bash', ts: Date.now(), data: { output: ev.summary ?? '' } });
+          } else {
+            canvasAddCard({ id, kind: 'toolcall', span: 'span-4', title: ev.summary?.slice(0, 40) ?? 'tool', ts: Date.now(), data: { name: (ev.raw as Record<string, unknown>)?.name ?? 'tool_use', args: ev.summary ?? '' } });
+          }
+          break;
+        }
+        default:
+          canvasUpsertCard({ id: `trace-${$lightspaceSessionStore.buildId ?? 'demo'}`, kind: 'trace', span: 'span-6', title: 'Activity', ts: Date.now(), data: { entries: [{ kind: ev.kind ?? 'assistant', text: ev.summary ?? '' }] } });
+      }
+    }
+  });
+
+  let lastImplLen = 0;
+  $effect(() => {
+    const events = $implCompleteEvents;
+    const newItems = events.slice(lastImplLen);
+    lastImplLen = events.length;
+    for (const ev of newItems) {
+      const base = { ts: Date.now(), data: ev };
+      canvasAddCard({ id: `diff-${ev.commit_sha?.slice(0,8) ?? Math.random().toString(36).slice(2)}`, kind: 'diff', span: 'span-12', title: `Wave ${ev.wave ?? ''} diff`, ...base });
+      canvasAddCard({ id: `art-${ev.commit_sha?.slice(0,8) ?? Math.random().toString(36).slice(2)}`, kind: 'artifact', span: 'span-3', title: ev.task_id ?? 'artifact', ...base });
+      lasdlcUpdateGates(ev.gates_passed ?? [], ev.gates_skipped ?? []);
+    }
+  });
+
+  let lastMergeLen = 0;
+  $effect(() => {
+    const events = $mergeAgentEvents;
+    const newItems = events.slice(lastMergeLen);
+    lastMergeLen = events.length;
+    for (const ev of newItems) {
+      canvasUpsertCard({ id: `bl-${$lightspaceSessionStore.buildId ?? 'demo'}`, kind: 'branchlane', span: 'span-12', title: 'Phase Ladder', ts: Date.now(), data: { lanes: [] } });
+    }
+  });
+
+  $effect(() => {
+    if ($ironclawHitlEscalation) {
+      // Phase 4.5: HitlModal is imported in Phase 5 full integration.
+      // For now just log — HitlModal will open reactively via ironclawHitlEscalation store.
+    }
+  });
+
+  // Fleet subscription (production mode only)
+  let cleanupFleet: (() => void) | null = null;
+  $effect(() => {
+    const id = $lightspaceSessionStore.buildId;
+    if (!id || $lightspaceSessionStore.mode !== 'production') {
+      cleanupFleet?.();
+      cleanupFleet = null;
+      return;
+    }
+    cleanupFleet?.();
+    cleanupFleet = subscribeFleet(id, (ev: FleetEvent) => {
+      if (ev.type === 'snapshot') {
+        for (const node of ev.nodes) {
+          canvasUpsertCard({ id: `agent-${node.agent_id}`, kind: 'agentspawn', span: 'span-4', title: node.agent_type, ts: Date.now(), data: { agentType: node.agent_type, status: node.status, progress: 0 } });
+        }
+      } else if (ev.type === 'agent_spawned') {
+        canvasAddCard({ id: `agent-${ev.node.agent_id}`, kind: 'agentspawn', span: 'span-4', title: ev.node.agent_type, ts: Date.now(), data: { agentType: ev.node.agent_type, status: 'running', progress: 0 } });
+      } else if (ev.type === 'agent_completed') {
+        canvasUpsertCard({ id: `agent-${ev.agent_id}`, _agentDone: true });
+      }
+    });
+    return () => { cleanupFleet?.(); cleanupFleet = null; };
+  });
+
+  onMount(() => {
+    document.addEventListener('ls:lobby-submit', handleLobbySubmit as EventListener);
+    return () => document.removeEventListener('ls:lobby-submit', handleLobbySubmit as EventListener);
+  });
 </script>
 
-<!-- Root shell: grid + modifier class state machine -->
-<div class={ls.rootClass}>
+<svelte:window onkeydown={handleKeydown} />
 
-  <!-- Scan-line overlay (CSS ::before on .la-root provides this via global) -->
+<div class="ls-root" data-mode={$lightspaceSessionStore.mode}>
 
-  <!-- Top bar ─────────────────────────────────────────────────────────────── -->
-  <header class="la-topbar">
-    <span class="la-tb-brand">Light<span class="la-acc">space</span></span>
-    <span class="la-tb-sep">·</span>
-    <span class="la-tb-crumb">session <b>{ls.sessionId}</b></span>
-    <span class="la-tb-sep">·</span>
-    <span class="la-tb-crumb">cwd <b>{ls.cwd}</b></span>
+  <!-- Header -->
+  <LightspaceHeader />
 
-    <div class="la-tb-mid">
-      <span class="la-tb-pill acc">
-        <span class="dot"></span>workspace <b>{ls.wsState}</b>
-      </span>
-      <span class="la-tb-pill">
-        <span class="dot"></span>provider <b>anthropic/claude-opus-4-7</b>
-      </span>
-      <span class="la-tb-pill warn">
-        <span class="dot"></span>budget <b>${ls.budget.toFixed(2)} / $5.00</b>
-      </span>
-    </div>
-
-    <div class="la-tb-right">
-      <button class="la-tb-btn" onclick={() => ls.railCollapsed  = !ls.railCollapsed}>Rail</button>
-      <button class="la-tb-btn" onclick={() => ls.schemCollapsed = !ls.schemCollapsed}>Schematic</button>
-    </div>
-  </header>
-
-  <!-- Lobby overlay ────────────────────────────────────────────────────────── -->
-  <Lobby />
-
-  <!-- Materialize phase indicator ──────────────────────────────────────────── -->
-  <div class="la-materialize-indicator" aria-live="polite" aria-label="Workspace materializing">
-    <div class="la-mat-ring"></div>
-    <div class="la-mat-phases">
-      {#each (['begin','rail_collapsed','grid_revealed','drawer_revealed','cards_streaming','complete'] as const) as phase}
-        <div class="la-mat-phase"
-             class:is-done={ls.matPhasesSeen.has(phase) && ls.matPhase !== phase}
-             class:is-active={ls.matPhase === phase}>
-          <span class="la-mat-dot"></span>
-          {phase.replace(/_/g, ' ')}
-        </div>
-      {/each}
-    </div>
+  <!-- 3-panel workspace -->
+  <div class="ls-workspace">
+    <LeftSidebar />
+    <BentoCanvas />
+    <SchematicPanel />
   </div>
 
-  <!-- 3-panel workspace ────────────────────────────────────────────────────── -->
-  <Rail />
-  <Schematic />
-  <Canvas />
-  <StatusRail />
+  <!-- Overlays (rendered on top of workspace) -->
+  <FileHeroOverlay />
+  <TombHeroOverlay />
+
+  <!-- Phase 5: HitlModal (ironclawHitlEscalation store wired) -->
+  <!-- Phase 6: LightspaceTimeline (demo TIMELINE engine) -->
 
 </div>
 
 <style>
-/* ════════════════════════════════════════════════════════════════════
- *  Google Fonts (same set as mockup)
- * ════════════════════════════════════════════════════════════════════ */
-@import url('https://fonts.googleapis.com/css2?family=Azeret+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Syne:wght@700;800&family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap');
-
-/* ════════════════════════════════════════════════════════════════════
- *  Design tokens — injected as :root so subcomponents inherit them
- * ════════════════════════════════════════════════════════════════════ */
-:root {
-  --la-bg-base:     #07080f;
-  --la-bg-panel:    #0d0f18;
-  --la-bg-card:     #111420;
-  --la-bg-sunken:   #0a0c14;
-  --la-bg-elev:     #181c2a;
-  --la-hair-faint:  rgba(255,255,255,0.04);
-  --la-hair-base:   rgba(255,255,255,0.08);
-  --la-hair-strong: rgba(255,255,255,0.15);
-  --la-hair-accent: rgba(77,142,255,0.28);
-  --la-text-bright: rgba(255,255,255,0.95);
-  --la-text-base:   rgba(255,255,255,0.80);
-  --la-text-dim:    rgba(255,255,255,0.50);
-  --la-text-mute:   rgba(255,255,255,0.28);
-  --la-text-ghost:  rgba(255,255,255,0.14);
-
-  --la-ok:    #39ff8a;
-  --la-err:   #ff4d6a;
-  --la-warn:  #ffad2e;
-  --la-info:  #8aa9ff;
-  --la-acc:   #4d8eff;
-  --la-acc2:  #a98aff;
-  --la-acc3:  #ffd166;
-
-  --la-font-mono:    'Azeret Mono', 'JetBrains Mono', ui-monospace, monospace;
-  --la-font-display: 'Syne', sans-serif;
-  --la-font-serif:   'EB Garamond', Georgia, serif;
-
-  --la-tk-loose: 0.12em;
-  --la-tk-mid:   0.07em;
-  --la-tk-tight: 0.04em;
-
-  --la-fast: 0.15s ease;
-  --la-mid:  0.28s cubic-bezier(0.4,0,0.2,1);
-  --la-slow: 0.55s cubic-bezier(0.4,0,0.2,1);
-
-  --la-rail-w:               320px;
-  --la-rail-w-collapsed:     56px;
-  --la-schematic-w:          380px;
-  --la-schematic-w-collapsed: 44px;
-}
-
-/* ════════════════════════════════════════════════════════════════════
- *  Root shell — 3-row × 3-column grid
- * ════════════════════════════════════════════════════════════════════ */
-:global(.la-root) {
-  display: grid;
-  grid-template-areas:
-    "topbar  topbar    topbar"
-    "rail    schematic canvas"
-    "status  status    status";
-  grid-template-rows: 38px 1fr 30px;
-  grid-template-columns: var(--la-rail-w) var(--la-schematic-w) 1fr;
-  height: 100vh;
-  background: var(--la-bg-base);
-  color: var(--la-text-base);
-  font-family: var(--la-font-mono);
-  font-size: 12px;
-  letter-spacing: var(--la-tk-tight);
-  overflow: hidden;
-  -webkit-font-smoothing: antialiased;
-  font-variant-numeric: tabular-nums;
-  transition: grid-template-columns var(--la-mid);
+.ls-root {
+  width: 100%;
+  height: 100%;
   position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
-/* Scan-line overlay */
-:global(.la-root)::before {
-  content: "";
-  position: fixed; inset: 0; pointer-events: none; z-index: 100;
-  background:
-    repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(0,0,0,0.18) 2px, rgba(0,0,0,0.18) 3px),
-    radial-gradient(ellipse at 50% -10%, rgba(77,142,255,0.04), transparent 60%);
-  mix-blend-mode: overlay; opacity: 0.55;
+.ls-workspace {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
 }
-
-/* Column collapse variants */
-:global(.la-root.rail-collapsed) {
-  grid-template-columns: var(--la-rail-w-collapsed) var(--la-schematic-w) 1fr;
-}
-:global(.la-root.schematic-collapsed) {
-  grid-template-columns: var(--la-rail-w) var(--la-schematic-w-collapsed) 1fr;
-}
-:global(.la-root.rail-collapsed.schematic-collapsed) {
-  grid-template-columns: var(--la-rail-w-collapsed) var(--la-schematic-w-collapsed) 1fr;
-}
-
-/* Lobby: hide workspace panels, reveal lobby overlay */
-:global(.la-root.in-lobby) .la-topbar,
-:global(.la-root.in-lobby .la-rail),
-:global(.la-root.in-lobby .la-schematic),
-:global(.la-root.in-lobby .la-canvas),
-:global(.la-root.in-lobby .la-statusrail) { opacity: 0; pointer-events: none; }
-:global(.la-root.in-lobby .la-lobby)      { opacity: 1 !important; pointer-events: auto !important; }
-
-/* Materializing: dim canvas + schematic while spinner runs */
-:global(.la-root.materializing .la-canvas),
-:global(.la-root.materializing .la-schematic) { opacity: 0.18; }
-:global(.la-root.materializing) .la-materialize-indicator { display: flex; }
-
-/* ════════════════════════════════════════════════════════════════════
- *  Top bar
- * ════════════════════════════════════════════════════════════════════ */
-.la-topbar {
-  grid-area: topbar;
-  display: flex; align-items: center; gap: 12px; padding: 0 14px;
-  border-bottom: 1px solid var(--la-hair-base);
-  background: linear-gradient(180deg, var(--la-bg-panel) 0%, var(--la-bg-base) 100%);
-  font-size: 10px; letter-spacing: var(--la-tk-mid);
-  text-transform: uppercase; color: var(--la-text-dim);
-  transition: opacity var(--la-mid);
-}
-.la-tb-brand {
-  font-family: var(--la-font-display); font-weight: 700;
-  font-size: 13px; letter-spacing: var(--la-tk-loose);
-  color: var(--la-text-bright); text-transform: uppercase;
-}
-.la-tb-brand .la-acc { color: var(--la-acc); }
-.la-tb-sep { color: var(--la-text-ghost); }
-.la-tb-crumb { font-size: 9px; }
-.la-tb-crumb b { color: var(--la-text-base); font-weight: 500; }
-.la-tb-mid { flex: 1; display: flex; gap: 16px; justify-content: center; }
-.la-tb-pill {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 2px 8px; border: 1px solid var(--la-hair-base);
-  border-radius: 2px; font-size: 9px; background: var(--la-bg-sunken);
-}
-.la-tb-pill .dot {
-  width: 5px; height: 5px; border-radius: 50%;
-  background: var(--la-ok); box-shadow: 0 0 6px var(--la-ok);
-}
-.la-tb-pill.warn .dot { background: var(--la-warn); box-shadow: 0 0 6px var(--la-warn); }
-.la-tb-pill.acc  .dot { background: var(--la-acc);  box-shadow: 0 0 6px var(--la-acc); }
-.la-tb-right { display: flex; gap: 8px; align-items: center; }
-.la-tb-btn {
-  background: transparent; border: 1px solid var(--la-hair-base);
-  color: var(--la-text-dim); font-family: var(--la-font-mono);
-  font-size: 9px; letter-spacing: var(--la-tk-mid); text-transform: uppercase;
-  padding: 3px 8px; cursor: pointer; border-radius: 2px;
-  transition: all var(--la-fast);
-}
-.la-tb-btn:hover { color: var(--la-text-bright); border-color: var(--la-acc); }
-
-/* ════════════════════════════════════════════════════════════════════
- *  Materialize indicator (shown during lobby→workspace transition)
- * ════════════════════════════════════════════════════════════════════ */
-.la-materialize-indicator {
-  position: fixed; top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
-  display: none; flex-direction: column; align-items: center; gap: 14px;
-  z-index: 80; pointer-events: none;
-  font-family: var(--la-font-mono); font-size: 9px;
-  letter-spacing: var(--la-tk-loose); text-transform: uppercase;
-  color: var(--la-text-dim);
-}
-.la-mat-ring {
-  width: 72px; height: 72px;
-  border: 1px solid var(--la-hair-base); border-top-color: var(--la-acc);
-  border-radius: 50%; animation: la-spin 1s linear infinite;
-}
-@keyframes la-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
-
-.la-mat-phases { display: flex; flex-direction: column; gap: 4px; align-items: center; }
-.la-mat-phase {
-  display: flex; align-items: center; gap: 7px;
-  opacity: 0.3; transition: opacity var(--la-mid), color var(--la-mid);
-}
-.la-mat-phase.is-done   { opacity: 1; color: var(--la-ok); }
-.la-mat-phase.is-active { opacity: 1; color: var(--la-text-bright); }
-.la-mat-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--la-hair-strong); }
-.la-mat-phase.is-done   .la-mat-dot { background: var(--la-ok); box-shadow: 0 0 4px var(--la-ok); }
-.la-mat-phase.is-active .la-mat-dot { background: var(--la-acc); box-shadow: 0 0 6px var(--la-acc); animation: la-pulse 1s infinite; }
-@keyframes la-pulse { 50% { transform: scale(1.4); } }
 </style>

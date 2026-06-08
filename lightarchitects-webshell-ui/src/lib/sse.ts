@@ -20,7 +20,7 @@ import {
   contextUsage,
   gitforestTree, gitforestPulses,
   workerSlots, conductorState, mergeAgentEvents, fixAgentEvents, implCompleteEvents,
-  ironclawHitlEscalation,
+  ironclawHitlEscalation, northstarState,
   pushRecentEvent,
   projects,
   strategyHitl,
@@ -736,6 +736,12 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
     case 'fix_agent_iteration': {
       const payload = event as unknown as import('./types').FixAgentIterationEvent;
       fixAgentEvents.update(list => [payload, ...list].slice(0, 100));
+      break;
+    }
+    // ── Lightspace Phase 5: northstar state for MonitorCard + LightspaceHeader ──
+    case 'supervisor_update': {
+      const payload = event as unknown as import('./types').NorthstarEvaluationEvent & { type: 'supervisor_update' };
+      northstarState.set(payload);
       break;
     }
     // ── webshell-agent-comms-display: Agents Playbook §3.5 attestation ───────

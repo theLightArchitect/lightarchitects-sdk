@@ -1042,6 +1042,10 @@ export const implCompleteEvents = writable<ImplCompleteEvent[]>([]);
 /** Active ironclaw HITL escalation awaiting operator decision. Null when idle. */
 export const ironclawHitlEscalation = writable<IronclawHitlEscalationEvent | null>(null);
 
+/** Latest supervisor_update payload — northstar evaluation state from the copilot loop.
+ *  No dedicated store existed before Lightspace (Phase 5 addition). */
+export const northstarState = writable<import('./types').NorthstarEvaluationEvent | null>(null);
+
 // --- Copilot context buffer (copilot-omniscience-read) ---
 
 /** Maximum events retained in the rolling context buffer (frontend cap). */
