@@ -1,7 +1,7 @@
 /**
  * Lightspace replay E2E — /api/lightspace/{session}/replay endpoint.
  *
- * R1 — mock GET /api/lightspace/*/replay returning 3 NDJSON lines
+ * R1 — mock GET /api/lightspace/{session_id}/replay returning 3 NDJSON lines
  * R2 — replay endpoint returns events in sequence order
  * R3 — replay response JSON has seq field on each entry
  */
