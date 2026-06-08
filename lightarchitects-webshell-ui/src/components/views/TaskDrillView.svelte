@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { navigate } from '$lib/routes';
+  import { goto } from '$app/navigation';
   import { activityFeed } from '$lib/stores';
   import { api } from '$lib/api';
   import { CONTEXT_TIER_DEFAULTS } from '$lib/WavePipelineView.contract';
@@ -77,8 +77,7 @@
   // ── Keyboard: Esc → parent route ─────────────────────────────────────────
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
-      navigate('/builds/:buildId/phase/:phaseId/wave/:waveId/agent/:agentKey',
-        { buildId, phaseId, waveId, agentKey });
+      goto(`/builds/${buildId}/phase/${phaseId}/wave/${waveId}/agent/${agentKey}`);
     }
   }
 
@@ -95,22 +94,22 @@
 
   <!-- Breadcrumb -->
   <nav class="drill-breadcrumb" aria-label="breadcrumb">
-    <button class="crumb-seg" onclick={() => navigate('/builds', {})}>FOREST</button>
+    <button class="crumb-seg" onclick={() => goto('/builds')}>FOREST</button>
     <span class="crumb-sep" aria-hidden="true">›</span>
     <button class="crumb-seg"
-      onclick={() => navigate('/builds/:buildId', { buildId })}
+      onclick={() => goto(`/builds/${buildId}`)}
     >{buildId.slice(0, 10)}</button>
     <span class="crumb-sep" aria-hidden="true">›</span>
     <button class="crumb-seg"
-      onclick={() => navigate('/builds/:buildId/phase/:phaseId', { buildId, phaseId })}
+      onclick={() => goto(`/builds/${buildId}/phase/${phaseId}`)}
     >{phaseId}</button>
     <span class="crumb-sep" aria-hidden="true">›</span>
     <button class="crumb-seg"
-      onclick={() => navigate('/builds/:buildId/phase/:phaseId/wave/:waveId', { buildId, phaseId, waveId })}
+      onclick={() => goto(`/builds/${buildId}/phase/${phaseId}/wave/${waveId}`)}
     >{waveId}</button>
     <span class="crumb-sep" aria-hidden="true">›</span>
     <button class="crumb-seg"
-      onclick={() => navigate('/builds/:buildId/phase/:phaseId/wave/:waveId/agent/:agentKey', { buildId, phaseId, waveId, agentKey })}
+      onclick={() => goto(`/builds/${buildId}/phase/${phaseId}/wave/${waveId}/agent/${agentKey}`)}
     >{agentKey}</button>
     <span class="crumb-sep" aria-hidden="true">›</span>
     <span class="crumb-seg crumb-current" aria-current="page">{taskId}</span>

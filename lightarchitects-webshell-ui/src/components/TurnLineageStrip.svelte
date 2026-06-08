@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { navigate } from '$lib/routes';
+  import { goto } from '$app/navigation';
 
   interface Props {
     turnSpanId: string;
@@ -13,7 +13,7 @@
   function openAyin() {
     // Navigate to observability panel. Gap 3 (?span= deeplink filter) deferred
     // pending AYIN binary change — operators can use shortId for manual lookup.
-    navigate('/#/observability');
+    goto('/observability'); // was '/#/observability' — hash-routing artifact removed
   }
 </script>
 

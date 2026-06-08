@@ -13,6 +13,7 @@
 
 import { notifications } from './notificationStore';
 import type { EscalationEvent } from './types';
+import { goto } from '$app/navigation';
 
 interface PermissionRequestDetail {
   type:        'permission_request';
@@ -145,7 +146,7 @@ function onAuthFail(): void {
     requires_ack:    false,
     auto_dismiss_ms: 0,
     action_label:    'SETTINGS',
-    onAction: () => { window.location.hash = '/settings'; },
+    onAction: () => { void goto('/settings'); },
   });
 }
 

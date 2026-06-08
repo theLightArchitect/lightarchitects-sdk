@@ -9,7 +9,7 @@
 
   const HINTS: Record<CockpitPreset, string> = {
     engineer:   'Engineering — builds, phases, gates, code quality',
-    security:   'Security — SERAPH scans, AppSec findings, trust boundaries',
+    security:   'Security — vulnerability scans, AppSec findings, trust boundaries',
     ops:        'Ops — deploy pipelines, CI/CD, rollback, observability',
     quality:    'Quality — clippy, coverage, complexity, canon compliance',
     knowledge:  'Knowledge — helix strands, memory, prior decisions',

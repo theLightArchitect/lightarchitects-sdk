@@ -8,7 +8,7 @@
   import StrandMosaicCard from '$lib/../components/Cockpit/StrandMosaicCard.svelte';
   import PRMetadataBlock from '$lib/../components/Cockpit/PRMetadataBlock.svelte';
   import PRVerbSurface from '$lib/../components/Cockpit/PRVerbSurface.svelte';
-  import { navigate } from '$lib/routes';
+  import { goto } from '$app/navigation';
   import { builds } from '$lib/stores';
   import { selectedTarget } from '$lib/cockpit/stores';
   import { select } from '$lib/cockpit/stores/selection';
@@ -23,16 +23,16 @@
 
   interface StrategyEntry { id: string; label: string; cls: 'L0'|'L2'; sibling: string; registered: boolean; description: string; }
   const STRATEGIES: StrategyEntry[] = [
-    { id: 'build',          label: 'Build',         cls: 'L2', sibling: 'CORSO',  registered: true,  description: 'LASDLC build pipeline (6–7 phases)' },
+    { id: 'build',          label: 'Build',         cls: 'L2', sibling: 'CORSO',  registered: true,  description: 'Build pipeline (6–7 phases)' },
     { id: 'secure',         label: 'Secure',         cls: 'L2', sibling: 'SERAPH', registered: true,  description: 'Security assessment loop' },
-    { id: 'scrum',          label: 'Scrum',          cls: 'L2', sibling: 'AYIN',   registered: true,  description: 'Multi-sibling squad review' },
-    { id: 'enrich',         label: 'Enrich',         cls: 'L2', sibling: 'EVA',    registered: true,  description: 'EVA 8-layer memory enrichment' },
-    { id: 'gate',           label: 'Gate',           cls: 'L2', sibling: 'LÆX',   registered: true,  description: 'LASDLC 7-gate V0→Q→S→I→N→D→V' },
-    { id: 'scope_governor', label: 'Scope Governor', cls: 'L2', sibling: 'SERAPH', registered: true,  description: '5-gate AND-scope validation' },
+    { id: 'scrum',          label: 'Scrum',          cls: 'L2', sibling: 'AYIN',   registered: true,  description: 'Multi-agent squad review' },
+    { id: 'enrich',         label: 'Enrich',         cls: 'L2', sibling: 'EVA',    registered: true,  description: 'Knowledge enrichment (8-layer)' },
+    { id: 'gate',           label: 'Gate',           cls: 'L2', sibling: 'LÆX',   registered: true,  description: 'Quality gate (7-step)' },
+    { id: 'scope_governor', label: 'Scope Governor', cls: 'L2', sibling: 'SERAPH', registered: true,  description: '5-gate scope validation' },
     { id: 'bcra',           label: 'BCRA',           cls: 'L0', sibling: 'SERAPH', registered: false, description: 'FAIR/Bowtie blast-score risk analysis' },
     { id: 'drain',          label: 'Drain',          cls: 'L0', sibling: 'CORSO',  registered: false, description: 'Bounded queue-drain processor' },
     { id: 'multipass_verify',label:'Multi-Pass',     cls: 'L0', sibling: 'CORSO',  registered: false, description: 'N-pass independent verification' },
-    { id: 'red_team',       label: 'Red Team',       cls: 'L0', sibling: 'SERAPH', registered: false, description: 'SERAPH 5-phase adversarial assessment' },
+    { id: 'red_team',       label: 'Red Team',       cls: 'L0', sibling: 'SERAPH', registered: false, description: 'Security adversarial assessment (5-phase)' },
   ];
   let selectedStrategy = $state<string | null>(null);
   function selectStrategy(id: string, registered: boolean) { if (!registered) return; selectedStrategy = selectedStrategy === id ? null : id; }
@@ -77,7 +77,7 @@
         {:else}
           <div class="builds-rail">
             {#each $builds.slice().sort((a, b) => b.updatedAt > a.updatedAt ? 1 : -1).slice(0, 12) as b (b.id)}
-              <button class="build-row" class:build-row-active={b.status === 'in_progress'} onclick={() => { select({ kind: 'build', codename: b.codename ?? b.id }, $scope); navigate('/cockpit/build/:codename', { codename: b.codename ?? b.id }); }}>
+              <button class="build-row" class:build-row-active={b.status === 'in_progress'} onclick={() => { select({ kind: 'build', codename: b.codename ?? b.id }, $scope); goto(`/cockpit/build/${b.codename ?? b.id}`); }}>
                 <span class="br-dot" style="background:{STATUS_COLOR[b.status] ?? 'var(--la-text-mute)'}"></span>
                 <span class="br-name">{b.codename ?? b.name}</span>
                 <span class="br-pillar">{b.currentPillar ?? ''}</span>

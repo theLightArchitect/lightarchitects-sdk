@@ -38,6 +38,11 @@ const ANNOTATED_SOURCES: Record<CockpitCardRole, string[]> = {
   // right drawer — shell + inner router
   'focus-drawer':        ['src/lib/cockpit/shell/RightDrawer.svelte'],
   'focus-router':        ['src/lib/cockpit/focus/FocusRouter.svelte'],
+  // d2 portal + d3 file-scope cards
+  'd2-portal':           ['src/screens/CockpitBuild.svelte'],
+  'd3-portal':           ['src/screens/CockpitFile.svelte'],
+  'd3-strat':            ['src/screens/CockpitFile.svelte'],
+  'd3-context':          ['src/screens/CockpitFile.svelte'],
 };
 
 describe('Cockpit card-role registry', () => {
@@ -172,7 +177,14 @@ describe('Cockpit card-role registry', () => {
     }
   });
 
-  it('registry has exactly 21 roles — adding a card requires updating this test', () => {
-    expect(ALL_COCKPIT_CARD_ROLES).toHaveLength(21);
+  it('every data-card-role attribute in CockpitFile.svelte is registered', () => {
+    const src = readSource('src/screens/CockpitFile.svelte');
+    for (const [, role] of src.matchAll(/data-card-role="([^"]+)"/g)) {
+      expect(ALL_COCKPIT_CARD_ROLES, `data-card-role="${role}" in CockpitFile.svelte but not registered`).toContain(role);
+    }
+  });
+
+  it('registry has exactly 25 roles — adding a card requires updating this test', () => {
+    expect(ALL_COCKPIT_CARD_ROLES).toHaveLength(25);
   });
 });

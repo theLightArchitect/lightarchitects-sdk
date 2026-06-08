@@ -1,184 +1,89 @@
+/**
+ * SvelteKit route structure tests.
+ *
+ * matchRoute() was removed in the SvelteKit migration (2026-06-08) — routing
+ * is now handled by SvelteKit's file-system router in src/routes/.
+ *
+ * These tests verify:
+ *   1. Key +page.svelte files exist for the expected URL paths
+ *   2. Redirect +page.ts files exist for all legacy aliases
+ *   3. Param directory names match what screen components read via page.params
+ */
+
 import { describe, it, expect } from 'vitest';
-import { matchRoute, type ScreenKey } from '$lib/routes';
+import { existsSync } from 'fs';
+import { resolve } from 'path';
 
-describe('routes', () => {
-  describe('matchRoute() — top-level routes', () => {
-    it('/ → Dispatch (default landing is the operator console)', () => {
-      expect(matchRoute('/').screen).toBe('Dispatch');
-    });
+const R = (rel: string) => resolve(process.cwd(), 'src/routes', rel);
+const exists = (rel: string) => existsSync(R(rel));
 
-    it('empty string → Dispatch (default landing is the operator console)', () => {
-      expect(matchRoute('').screen).toBe('Dispatch');
-    });
+// ── Screen pages ────────────────────────────────────────────────────────────
+describe('SvelteKit route structure — screen pages', () => {
+  it('/ → Lightspace', () => expect(exists('+page.svelte')).toBe(true));
+  it('/dashboard → Dashboard', () => expect(exists('dashboard/+page.svelte')).toBe(true));
+  it('/dispatch → Dispatch', () => expect(exists('dispatch/+page.svelte')).toBe(true));
+  it('/builds → Builds', () => expect(exists('builds/+page.svelte')).toBe(true));
+  it('/intake → Intake', () => expect(exists('intake/+page.svelte')).toBe(true));
+  it('/helix → Helix', () => expect(exists('helix/+page.svelte')).toBe(true));
+  it('/activity → Comms', () => expect(exists('activity/+page.svelte')).toBe(true));
+  it('/knowledge → Helix', () => expect(exists('knowledge/+page.svelte')).toBe(true));
+  it('/git → Git', () => expect(exists('git/+page.svelte')).toBe(true));
+  it('/observability → Observability', () => expect(exists('observability/+page.svelte')).toBe(true));
+  it('/security → Security', () => expect(exists('security/+page.svelte')).toBe(true));
+  it('/tools → Tools', () => expect(exists('tools/+page.svelte')).toBe(true));
+  it('/chat → Chat', () => expect(exists('chat/+page.svelte')).toBe(true));
+  it('/cockpit/platform → CockpitPlatform', () => expect(exists('cockpit/platform/+page.svelte')).toBe(true));
+});
 
-    it('/builds → Builds', () => {
-      expect(matchRoute('/builds').screen).toBe('Builds');
-    });
+// ── Parameterized routes ─────────────────────────────────────────────────────
+describe('SvelteKit route structure — parameterized routes', () => {
+  it('/builds/[buildId] exists', () => expect(exists('builds/[buildId]/+page.svelte')).toBe(true));
+  it('/builds/[buildId]/[view] exists', () => expect(exists('builds/[buildId]/[view]/+page.svelte')).toBe(true));
+  it('/builds/[buildId]/phase/[phaseId] exists', () => expect(exists('builds/[buildId]/phase/[phaseId]/+page.svelte')).toBe(true));
+  it('/builds/[buildId]/phase/[phaseId]/wave/[waveId] exists', () =>
+    expect(exists('builds/[buildId]/phase/[phaseId]/wave/[waveId]/+page.svelte')).toBe(true));
+  it('/builds/[buildId]/phase/[phaseId]/wave/[waveId]/agent/[agentKey] exists', () =>
+    expect(exists('builds/[buildId]/phase/[phaseId]/wave/[waveId]/agent/[agentKey]/+page.svelte')).toBe(true));
+  it('/builds/[buildId]/phase/[phaseId]/wave/[waveId]/agent/[agentKey]/task/[taskId] exists', () =>
+    expect(exists('builds/[buildId]/phase/[phaseId]/wave/[waveId]/agent/[agentKey]/task/[taskId]/+page.svelte')).toBe(true));
+  it('/dispatch/run/[runId] exists', () => expect(exists('dispatch/run/[runId]/+page.svelte')).toBe(true));
+  it('/helix/strand/[siblingKey] exists', () => expect(exists('helix/strand/[siblingKey]/+page.svelte')).toBe(true));
+  it('/helix/entry/[entryId] exists', () => expect(exists('helix/entry/[entryId]/+page.svelte')).toBe(true));
+  it('/project/[projectId] exists', () => expect(exists('project/[projectId]/+page.svelte')).toBe(true));
+  it('/pr/[number] exists', () => expect(exists('pr/[number]/+page.svelte')).toBe(true));
+  it('/pr/new exists', () => expect(exists('pr/new/+page.svelte')).toBe(true));
+  it('/cockpit/project/[projectId] exists', () => expect(exists('cockpit/project/[projectId]/+page.svelte')).toBe(true));
+  it('/cockpit/build/[codename] exists', () => expect(exists('cockpit/build/[codename]/+page.svelte')).toBe(true));
+  it('/cockpit/file/[codename]/[...filePath] exists', () =>
+    expect(exists('cockpit/file/[codename]/[...filePath]/+page.svelte')).toBe(true));
+  it('/editor/[...filepath] exists', () => expect(exists('editor/[...filepath]/+page.svelte')).toBe(true));
+  it('/diagrams/[...project] exists', () => expect(exists('diagrams/[...project]/+page.svelte')).toBe(true));
+});
 
-    it('/ops → Dashboard', () => {
-      expect(matchRoute('/ops').screen).toBe('Dashboard');
-    });
+// ── Legacy alias redirects ───────────────────────────────────────────────────
+describe('SvelteKit route structure — redirect pages', () => {
+  it('/ops → /dashboard redirect exists', () => expect(exists('ops/+page.ts')).toBe(true));
+  it('/monitor → /dashboard redirect exists', () => expect(exists('monitor/+page.ts')).toBe(true));
+  it('/workspace/[...path] → /builds redirect exists', () => expect(exists('workspace/[...path]/+page.ts')).toBe(true));
+  it('/cockpit → /cockpit/platform redirect exists', () => expect(exists('cockpit/+page.ts')).toBe(true));
+  it('/ayin → /observability redirect exists', () => expect(exists('ayin/+page.ts')).toBe(true));
+  it('/manage → /builds redirect exists', () => expect(exists('manage/+page.ts')).toBe(true));
+  it('/arch/[...project] → /diagrams redirect exists', () => expect(exists('arch/[...project]/+page.ts')).toBe(true));
+  it('/squad-dispatch → /dispatch redirect exists', () => expect(exists('squad-dispatch/+page.ts')).toBe(true));
+});
 
-    it('/ops#activity → Dashboard (hash fragment passes through)', () => {
-      expect(matchRoute('/ops#activity').screen).toBe('Dashboard');
-    });
+// ── Root layout and build config ──────────────────────────────────────────────
+describe('SvelteKit root layout and build config', () => {
+  it('+layout.svelte exists (shared chrome)', () => expect(exists('+layout.svelte')).toBe(true));
 
-    it('/dispatch → Dispatch', () => {
-      expect(matchRoute('/dispatch').screen).toBe('Dispatch');
-    });
+  it('src/app.html exists (SvelteKit entry)', () =>
+    expect(existsSync(resolve(process.cwd(), 'src/app.html'))).toBe(true));
 
-    it('/helix → Helix', () => {
-      expect(matchRoute('/helix').screen).toBe('Helix');
-    });
-  });
-
-  describe('matchRoute() — BuildDetail patterns', () => {
-    it('/builds/:buildId → BuildDetail with buildId param', () => {
-      const r = matchRoute('/builds/abc-123');
-      expect(r.screen).toBe('BuildDetail');
-      expect(r.params.buildId).toBe('abc-123');
-    });
-
-    it('/builds/:buildId/phase/:phaseId → BuildDetail', () => {
-      const r = matchRoute('/builds/b1/phase/p2');
-      expect(r.screen).toBe('BuildDetail');
-      expect(r.params.buildId).toBe('b1');
-      expect(r.params.phaseId).toBe('p2');
-    });
-
-    it('/builds/:buildId/phase/:phaseId/wave/:waveId → BuildDetail', () => {
-      const r = matchRoute('/builds/b1/phase/p2/wave/w3');
-      expect(r.screen).toBe('BuildDetail');
-      expect(r.params.waveId).toBe('w3');
-    });
-
-    it('/builds/:buildId/phase/:phaseId/wave/:waveId/agent/:agentKey → BuildDetail', () => {
-      const r = matchRoute('/builds/b1/phase/p2/wave/w3/agent/engineer');
-      expect(r.screen).toBe('BuildDetail');
-      expect(r.params.agentKey).toBe('engineer');
-    });
-  });
-
-  describe('matchRoute() — Dispatch orphan run patterns', () => {
-    it('/dispatch/run/:runId → Dispatch', () => {
-      const r = matchRoute('/dispatch/run/run-42');
-      expect(r.screen).toBe('Dispatch');
-      expect(r.params.runId).toBe('run-42');
-    });
-
-    it('/dispatch/run/:runId/agent/:agentKey → Dispatch', () => {
-      const r = matchRoute('/dispatch/run/run-42/agent/security');
-      expect(r.screen).toBe('Dispatch');
-      expect(r.params.runId).toBe('run-42');
-      expect(r.params.agentKey).toBe('security');
-    });
-  });
-
-  describe('matchRoute() — Helix drilldown patterns', () => {
-    it('/helix/strand/:siblingKey → Helix', () => {
-      const r = matchRoute('/helix/strand/soul');
-      expect(r.screen).toBe('Helix');
-      expect(r.params.siblingKey).toBe('soul');
-    });
-
-    it('/helix/entry/:entryId → Helix', () => {
-      const r = matchRoute('/helix/entry/entry-99');
-      expect(r.screen).toBe('Helix');
-      expect(r.params.entryId).toBe('entry-99');
-    });
-  });
-
-  describe('legacy workspace aliases — now handled via REDIRECTS, not match', () => {
-    // Wave 1 (2026-05-02) moved /workspace from ROUTES into REDIRECTS so that
-    // a hard-coded redirect rewrites the URL to /builds before matching runs.
-    // matchRoute() on a bare /workspace path therefore falls through to the
-    // default Ops screen — by design. The user-visible deep link is still
-    // preserved because applyRedirects() (run on every hashchange in app.svelte)
-    // rewrites #/workspace/:id to #/builds/:id before this matcher is called.
-    it('/workspace falls through to Dashboard default (redirect handles user-visible navigation)', () => {
-      expect(matchRoute('/workspace').screen).toBe('Dashboard');
-    });
-
-    it('/workspace/:buildId falls through, but redirect rewrites it to /builds/:buildId before matchRoute is called', () => {
-      // Direct match (no redirect): falls through to default Ops.
-      expect(matchRoute('/workspace/proj-7').screen).toBe('Dashboard');
-      // After applyRedirects(), the URL becomes /builds/proj-7 and resolves correctly.
-      // (applyRedirects has DOM side-effects so it's tested in the e2e suite, not here.)
-      expect(matchRoute('/builds/proj-7').screen).toBe('BuildDetail');
-      expect(matchRoute('/builds/proj-7').params.buildId).toBe('proj-7');
-    });
-  });
-
-  describe('matchRoute() — view-encoded BuildDetail (Wave 1)', () => {
-    const VIEW_MODES = ['kanban', 'list', 'operator', 'manifest', 'plan', 'comms', 'pipeline', 'autonomous', 'decisions'] as const;
-
-    for (const view of VIEW_MODES) {
-      it(`/builds/:buildId/${view} → BuildDetail with buildId + view params`, () => {
-        const r = matchRoute(`/builds/proj-7/${view}`);
-        expect(r.screen).toBe('BuildDetail');
-        expect(r.params.buildId).toBe('proj-7');
-        expect(r.params.view).toBe(view);
-      });
-    }
-
-    it('rejects unknown view names (falls back to /builds/:buildId pattern)', () => {
-      // /builds/proj-7/bogus does NOT match the view-enum regex; falls through
-      // to the next route which is /builds/:buildId. That regex has [^/]+ so it
-      // would match "proj-7/bogus" if greedy — but [^/]+ stops at /, so the
-      // pattern won't match a 2-segment tail and falls through to default Ops.
-      const r = matchRoute('/builds/proj-7/bogus');
-      expect(r.screen).toBe('Dashboard'); // default fallthrough
-    });
-
-    it('phase routes still take precedence over view-encoded route', () => {
-      // /builds/:buildId/phase/:phaseId is more-specific and listed earlier
-      const r = matchRoute('/builds/proj-7/phase/p2');
-      expect(r.screen).toBe('BuildDetail');
-      expect(r.params.phaseId).toBe('p2');
-      expect(r.params.view).toBeUndefined();
-    });
-  });
-
-  describe('matchRoute() — ProjectDetail', () => {
-    it('/project/:projectId → ProjectDetail', () => {
-      const r = matchRoute('/project/proj-alpha');
-      expect(r.screen).toBe('ProjectDetail');
-      expect(r.params.projectId).toBe('proj-alpha');
-    });
-  });
-
-  describe('matchRoute() — # prefix stripping', () => {
-    it('strips leading # before matching', () => {
-      expect(matchRoute('#/builds').screen).toBe('Builds');
-      expect(matchRoute('#/ops').screen).toBe('Dashboard');
-    });
-  });
-
-  describe('matchRoute() — query string stripping', () => {
-    it('strips ?view= query before matching', () => {
-      const r = matchRoute('/builds/abc?view=kanban');
-      expect(r.screen).toBe('BuildDetail');
-      expect(r.params.buildId).toBe('abc');
-    });
-  });
-
-  describe('matchRoute() — unknown paths fall back to Dashboard', () => {
-    it('/unknown → Dashboard fallback', () => {
-      expect(matchRoute('/unknown').screen).toBe('Dashboard');
-    });
-
-    it('/builds/b/phase/p/wave/w/agent/a/extra → Dashboard fallback (too deep)', () => {
-      const r = matchRoute('/builds/b/phase/p/wave/w/agent/a/extra');
-      expect(r.screen).toBe('Dashboard');
-    });
-  });
-
-  describe('route specificity — longer patterns match before shorter', () => {
-    it('/builds/b/phase/p/wave/w/agent/a does NOT match /builds/:buildId', () => {
-      const r = matchRoute('/builds/b/phase/p/wave/w/agent/a');
-      expect(r.screen).toBe('BuildDetail');
-      expect(r.params.agentKey).toBe('a');
-      expect(r.params.buildId).toBe('b');
-    });
+  it('svelte.config.js uses adapter-static with 200.html fallback', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('fs') as typeof import('fs');
+    const config = fs.readFileSync(resolve(process.cwd(), 'svelte.config.js'), 'utf-8');
+    expect(config).toContain('adapter-static');
+    expect(config).toContain('200.html');
   });
 });

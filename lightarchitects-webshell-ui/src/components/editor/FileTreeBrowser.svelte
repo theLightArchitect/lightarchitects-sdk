@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { navigate } from '$lib/routes';
   import { authHeaders } from '$lib/auth';
 
   interface Props {

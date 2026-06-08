@@ -10,6 +10,7 @@
   import { handleCopilotEvent, addCopilotMessage, sendCopilotNative } from '$lib/copilot/chat';
   import { SIBLING_COLORS } from '$lib/design-tokens';
   import { renderMarkdown } from '$lib/markdown';
+  import { agentDomain } from '$lib/lightspace/vocab';
   import type { SiblingId } from '$lib/types';
 
   // ── Props ──────────────────────────────────────────────────────────────────
@@ -42,15 +43,16 @@
     soul: 'SOUL', eva: 'EVA', corso: 'CORSO', quantum: 'QUANTUM',
     seraph: 'SERAPH', ayin: 'AYIN', laex: 'LÆX',
   };
+  // Domain names per Lightspace standard Rule 4 — sourced from vocab.ts
   const SIBLING_DOMAINS: Record<string, string> = {
-    soul: 'KNOWLEDGE', eva: 'DEVOPS', corso: 'BUILD',
-    quantum: 'RESEARCH', seraph: 'SECURITY', ayin: 'OBSERVE', laex: 'CANON',
+    soul: 'Knowledge', eva: 'DevOps', corso: 'Engineering',
+    quantum: 'Research', seraph: 'Security', ayin: 'Observability', laex: 'Standards',
   };
 
-  const LABEL_MODES = ['both', 'codename', 'domain'] as const;
+  const LABEL_MODES = ['domain', 'both', 'codename'] as const;
   type LabelMode = typeof LABEL_MODES[number];
-  let labelMode = $state<LabelMode>('both');
-  const MODE_LABEL: Record<LabelMode, string> = { both: 'ID·ROLE', codename: 'ID', domain: 'ROLE' };
+  let labelMode = $state<LabelMode>('domain');
+  const MODE_LABEL: Record<LabelMode, string> = { domain: 'Domain', both: 'Domain + ID', codename: 'ID only' };
   function cycleMode() {
     const i = LABEL_MODES.indexOf(labelMode);
     labelMode = LABEL_MODES[(i + 1) % LABEL_MODES.length];
@@ -583,7 +585,7 @@
               <div class="msg-row agent-row">
                 <div class="msg-meta agent-meta">
                   <span class="sibling-badge" style="--sc: {siblingColor(msg.sibling)}">
-                    {(msg.sibling ?? 'AGENT').toUpperCase()}
+                    {agentDomain(msg.sibling ?? 'system', labelMode === 'codename')}
                   </span>
                   <span class="msg-time">{fmtTime(msg.timestamp)}</span>
                 </div>

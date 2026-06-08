@@ -7,10 +7,10 @@
 
 /* ── Scope accent palette ─────────────────────────────────────────────────── */
 :root {
-  --scope-d0: #4da6ff;   /* d0 platform — cool blue   */
-  --scope-d1: #7ed321;   /* d1 project  — lime green  */
-  --scope-d2: #f5a623;   /* d2 build    — amber       */
-  --scope-d3: #e040fb;   /* d3 file     — magenta     */
+  --scope-d0: #4d8eff;   /* d0 platform — cool blue   */
+  --scope-d1: #39ff8a;   /* d1 project  — lime green  */
+  --scope-d2: #ffad2e;   /* d2 build    — amber       */
+  --scope-d3: #ff5c8a;   /* d3 file     — magenta     */
 
   /* Layout dimensions */
   --cockpit-top-height:    56px;
@@ -21,17 +21,34 @@
   /* Motion — shared-element scope transition (AD-03) */
   --motion-scope:          400ms cubic-bezier(0.4, 0, 0.2, 1);
   --motion-scope-fade:     200ms ease-out;
+  --depth-shift:           0.4s cubic-bezier(0.4, 0, 0.2, 1);
 
   /* Ambient strip */
   --scope-strip-bg:   rgba(0, 0, 0, 0.72);
   --scope-strip-border: rgba(255, 255, 255, 0.06);
 }
 
-/* ── Depth-keyed accent binding ───────────────────────────────────────────── */
-[data-scope-depth="0"] { --scope-accent: var(--scope-d0); }
-[data-scope-depth="1"] { --scope-accent: var(--scope-d1); }
-[data-scope-depth="2"] { --scope-accent: var(--scope-d2); }
-[data-scope-depth="3"] { --scope-accent: var(--scope-d3); }
+/* ── Depth-keyed accent + tint binding ───────────────────────────────────── */
+[data-scope-depth="0"] {
+  --scope-accent: var(--scope-d0);
+  --acc-tint: rgba(77, 142, 255, 0.07);
+  background: color-mix(in srgb, #07080f 100%, var(--scope-d0));
+}
+[data-scope-depth="1"] {
+  --scope-accent: var(--scope-d1);
+  --acc-tint: rgba(57, 255, 138, 0.06);
+  background: color-mix(in srgb, #07080f 96%, var(--scope-d1));
+}
+[data-scope-depth="2"] {
+  --scope-accent: var(--scope-d2);
+  --acc-tint: rgba(255, 173, 46, 0.06);
+  background: color-mix(in srgb, #07080f 96%, var(--scope-d2));
+}
+[data-scope-depth="3"] {
+  --scope-accent: var(--scope-d3);
+  --acc-tint: rgba(255, 92, 138, 0.06);
+  background: color-mix(in srgb, #07080f 96%, var(--scope-d3));
+}
 
 /* ── Reduced-motion ───────────────────────────────────────────────────────── */
 /* WCAG 2.1 Success Criterion 2.3.3 (AAA) + 2.3.1 (AA) compliance.

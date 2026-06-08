@@ -32,6 +32,8 @@
   import DispatchCLI from '$lib/../components/cli/DispatchCLI.svelte';
   import HistoryRail from '$lib/../components/dispatch/HistoryRail.svelte';
   import ResultsTab from '$lib/../components/exec/ResultsTab.svelte';
+  import { page } from '$app/state';
+  import { goto } from '$app/navigation';
 
   // ── Props (forwarded from Dispatch.svelte route shell) ─────────────────────
 
@@ -66,9 +68,7 @@
 
   // Pre-fill task from ?task= query param when returning from /intake
   onMount(() => {
-    const qs = window.location.hash.split('?')[1] ?? '';
-    const params = new URLSearchParams(qs);
-    const prefilled = params.get('task');
+    const prefilled = page.url.searchParams.get('task');
     if (prefilled) task = prefilled;
   });
 
@@ -397,7 +397,7 @@
       <span><span class="lbl">AGENTS· </span><span class="val">{selectedAgents.length}</span></span>
       <button
         class="new-dispatch-btn"
-        onclick={() => { window.location.hash = '/intake?return=/dispatch&prefill=task'; }}
+        onclick={() => goto('/intake?return=/dispatch&prefill=task')}
       >+ NEW DISPATCH</button>
     </div>
   </header>

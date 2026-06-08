@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en" class="dark" %sveltekit.attributes%>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LA Platform — Siblings' Home</title>
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/JetBrainsMono-variable.woff2" />
+  %sveltekit.head%
+  <style>
+    html, body { height: 100%; margin: 0; background: #0a0a0f; }
+    /* SvelteKit mounts into the body directly — no wrapper div needed. */
+  </style>
+</head>
+<!--
+  data-sveltekit-preload-data="off":
+  This is a local operator tool — all data is loaded imperatively via fetch()
+  in $effect blocks. Preloading on hover would cause unnecessary gateway hits.
+  Enable per-route in Phase 2 when load functions are added.
+-->
+<body data-sveltekit-preload-data="off">
+  <div style="display: contents">%sveltekit.body%</div>
+</body>
+</html>

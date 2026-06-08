@@ -14,15 +14,15 @@
   const LINK_TTL_MS = 8_000;
 
   /** Canonical sibling layout (hex around SOUL at centre). */
-  interface NodeLayout { name: string; x: number; y: number; sub: string; hue: string; }
+  interface NodeLayout { name: string; display: string; x: number; y: number; sub: string; hue: string; }
   const LAYOUT: NodeLayout[] = [
-    { name: 'SOUL',    x: 150, y: 120, sub: 'vault',   hue: '#7a6cff' },
-    { name: 'EVA',     x: 150, y: 38,  sub: 'consc',   hue: '#d44df0' },
-    { name: 'CORSO',   x: 236, y: 78,  sub: 'build',   hue: '#ffad2e' },
-    { name: 'QUANTUM', x: 236, y: 162, sub: 'invest',  hue: '#39d8ff' },
-    { name: 'SERAPH',  x: 150, y: 202, sub: 'redtm',   hue: '#ff4d6a' },
-    { name: 'AYIN',    x: 64,  y: 162, sub: 'obs',     hue: '#5f6e84' },
-    { name: 'LÆX',    x: 64,  y: 78,  sub: 'canon',   hue: '#f0c14d' },
+    { name: 'SOUL',    display: 'Knowledge', x: 150, y: 120, sub: 'vault',  hue: '#7a6cff' },
+    { name: 'EVA',     display: 'DevOps',    x: 150, y: 38,  sub: 'devops', hue: '#d44df0' },
+    { name: 'CORSO',   display: 'Eng',       x: 236, y: 78,  sub: 'build',  hue: '#ffad2e' },
+    { name: 'QUANTUM', display: 'Research',  x: 236, y: 162, sub: 'invest', hue: '#39d8ff' },
+    { name: 'SERAPH',  display: 'Security',  x: 150, y: 202, sub: 'sec',    hue: '#ff4d6a' },
+    { name: 'AYIN',    display: 'Observe',   x: 64,  y: 162, sub: 'obs',    hue: '#5f6e84' },
+    { name: 'LÆX',    display: 'Standards', x: 64,  y: 78,  sub: 'std',    hue: '#f0c14d' },
   ];
 
   interface ActiveLink { id: string; from: string; to: string; expires: number; }
@@ -156,8 +156,8 @@
               {/if}
               <circle class="sc-node-bg" cx={node.x} cy={node.y} r="14" />
               <text class="sc-node-label" x={node.x} y={node.y + 3.5}
-                    style="font-size: {node.name.length > 6 ? 7.5 : node.name.length > 4 ? 8.5 : 9}px;">
-                {node.name}
+                    style="font-size: {node.display.length > 6 ? 7.5 : node.display.length > 4 ? 8.5 : 9}px;">
+                {node.display}
               </text>
               <text class="sc-node-sub" x={node.x} y={node.y + 30}>{node.sub}</text>
             </g>

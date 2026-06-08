@@ -4,12 +4,10 @@
   // The `cwd` state is initialized from the `cwd` URL param if present,
   // falling back to a sensible default (the server's working directory).
   import GitOpsPanel from '../components/git/GitOpsPanel.svelte';
+  import { page } from '$app/state';
 
-  // Params injected by App.svelte via screenParams.
-  let { params = {} }: { params?: Record<string, string> } = $props();
-
-  // Working directory — editable by the operator.
-  let cwd = $state(params.cwd ?? '.');
+  // Working directory — read from ?cwd= query param or default to '.'.
+  let cwd = $state(page.url.searchParams.get('cwd') ?? '.');
 
   // Tracks the live value in the input before confirming.
   let cwdInput = $state(cwd);

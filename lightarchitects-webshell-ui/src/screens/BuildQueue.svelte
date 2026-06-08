@@ -4,7 +4,7 @@
   import { selectedProject } from '$lib/project-filter';
   import { SIBLING_COLORS, getMetaSkillPolytope, getMetaSkillColor } from '$lib/design-tokens';
   import { downloadRoadmap } from '$lib/roadmap-export';
-  import { navigate } from '$lib/routes';
+  import { goto } from '$app/navigation';
   import type { Build, ProjectGroup } from '$lib/types';
   import type { PlanPhaseStatus } from '$lib/types';
   import PhaseTimeline from '$lib/../components/PhaseTimeline.svelte';
@@ -15,6 +15,7 @@
   import GateStrip from '$lib/../components/GateStrip.svelte';
   import type { GateEntry } from '$lib/../components/GateStrip.svelte';
   import DispatchCLI from '$lib/../components/cli/DispatchCLI.svelte';
+  import { page } from '$app/state';
   // View mode
   let viewMode = $state<'list' | 'card'>('card');
 
@@ -28,12 +29,10 @@
     stale:  'stale',
   };
 
-  // Read ?filter= from hash URL on mount; set statusFilter if recognised.
+  // Read ?filter= from URL on mount; set statusFilter if recognised.
   onMount(() => {
-    const hash = window.location.hash.slice(1);
-    const qIdx = hash.indexOf('?');
-    if (qIdx !== -1) {
-      const param = new URLSearchParams(hash.slice(qIdx + 1)).get('filter');
+    {
+      const param = page.url.searchParams.get('filter');
       if (param && param in FILTER_MAP) {
         statusFilter = FILTER_MAP[param] ?? null;
       }
@@ -66,23 +65,23 @@
   // Navigate to a build — land on default kanban view with URL-encoded view param
   function openBuild(buildId: string) {
     currentBuildId.set(buildId);
-    navigate('/builds/:buildId/kanban', { buildId });
+    goto(`/builds/${buildId}/kanban`);
   }
 
   // Navigate to intake (plan builder mode, return to /builds on submit)
   function newBuild() {
-    window.location.hash = '/intake?return=/builds&prefill=manifest';
+    goto('/intake?return=/builds&prefill=manifest');
   }
 
   // Quick-dispatch from empty state: navigate to Run screen with task pre-filled.
-  // SquadDispatch.onMount reads ?task= from the hash URL to pre-fill its CLI.
+  // SquadDispatch.onMount reads ?task= from URL searchParams to pre-fill its CLI.
   function quickDispatch(task: string) {
-    window.location.hash = `/run?task=${encodeURIComponent(task)}`;
+    goto(`/run?task=${encodeURIComponent(task)}`);
   }
 
   // Navigate to project detail (roadmap drill-down)
   function openProject(projectId: string) {
-    window.location.hash = `/project/${projectId}`;
+    goto(`/project/${projectId}`);
   }
 
   // Map pillar index to LASDLC phase name for the PhaseTimeline
@@ -314,7 +313,7 @@
         {:else}
           <button
             class="text-xs text-[var(--la-text-mute)] hover:text-[var(--la-text-base)] transition-colors"
-            onclick={() => { statusFilter = null; window.location.hash = '/builds'; }}
+            onclick={() => { statusFilter = null; goto('/builds'); }}
           >show all builds</button>
         {/if}
       </div>

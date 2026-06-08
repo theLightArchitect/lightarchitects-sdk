@@ -2,7 +2,8 @@ import { writable } from 'svelte/store';
 
 /**
  * URL scope keyed by depth — single source of truth for the active cockpit
- * screen mount and breadcrumb. Synced bidirectionally with window.location.hash.
+ * screen mount and breadcrumb. Set from page.params in each cockpit +page.svelte
+ * via scopeFromParams(); cleared to null when navigating away from /cockpit/*.
  *
  * d0 platform  → /cockpit/platform
  * d1 project   → /cockpit/project/:project_id
@@ -31,9 +32,15 @@ export function toScopeUrl(s: RouteScope): string {
   }
 }
 
-/** Parse route params from routes.ts matchRoute into a RouteScope. */
+/** Valid cockpit screen keys for scopeFromParams. Narrowed union restores the
+ *  compile-time safety that ScreenKey previously provided before it was removed
+ *  in the SvelteKit migration. Callers in cockpit +page.svelte files are checked
+ *  exhaustively at compile time; a typo now produces a type error, not a null scope. */
+export type CockpitScreenKey = 'CockpitPlatform' | 'CockpitProject' | 'CockpitBuild' | 'CockpitFile';
+
+/** Parse SvelteKit page.params into a RouteScope for the active cockpit depth. */
 export function scopeFromParams(
-  screenKey: string,
+  screenKey: CockpitScreenKey,
   params: Record<string, string>,
 ): RouteScope | null {
   switch (screenKey) {

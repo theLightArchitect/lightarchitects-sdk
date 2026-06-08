@@ -1,6 +1,6 @@
 <script lang="ts">
   import { authHeaders } from '$lib/auth';
-  import { navigate } from '$lib/routes';
+  import { goto } from '$app/navigation';
   import type { ProjectCandidate, ProjectInitRequest } from '$lib/types';
 
   interface Props {
@@ -137,11 +137,11 @@
         <div class="success-actions">
           <button
             class="action-btn action-btn--primary"
-            onclick={() => { onclose(); navigate('/editor'); }}
+            onclick={() => { onclose(); goto('/editor'); }}
           >Explore in Editor</button>
           <button
             class="action-btn action-btn--secondary"
-            onclick={() => { onclose(); navigate('/dispatch'); }}
+            onclick={() => { onclose(); goto('/dispatch'); }}
           >Dispatch Agent</button>
           <button class="action-btn action-btn--ghost" onclick={onclose}>Done</button>
         </div>

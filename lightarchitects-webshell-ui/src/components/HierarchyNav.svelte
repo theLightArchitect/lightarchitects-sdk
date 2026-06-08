@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getMetaSkillPolytope, getMetaSkillColor } from '$lib/design-tokens';
   import PolytopeIcon from './PolytopeIcon.svelte';
+  import { goto } from '$app/navigation';
 
   interface Crumb {
     id: string;
@@ -17,11 +18,11 @@
 
   function navigate(crumb: Crumb) {
     if (crumb.type === 'workspaces') {
-      window.location.hash = '/';
+      goto('/');
     } else if (crumb.type === 'workspace') {
-      window.location.hash = '/';
+      goto('/');
     } else if (crumb.type === 'build') {
-      window.location.hash = `/workspace/${crumb.id}`;
+      goto(`/builds/${crumb.id}`);
     }
   }
 </script>

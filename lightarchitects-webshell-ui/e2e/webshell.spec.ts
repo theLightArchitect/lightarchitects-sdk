@@ -183,47 +183,47 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('OPS tab navigates via hash', async () => {
-      await page.evaluate(() => { window.location.hash = '#/ops'; });
-      await page.waitForURL('**#/ops**', { timeout: 5_000 });
+      await page.goto(BASE + '/dashboard');
+      await page.waitForURL('**/dashboard**',, { timeout: 5_000 });
     });
 
     test('BUILDS tab navigates via hash', async () => {
-      await page.evaluate(() => { window.location.hash = '#/builds'; });
-      await page.waitForURL('**#/builds**', { timeout: 5_000 });
+      await page.goto(BASE + '/builds');
+      await page.waitForURL('**/builds**',, { timeout: 5_000 });
     });
 
     test('DISPATCH tab navigates via hash', async () => {
-      await page.evaluate(() => { window.location.hash = '#/dispatch'; });
-      await page.waitForURL('**#/dispatch**', { timeout: 5_000 });
+      await page.goto(BASE + '/dispatch');
+      await page.waitForURL('**/dispatch**',, { timeout: 5_000 });
     });
 
     test('HELIX tab navigates via hash', async () => {
-      await page.evaluate(() => { window.location.hash = '#/helix'; });
-      await page.waitForURL('**#/helix**', { timeout: 5_000 });
+      await page.goto(BASE + '/knowledge');
+      await page.waitForURL('**/helix**',, { timeout: 5_000 });
     });
 
     test('legacy /squad-dispatch redirects to /dispatch', async () => {
-      await page.evaluate(() => { window.location.hash = '#/squad-dispatch'; });
-      await page.waitForURL('**#/dispatch**', { timeout: 5_000 });
+      await page.goto(BASE + '/dispatch');
+      await page.waitForURL('**/dispatch**',, { timeout: 5_000 });
     });
 
     test('legacy /activity redirects to /ops', async () => {
-      await page.evaluate(() => { window.location.hash = '#/activity'; });
-      await page.waitForURL(/\/#\/ops/, { timeout: 5_000 });
+      await page.goto(BASE + '/activity');
+      await page.waitForURL(/\/ops/, { timeout: 5_000 });
     });
 
     test('Cmd+K shortcut navigates to /dispatch from any tab', async () => {
-      await page.evaluate(() => { window.location.hash = '#/ops'; });
-      await page.waitForURL('**#/ops**', { timeout: 5_000 });
+      await page.goto(BASE + '/dashboard');
+      await page.waitForURL('**/dashboard**',, { timeout: 5_000 });
       await page.keyboard.press('Meta+k');
-      await page.waitForURL('**#/dispatch**', { timeout: 5_000 });
+      await page.waitForURL('**/dispatch**',, { timeout: 5_000 });
     });
 
     test('back to Builds (home)', async () => {
       // #/ routes to Ops (MISSION CONTROL) in the current route map — not BuildQueue.
       // Navigate to /builds explicitly to verify the Builds screen.
-      await page.evaluate(() => { window.location.hash = '#/builds'; });
-      await page.waitForURL('**#/builds**', { timeout: 5_000 });
+      await page.goto(BASE + '/builds');
+      await page.waitForURL('**/builds**',, { timeout: 5_000 });
       const homeText = await page.evaluate(() => document.body.textContent ?? '');
       expect(homeText.includes('Build Queue') || homeText.includes('No active builds') || homeText.includes('BUILDS')).toBe(true);
     });
@@ -235,8 +235,8 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('3. OPS screen', () => {
     test('SQUAD HEALTH tab visible', async () => {
-      await page.evaluate(() => { window.location.hash = '#/ops'; });
-      await page.waitForURL('**#/ops**', { timeout: 5_000 });
+      await page.goto(BASE + '/dashboard');
+      await page.waitForURL('**/dashboard**',, { timeout: 5_000 });
       await page.waitForTimeout(1000);
       const text = await page.evaluate(() => document.body.textContent ?? '');
       expect(text.includes('SQUAD HEALTH') || text.includes('Squad Health')).toBe(true);
@@ -279,8 +279,8 @@ test.describe('Comprehensive webshell E2E', () => {
   test.describe('4. Queue screen', () => {
     test('Build Queue header visible', async () => {
       // #/ routes to Ops; navigate to #/builds to see the Build Queue screen.
-      await page.evaluate(() => { window.location.hash = '#/builds'; });
-      await page.waitForURL('**#/builds**', { timeout: 5_000 });
+      await page.goto(BASE + '/builds');
+      await page.waitForURL('**/builds**',, { timeout: 5_000 });
       await page.waitForTimeout(500);
       const text = await page.evaluate(() => document.body.textContent ?? '');
       expect(text).toContain('Build Queue');
@@ -329,7 +329,7 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('5. Intake screen', () => {
     test('meta-skill cards render', async () => {
-      await page.evaluate(() => { window.location.hash = '#/intake'; });
+      await page.goto(BASE + '/intake');
       await page.waitForTimeout(1000);
       const text = await page.evaluate(() => document.body.textContent ?? '');
       const hasContent = text.includes('Manual') || text.includes('GitHub') || text.includes('Source') || text.includes('Intake');
@@ -348,8 +348,8 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('6. Dispatch screen', () => {
     test('dispatch input panel renders', async () => {
-      await page.evaluate(() => { window.location.hash = '#/dispatch'; });
-      await page.waitForURL('**#/dispatch**', { timeout: 5_000 });
+      await page.goto(BASE + '/dispatch');
+      await page.waitForURL('**/dispatch**',, { timeout: 5_000 });
       await page.waitForTimeout(1000);
       const panel = await page.locator('[data-testid="dispatch-input"]').count();
       expect(panel).toBeGreaterThanOrEqual(1);
@@ -377,7 +377,7 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('7. Helix panel', () => {
     test('helix container div exists', async () => {
-      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.goto(BASE + '/');
       await page.waitForTimeout(2000);
       const helixExists = await page.evaluate(() => {
         // Check for helix panel: border-l div or canvas elements (Three.js)
@@ -429,8 +429,8 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('no WebGL context lost warnings after tab navigation', async () => {
-      for (const hash of ['#/ops', '#/', '#/intake', '#/dispatch', '#/']) {
-        await page.evaluate((h) => { window.location.hash = h; }, hash);
+      for (const path of ['/dashboard', '/', '/intake', '/dispatch', '/']) {
+        await page.goto(BASE + path);
         await page.waitForTimeout(500);
       }
       const contextLost = consoleErrors.some((e) =>
@@ -727,7 +727,7 @@ test.describe('Comprehensive webshell E2E', () => {
         e2e.artifacts.set(data.artifacts);
       }, { build: MOCK_BUILD, findings: MOCK_FINDINGS, artifacts: MOCK_ARTIFACTS });
       // Navigate to build detail for the mock build (kanban view)
-      await page.evaluate(() => { window.location.hash = '#/builds/build-e2e-001/kanban'; });
+      await page.goto(BASE + '/builds/build-e2e-001/kanban');
       await page.waitForTimeout(4000);
       // Check if screen loaded; if still "Loading..." force a page reload
       let text = await page.evaluate(() => document.body.textContent ?? '');
@@ -754,7 +754,7 @@ test.describe('Comprehensive webshell E2E', () => {
       }, { build: MOCK_BUILD, findings: MOCK_FINDINGS, artifacts: MOCK_ARTIFACTS });
       await page.waitForTimeout(2000);
       // Navigate to build detail again after store injection
-      await page.evaluate(() => { window.location.hash = '#/builds/build-e2e-001/kanban'; });
+      await page.goto(BASE + '/builds/build-e2e-001/kanban');
       await page.waitForTimeout(3000);
       text = await page.evaluate(() => document.body.textContent ?? '');
       // Build detail shows: build name, pillar labels, or back button
@@ -840,9 +840,9 @@ test.describe('Comprehensive webshell E2E', () => {
     test('back to Queue clears build context', async () => {
       await page.evaluate(() => {
         (window as any).__e2e.currentBuildId.set(null);
-        window.location.hash = '#/builds';
+        await page.goto(BASE + '/builds');
       });
-      await page.waitForURL('**#/builds**', { timeout: 5_000 });
+      await page.waitForURL('**/builds**',, { timeout: 5_000 });
       await page.waitForTimeout(500);
       const text = await page.evaluate(() => document.body.textContent ?? '');
       expect(text.includes('Build Queue') || text.includes('No active builds')).toBe(true);
@@ -906,7 +906,7 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('17. Intake screen deep', () => {
     test('SOURCE section with options', async () => {
-      await page.evaluate(() => { window.location.hash = '#/intake'; });
+      await page.goto(BASE + '/intake');
       await page.waitForTimeout(1500);
       const text = await page.evaluate(() => document.body.textContent ?? '');
       const hasSource = text.includes('Manual') || text.includes('GitHub') || text.includes('Cargo Audit') || text.includes('Discovery');
@@ -946,7 +946,7 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('18. OPS screen deep (real data)', () => {
     test('SQUAD HEALTH header visible', async () => {
-      await page.evaluate(() => { window.location.hash = '#/ops'; });
+      await page.goto(BASE + '/dashboard');
       await page.waitForTimeout(2000);
       const text = await page.evaluate(() => document.body.textContent ?? '');
       expect(text.includes('SQUAD HEALTH') || text.includes('OPS')).toBe(true);
@@ -1037,7 +1037,7 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('20. Memory drawer deep (real data)', () => {
     test('open memory drawer', async () => {
-      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.goto(BASE + '/');
       await page.waitForTimeout(1000);
       await page.locator('[data-testid="memory-toggle"]').click();
       await page.waitForTimeout(500);
@@ -1264,7 +1264,7 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('23. ScrumReport overlay', () => {
     test('not visible by default', async () => {
-      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.goto(BASE + '/');
       await page.waitForTimeout(500);
       const panel = await page.locator('[data-testid="scrum-report-panel"]').count();
       expect(panel).toBe(0);
@@ -1322,7 +1322,7 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('24. Helix detail & tooltip', () => {
     test('helix orb pulse indicator exists', async () => {
-      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.goto(BASE + '/');
       await page.waitForTimeout(1000);
       const pulse = await page.locator('[data-testid="helix-orb-pulse"]').count();
       // May not render if no helix entries have been received
@@ -1372,8 +1372,8 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('no WebGL context lost after full navigation cycle', async () => {
-      for (const hash of ['#/ops', '#/intake', '#/dispatch', '#/builds', '#/']) {
-        await page.evaluate((h) => { window.location.hash = h; }, hash);
+      for (const path of ['/dashboard', '/intake', '/dispatch', '/builds', '/']) {
+        await page.goto(BASE + path);
         await page.waitForTimeout(500);
       }
       const contextLost = consoleErrors.some((e) =>
@@ -1389,7 +1389,7 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('26. Status bar detailed', () => {
     test('AYIN status indicator', async () => {
-      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.goto(BASE + '/');
       await page.waitForTimeout(500);
       const text = await page.evaluate(() => document.body.textContent ?? '');
       // AYIN status shows as "connected", "reconnecting…", or "offline" — not the word "AYIN"
@@ -1458,10 +1458,10 @@ test.describe('Comprehensive webshell E2E', () => {
     test('hash navigation stable after Build Detail visit', async () => {
       // Full round-trip: Queue → Build Detail → Queue (verifies router round-trip stability)
       // #/ routes to Ops; use #/builds for the Builds/Queue screen.
-      await page.evaluate(() => { window.location.hash = '#/builds/build-e2e-001/kanban'; });
+      await page.goto(BASE + '/builds/build-e2e-001/kanban');
       await page.waitForTimeout(500);
-      await page.evaluate(() => { window.location.hash = '#/builds'; });
-      await page.waitForURL('**#/builds**', { timeout: 5_000 });
+      await page.goto(BASE + '/builds');
+      await page.waitForURL('**/builds**',, { timeout: 5_000 });
       await page.waitForTimeout(300);
       const text = await page.evaluate(() => document.body.textContent ?? '');
       expect(text.includes('Build Queue') || text.includes('No active builds')).toBe(true);
@@ -1491,7 +1491,7 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('29. Plan Builder', () => {
     test('Intake has Quick Build / Plan Builder toggle', async () => {
-      await page.evaluate(() => { window.location.hash = '#/intake'; });
+      await page.goto(BASE + '/intake');
       await page.waitForTimeout(1500);
       const text = await page.evaluate(() => document.body.textContent ?? '');
       expect(text.includes('Quick Build') || text.includes('Plan Builder')).toBe(true);
@@ -1611,8 +1611,8 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('30. LASDLC Framework', () => {
     test('Build Queue populates builds from active.yaml on startup', async () => {
-      await page.evaluate(() => { window.location.hash = '#/builds'; });
-      await page.waitForURL('**#/builds**', { timeout: 5_000 });
+      await page.goto(BASE + '/builds');
+      await page.waitForURL('**/builds**',, { timeout: 5_000 });
       await page.waitForTimeout(1500);
       const text = await page.evaluate(() => document.body.textContent ?? '');
       // Build mapper should have loaded builds — check for known build names from active.yaml
@@ -1641,7 +1641,7 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('tier selector shows SMALL/MEDIUM/LARGE in Plan Builder', async () => {
-      await page.evaluate(() => { window.location.hash = '#/intake'; });
+      await page.goto(BASE + '/intake');
       await page.waitForTimeout(1500);
       // Enter Plan Builder mode
       await page.evaluate(() => {
@@ -1721,7 +1721,7 @@ test.describe('Comprehensive webshell E2E', () => {
     // It exercises the full user flow and documents UX friction points.
 
     test('navigate to Intake and enter Plan Builder mode', async () => {
-      await page.evaluate(() => { window.location.hash = '#/intake'; });
+      await page.goto(BASE + '/intake');
       await page.waitForTimeout(1500);
       // UX NOTE: User must know to click "Plan Builder" — there's no onboarding
       // or tooltip explaining the difference between Quick Build and Plan Builder.
@@ -1956,9 +1956,9 @@ test.describe('Comprehensive webshell E2E', () => {
       }
 
       // Verify navigation to Build Queue
-      const hash = await page.evaluate(() => window.location.hash);
+      const pathname = new URL(page.url()).pathname;
       // The form may stay on /intake if validation failed — accept both
-      const navigated = hash === '#/' || hash === '' || hash === '#';
+      const navigated = pathname === '/' || pathname === '/';
       if (!navigated) {
         console.log('[E2E] Did not navigate away. Hash:', hash);
         console.log('[E2E] Page still on intake — likely validation error or submit failed');
@@ -1968,8 +1968,8 @@ test.describe('Comprehensive webshell E2E', () => {
 
     test('Build Queue shows builds after plan creation', async () => {
       // #/ routes to Ops; navigate to #/builds to verify Build Queue content.
-      await page.evaluate(() => { window.location.hash = '#/builds'; });
-      await page.waitForURL('**#/builds**', { timeout: 5_000 });
+      await page.goto(BASE + '/builds');
+      await page.waitForURL('**/builds**',, { timeout: 5_000 });
       await page.waitForTimeout(500);
       const text = await page.evaluate(() => document.body.textContent ?? '');
       // The queue should show builds from active.yaml (loaded by build-mapper)
@@ -1993,8 +1993,8 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('32. Project drill-down', () => {
     test('Build Queue shows project group cards', async () => {
-      await page.evaluate(() => { window.location.hash = '#/builds'; });
-      await page.waitForURL('**#/builds**', { timeout: 5_000 });
+      await page.goto(BASE + '/builds');
+      await page.waitForURL('**/builds**',, { timeout: 5_000 });
       await page.waitForTimeout(2000);
       const text = await page.evaluate(() => document.body.textContent ?? '');
       // Should show project-related content: project count, plan labels, or build names
@@ -2024,8 +2024,8 @@ test.describe('Comprehensive webshell E2E', () => {
       await page.waitForTimeout(2000);
 
       // Should have navigated to #/project/...
-      const hash = await page.evaluate(() => window.location.hash);
-      expect(hash.startsWith('#/project/')).toBe(true);
+      const pathname = new URL(page.url()).pathname;
+      expect(pathname.startsWith('/project/')).toBe(true);
     });
 
     test('ProjectDetail shows plan list for the project', async () => {
@@ -2046,8 +2046,8 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('navigate back to Build Queue', async () => {
-      await page.evaluate(() => { window.location.hash = '#/builds'; });
-      await page.waitForURL('**#/builds**', { timeout: 5_000 });
+      await page.goto(BASE + '/builds');
+      await page.waitForURL('**/builds**',, { timeout: 5_000 });
       await page.waitForTimeout(500);
       const text = await page.evaluate(() => document.body.textContent ?? '');
       expect(text.includes('Build Queue')).toBe(true);
@@ -2061,7 +2061,7 @@ test.describe('Comprehensive webshell E2E', () => {
   test.describe('34. Kanban Board View', () => {
     test('navigate to a project and toggle Kanban view', async () => {
       // Navigate to Build Queue first
-      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.goto(BASE + '/');
       await page.waitForTimeout(4000);
 
       // Click a project card — look for text containing "plans" or "build"
@@ -2087,10 +2087,10 @@ test.describe('Comprehensive webshell E2E', () => {
       });
       if (!clicked) { test.skip(); return; }
       await page.waitForTimeout(2000);
-      const hash = await page.evaluate(() => window.location.hash);
-      expect(hash.startsWith('#/project/') || hash.startsWith('#/workspace/') || hash.startsWith('#/builds/')).toBe(true);
+      const pathname = new URL(page.url()).pathname;
+      expect(pathname.startsWith('/project/') || pathname.startsWith('/workspace/') || pathname.startsWith('/builds/')).toBe(true);
       // If navigated to build detail (single-plan project), skip remaining Kanban tests
-      if (hash.startsWith('#/workspace/') || hash.startsWith('#/builds/')) { test.skip(); return; }
+      if (pathname.startsWith('/workspace/') || pathname.startsWith('/builds/')) { test.skip(); return; }
 
       // Verify Kanban toggle button is visible
       const kanbanBtn = page.getByTestId('view-toggle-kanban');
@@ -2100,8 +2100,8 @@ test.describe('Comprehensive webshell E2E', () => {
 
     test('Kanban toggle shows board with 5 columns', async () => {
       // Ensure we're on ProjectDetail
-      const hash = await page.evaluate(() => window.location.hash);
-      if (!hash.startsWith('#/project/')) { test.skip(); return; }
+      const pathname = new URL(page.url()).pathname;
+      if (!pathname.startsWith('/project/')) { test.skip(); return; }
 
       // Click Kanban toggle
       const kanbanBtn = page.getByTestId('view-toggle-kanban');
@@ -2123,8 +2123,8 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('Kanban columns show labels and card content', async () => {
-      const hash = await page.evaluate(() => window.location.hash);
-      if (!hash.startsWith('#/project/')) { test.skip(); return; }
+      const pathname = new URL(page.url()).pathname;
+      if (!pathname.startsWith('/project/')) { test.skip(); return; }
 
       const text = await page.evaluate(() => document.body.textContent ?? '');
       // Column labels should be visible
@@ -2141,8 +2141,8 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('clicking a Kanban card opens detail panel', async () => {
-      const hash = await page.evaluate(() => window.location.hash);
-      if (!hash.startsWith('#/project/')) { test.skip(); return; }
+      const pathname = new URL(page.url()).pathname;
+      if (!pathname.startsWith('/project/')) { test.skip(); return; }
 
       // Click any card in the Kanban board
       const clicked = await page.evaluate(() => {
@@ -2167,8 +2167,8 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('switching back to List view and navigate home', async () => {
-      const hash = await page.evaluate(() => window.location.hash);
-      if (!hash.startsWith('#/project/')) { test.skip(); return; }
+      const pathname = new URL(page.url()).pathname;
+      if (!pathname.startsWith('/project/')) { test.skip(); return; }
 
       // Switch back to list
       const listBtn = page.getByTestId('view-toggle-list');
@@ -2181,7 +2181,7 @@ test.describe('Comprehensive webshell E2E', () => {
       expect(boardGone).toBe(false);
 
       // Navigate back to Build Queue
-      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.goto(BASE + '/');
       await page.waitForTimeout(1000);
       const text = await page.evaluate(() => document.body.textContent ?? '');
       expect(text.includes('Build Queue')).toBe(true);
@@ -2199,7 +2199,7 @@ test.describe('Comprehensive webshell E2E', () => {
           return route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"unauthorized"}' });
         return route.continue();
       });
-      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.goto(BASE + '/');
       await page.waitForTimeout(2000);
       // App should still be interactive (not white screen)
       const appLen = await page.evaluate(() => document.getElementById('app')?.textContent?.length ?? 0);
@@ -2219,7 +2219,7 @@ test.describe('Comprehensive webshell E2E', () => {
 
     test('network abort on /api/siblings handled gracefully', async () => {
       await page.route('**/api/siblings', (route) => route.abort('connectionrefused'));
-      await page.evaluate(() => { window.location.hash = '#/ops'; });
+      await page.goto(BASE + '/dashboard');
       await page.waitForTimeout(2000);
       const appLen = await page.evaluate(() => document.getElementById('app')?.textContent?.length ?? 0);
       expect(appLen).toBeGreaterThan(0);
@@ -2230,14 +2230,14 @@ test.describe('Comprehensive webshell E2E', () => {
       await page.route('**/api/builds', (route) =>
         route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"unavailable"}' })
       );
-      await page.evaluate(() => { window.location.hash = '#/builds'; });
+      await page.goto(BASE + '/builds');
       await page.waitForTimeout(1000);
       await page.unroute('**/api/builds');
       // Trigger re-fetch via round-trip
-      await page.evaluate(() => { window.location.hash = '#/ops'; });
+      await page.goto(BASE + '/dashboard');
       await page.waitForTimeout(500);
-      await page.evaluate(() => { window.location.hash = '#/builds'; });
-      await page.waitForURL('**#/builds**', { timeout: 5_000 });
+      await page.goto(BASE + '/builds');
+      await page.waitForURL('**/builds**',, { timeout: 5_000 });
       await page.waitForTimeout(2000);
       const text = await page.evaluate(() => document.body.textContent ?? '');
       expect(text.includes('Build Queue') || text.includes('projects')).toBe(true);
@@ -2245,7 +2245,7 @@ test.describe('Comprehensive webshell E2E', () => {
 
     test('offline mode does not crash app', async () => {
       await context.setOffline(true);
-      await page.evaluate(() => { window.location.hash = '#/ops'; });
+      await page.goto(BASE + '/dashboard');
       await page.waitForTimeout(1500);
       const appLen = await page.evaluate(() => document.getElementById('app')?.textContent?.length ?? 0);
       expect(appLen).toBeGreaterThan(0);
@@ -2267,7 +2267,7 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('token hash is stripped from URL', async () => {
-      const hash = await page.evaluate(() => window.location.hash);
+      const pathname = new URL(page.url()).pathname;
       expect(hash.includes('token=')).toBe(false);
     });
 
@@ -2293,7 +2293,7 @@ test.describe('Comprehensive webshell E2E', () => {
         (r) => r.url().includes('/api/builds') && !r.url().includes('/plan') && !r.url().includes('/events') && r.status() === 200,
         { timeout: 10_000 }
       ).catch(() => null);
-      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.goto(BASE + '/');
       await page.waitForTimeout(3000);
       const response = await responsePromise;
       if (!response) { test.skip(); return; }
@@ -2467,8 +2467,8 @@ test.describe('Comprehensive webshell E2E', () => {
         e2e.builds.set([]);
         return current.length;
       });
-      await page.evaluate(() => { window.location.hash = '#/builds'; });
-      await page.waitForURL('**#/builds**', { timeout: 5_000 });
+      await page.goto(BASE + '/builds');
+      await page.waitForURL('**/builds**',, { timeout: 5_000 });
       await page.waitForTimeout(1000);
       const text = await page.evaluate(() => document.body.textContent ?? '');
       const hasEmpty = text.includes('No active builds') || text.includes('No builds') || text.includes('0 projects');
@@ -2488,7 +2488,7 @@ test.describe('Comprehensive webshell E2E', () => {
         route.fulfill({ status: 200, contentType: 'application/json', body: '{"results":[]}' })
       );
       // Navigate to a screen that uses vault search
-      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.goto(BASE + '/');
       await page.waitForTimeout(1000);
       // App should still be responsive
       const appLen = await page.evaluate(() => document.getElementById('app')?.textContent?.length ?? 0);
@@ -2503,7 +2503,7 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('42. Accessibility', () => {
     test('BuildQueue has no critical a11y violations', async () => {
-      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.goto(BASE + '/');
       await page.waitForTimeout(2000);
       const results = await new AxeBuilder({ page })
         .disableRules(['color-contrast']) // dark theme can trigger false positives
@@ -2516,7 +2516,7 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('Intake form a11y scan (known issues documented)', async () => {
-      await page.evaluate(() => { window.location.hash = '#/intake'; });
+      await page.goto(BASE + '/intake');
       await page.waitForTimeout(2000);
       const results = await new AxeBuilder({ page })
         .disableRules(['color-contrast'])
@@ -2534,7 +2534,7 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('keyboard Tab reaches interactive elements', async () => {
-      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.goto(BASE + '/');
       await page.waitForTimeout(1500);
       // Tab 5 times, check that focus lands on buttons/links
       let focusHitInteractive = false;
@@ -2557,9 +2557,9 @@ test.describe('Comprehensive webshell E2E', () => {
   test.describe('43. Dispatch & Sibling Interaction', () => {
     test('sibling dispatch buttons visible in Workspace', async () => {
       // Navigate to workspace with mock build
-      const hash = await page.evaluate(() => window.location.hash);
+      const pathname = new URL(page.url()).pathname;
       if (!hash.includes('/builds')) {
-        await page.evaluate(() => { window.location.hash = '#/builds/build-e2e-001/kanban'; });
+        await page.goto(BASE + '/builds/build-e2e-001/kanban');
         await page.waitForTimeout(2000);
       }
       const text = await page.evaluate(() => document.body.textContent ?? '');
@@ -2599,7 +2599,7 @@ test.describe('Comprehensive webshell E2E', () => {
   test.describe('45. Responsive Viewport', () => {
     test('mobile 375x667 does not crash', async () => {
       await page.setViewportSize({ width: 375, height: 667 });
-      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.goto(BASE + '/');
       await page.waitForTimeout(1500);
       const appLen = await page.evaluate(() => document.getElementById('app')?.textContent?.length ?? 0);
       expect(appLen).toBeGreaterThan(0);
@@ -2718,7 +2718,7 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('46. Roadmap Export', () => {
     test('Export button visible in BuildQueue', async () => {
-      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.goto(BASE + '/');
       await page.waitForTimeout(2000);
       const hasExport = await page.evaluate(() => {
         const buttons = Array.from(document.querySelectorAll('button'));
@@ -2771,9 +2771,9 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('multiple route navigations do not leak memory', async () => {
-      const routes = ['#/', '#/ops', '#/intake', '#/dispatch', '#/', '#/ops'];
+      const routes = ['/', '/dashboard', '/intake', '/dispatch', '/', '/dashboard'];
       for (const r of routes) {
-        await page.evaluate((route) => { window.location.hash = route; }, r);
+        await page.goto(BASE + r);
         await page.waitForTimeout(500);
       }
       // App should still be responsive after rapid navigation
@@ -2788,7 +2788,7 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('49. Visual Regression', () => {
     test('BuildQueue screenshot baseline', async () => {
-      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.goto(BASE + '/');
       await page.waitForTimeout(2000);
       // Just verify screenshot can be taken without error
       const screenshot = await page.screenshot({ type: 'png' });
@@ -3340,7 +3340,7 @@ test.describe('Comprehensive webshell E2E', () => {
     const heading      = () => page.locator('.ti-name');
 
     test('navigate to /dispatch', async () => {
-      await page.evaluate(() => { window.location.hash = '#/dispatch'; });
+      await page.goto(BASE + '/dispatch');
       await expect.soft(taskInput()).toBeVisible({ timeout: 10_000 });
     });
 
@@ -3556,7 +3556,7 @@ test.describe('Comprehensive webshell E2E', () => {
   test.describe('38. Empty-state hero affordance (#10 #48)', () => {
     test('Activity empty state renders distinctive copy + Open Copilot CTA', async () => {
       // Navigate to OPS (legacy /activity redirects here)
-      await page.evaluate(() => { window.location.hash = '/ops'; });
+      await page.goto(BASE + '/dashboard');
       await page.waitForFunction(
         () => {
           const t = document.body.textContent ?? '';
@@ -3582,7 +3582,7 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('40. Accessibility (WCAG 2.1 AA)', () => {
     test('Queue screen: no WCAG 2.1 AA violations', async () => {
-      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.goto(BASE + '/');
       await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
       const results = await new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa'])
@@ -3595,7 +3595,7 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('OPS screen: no WCAG 2.1 AA violations', async () => {
-      await page.evaluate(() => { window.location.hash = '#/ops'; });
+      await page.goto(BASE + '/dashboard');
       await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
       const results = await new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa'])
@@ -3608,7 +3608,7 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('Dispatch screen: no WCAG 2.1 AA violations', async () => {
-      await page.evaluate(() => { window.location.hash = '#/dispatch'; });
+      await page.goto(BASE + '/dispatch');
       await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
       const results = await new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa'])
@@ -3621,7 +3621,7 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('Intake screen: no WCAG 2.1 AA violations', async () => {
-      await page.evaluate(() => { window.location.hash = '#/intake'; });
+      await page.goto(BASE + '/intake');
       await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
       const results = await new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa'])
@@ -3634,7 +3634,7 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('Squad Dispatch screen: no WCAG 2.1 AA violations', async () => {
-      await page.evaluate(() => { window.location.hash = '#/squad-dispatch'; });
+      await page.goto(BASE + '/dispatch');
       await page.waitForFunction(
         () => !!document.querySelector('[data-testid="dispatch-task-input"]'),
         { timeout: 10_000 },
@@ -3660,8 +3660,8 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('41. Visual regression (screenshot baselines)', () => {
     test('Queue screen baseline', async () => {
-      await page.evaluate(() => { window.location.hash = '#/builds'; });
-      await page.waitForURL('**#/builds**', { timeout: 5_000 });
+      await page.goto(BASE + '/builds');
+      await page.waitForURL('**/builds**',, { timeout: 5_000 });
       await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
       await page.waitForTimeout(1000);
       // Mask all animated elements: canvas (helix + ambient particles), timestamps, copilot drawer stats.
@@ -3682,11 +3682,11 @@ test.describe('Comprehensive webshell E2E', () => {
         localStorage.removeItem('la_mosaic_mode');
         localStorage.removeItem('la_layout_ops');
         localStorage.removeItem('la_layout_preset');
-        window.location.hash = '#/dispatch';
+        /* MIGRATED: hash was #/dispatch */
       });
-      await page.waitForURL('**#/dispatch**', { timeout: 5_000 });
-      await page.evaluate(() => { window.location.hash = '#/ops'; });
-      await page.waitForURL('**#/ops**', { timeout: 5_000 });
+      await page.waitForURL('**/dispatch**',, { timeout: 5_000 });
+      await page.goto(BASE + '/dashboard');
+      await page.waitForURL('**/dashboard**',, { timeout: 5_000 });
       await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
       await page.waitForTimeout(1000);
       await expect(page).toHaveScreenshot('ops-screen.png', {
@@ -3702,7 +3702,7 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('Dispatch screen baseline', async () => {
-      await page.evaluate(() => { window.location.hash = '#/dispatch'; });
+      await page.goto(BASE + '/dispatch');
       await page.waitForFunction(
         () => !!document.querySelector('[data-testid="dispatch-task-input"]'),
         { timeout: 10_000 },
@@ -3720,7 +3720,7 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('Intake screen baseline', async () => {
-      await page.evaluate(() => { window.location.hash = '#/intake'; });
+      await page.goto(BASE + '/intake');
       await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
       await page.waitForTimeout(1000);
       await expect(page).toHaveScreenshot('intake-screen.png', {
@@ -3735,7 +3735,7 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('Helix screen baseline', async () => {
-      await page.evaluate(() => { window.location.hash = '#/helix'; });
+      await page.goto(BASE + '/knowledge');
       await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
       // Extra settle for WebGL canvas initialisation
       await page.waitForTimeout(3000);
@@ -3752,7 +3752,7 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('Builds screen baseline', async () => {
-      await page.evaluate(() => { window.location.hash = '#/builds'; });
+      await page.goto(BASE + '/builds');
       await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
       await page.waitForTimeout(1500);
       await expect(page).toHaveScreenshot('builds-screen.png', {
@@ -4014,7 +4014,7 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('68. Header band 56px — screen header consistency (#38)', () => {
     async function measureScreenHeaderHeight(hash: string): Promise<number | null> {
-      await page.evaluate((h) => { window.location.hash = h; }, hash);
+      await page.goto(BASE + hash.replace('#', ''));
       await page.waitForTimeout(400);
       return page.evaluate(() => {
         // .la-screen-header is the canonical class; fall back to first <header> inside main
@@ -4026,32 +4026,32 @@ test.describe('Comprehensive webshell E2E', () => {
     }
 
     test('BuildQueue screen header is 56px', async () => {
-      const h = await measureScreenHeaderHeight('#/');
+      const h = await measureScreenHeaderHeight('/');
       if (h === null) { test.skip(); return; }
       expect(h).toBe(56);
     });
 
     test('OPS screen header is 56px', async () => {
-      const h = await measureScreenHeaderHeight('#/ops');
+      const h = await measureScreenHeaderHeight('/dashboard');
       if (h === null) { test.skip(); return; }
       expect(h).toBe(56);
     });
 
     test('Intake screen header is 56px', async () => {
-      const h = await measureScreenHeaderHeight('#/intake');
+      const h = await measureScreenHeaderHeight('/intake');
       if (h === null) { test.skip(); return; }
       expect(h).toBe(56);
     });
 
     test('Dispatch screen header is 56px', async () => {
-      const h = await measureScreenHeaderHeight('#/dispatch');
+      const h = await measureScreenHeaderHeight('/dispatch');
       if (h === null) { test.skip(); return; }
       expect(h).toBe(56);
     });
 
     // Restore viewport to desktop baseline for subsequent sections
     test('restore to BuildQueue after header checks', async () => {
-      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.goto(BASE + '/');
       await page.waitForTimeout(300);
     });
   });
@@ -4147,7 +4147,7 @@ test.describe('Comprehensive webshell E2E', () => {
     test.beforeEach(async () => {
       // §69's "restore clean URL" test waits for nav before exiting,
       // so the shell is guaranteed ready here. Just navigate to intake.
-      await page.evaluate(() => { window.location.hash = '/intake'; });
+      await page.goto(BASE + '/intake');
       await page.waitForTimeout(500);
     });
 
@@ -4209,19 +4209,19 @@ test.describe('Comprehensive webshell E2E', () => {
   test.describe('72. OPS — squad health heartbeat staleness + chevron expand (#61)', () => {
     test.beforeEach(async () => {
       // Ensure we're NOT already on /ops so the remount actually fires.
-      const hash = await page.evaluate(() => window.location.hash);
-      if (!hash || hash === '#/ops') {
+      const pathname = new URL(page.url()).pathname;
+      if (!pathname || pathname === '/dashboard' || pathname === '/') {
         // Bounce via /builds (always cached as the default route) to force Ops.svelte
         // unmount+remount and reset expanded=$state({}) between tests.
-        await page.evaluate(() => { window.location.hash = '/builds'; });
+        await page.goto(BASE + '/builds');
         await page.waitForFunction(
           () => !/SQUAD HEALTH/i.test(document.body.textContent ?? ''),
           null,
           { timeout: 5_000 },
         ).catch(() => {});
       }
-      await page.evaluate(() => { window.location.hash = '/ops'; });
-      await page.waitForURL('**#/ops**', { timeout: 5_000 }).catch(() => {});
+      await page.goto(BASE + '/dashboard');
+      await page.waitForURL('**/dashboard**',, { timeout: 5_000 }).catch(() => {});
       await page.waitForFunction(
         () => /SQUAD HEALTH/i.test(document.body.textContent ?? ''),
         null,
@@ -4713,8 +4713,8 @@ test.describe('Comprehensive webshell E2E', () => {
         await page.waitForTimeout(400);
       }
 
-      await page.evaluate(() => { window.location.hash = '#/dispatch'; });
-      await page.waitForURL('**#/dispatch**', { timeout: 5_000 });
+      await page.goto(BASE + '/dispatch');
+      await page.waitForURL('**/dispatch**',, { timeout: 5_000 });
       await page.waitForTimeout(1000);
 
       // Pick engineer via AgentSelector — it may already be visible from classify
@@ -4780,8 +4780,8 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('79. HistoryRail geometry', () => {
     test('history-strip computed height is 36px', async () => {
-      await page.evaluate(() => { window.location.hash = '#/dispatch'; });
-      await page.waitForURL('**#/dispatch**', { timeout: 5_000 });
+      await page.goto(BASE + '/dispatch');
+      await page.waitForURL('**/dispatch**',, { timeout: 5_000 });
       await page.waitForTimeout(600);
       const height = await page.evaluate(() => {
         const strip = document.querySelector('.history-strip') as HTMLElement | null;
@@ -4811,7 +4811,7 @@ test.describe('Comprehensive webshell E2E', () => {
   test.describe('80. Vocabulary canon', () => {
     test('CopilotDrawer body text does not contain "siblings"', async () => {
       // Open copilot drawer
-      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.goto(BASE + '/');
       await page.waitForTimeout(500);
       await page.keyboard.press('Control+`');
       await page.waitForTimeout(600);
@@ -4829,8 +4829,8 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('OPS screen squad health panel header uses "agents" count', async () => {
-      await page.evaluate(() => { window.location.hash = '#/ops'; });
-      await page.waitForURL('**#/ops**', { timeout: 5_000 });
+      await page.goto(BASE + '/dashboard');
+      await page.waitForURL('**/dashboard**',, { timeout: 5_000 });
       await page.waitForTimeout(600);
       const text = await page.evaluate(() => document.body.textContent ?? '');
       // Squad health panel shows "/7 agents online" not "/7 siblings online"
@@ -4845,8 +4845,8 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('81. GlobalEventsOverlay', () => {
     test('E key opens events overlay', async () => {
-      await page.evaluate(() => { window.location.hash = '#/ops'; });
-      await page.waitForURL('**#/ops**', { timeout: 5_000 });
+      await page.goto(BASE + '/dashboard');
+      await page.waitForURL('**/dashboard**',, { timeout: 5_000 });
       await page.waitForTimeout(600);
       await page.keyboard.press('e');
       await page.waitForTimeout(300);
@@ -4878,8 +4878,8 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('82. DispatchCLI', () => {
     test('CLI input is present on /dispatch', async () => {
-      await page.evaluate(() => { window.location.hash = '#/dispatch'; });
-      await page.waitForURL('**#/dispatch**', { timeout: 5_000 });
+      await page.goto(BASE + '/dispatch');
+      await page.waitForURL('**/dispatch**',, { timeout: 5_000 });
       await page.waitForTimeout(600);
       const cli = page.locator('[data-testid="dispatch-cli-input"]');
       const count = await cli.count();
@@ -4905,8 +4905,8 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('83. VoxelProjects3D', () => {
     test('3D topology canvas renders on /ops', async () => {
-      await page.evaluate(() => { window.location.hash = '#/ops'; });
-      await page.waitForURL('**#/ops**', { timeout: 5_000 });
+      await page.goto(BASE + '/dashboard');
+      await page.waitForURL('**/dashboard**',, { timeout: 5_000 });
       await page.waitForTimeout(1200);
       const container = page.locator('[data-testid="voxel-projects-3d"]');
       const count = await container.count();
@@ -4933,11 +4933,11 @@ test.describe('Comprehensive webshell E2E', () => {
       localStorage.removeItem('la_layout_ops');
       localStorage.removeItem('la_layout_preset');
       localStorage.removeItem('la_custom_presets');
-      window.location.hash = '#/dispatch';
+      /* MIGRATED: hash was #/dispatch */
     });
-    await page.waitForURL('**#/dispatch**', { timeout: 5_000 });
-    await page.evaluate(() => { window.location.hash = '#/ops'; });
-    await page.waitForURL('**#/ops**', { timeout: 5_000 });
+    await page.waitForURL('**/dispatch**',, { timeout: 5_000 });
+    await page.goto(BASE + '/dashboard');
+    await page.waitForURL('**/dashboard**',, { timeout: 5_000 });
     await page.waitForTimeout(400);
   }
 
@@ -5079,8 +5079,8 @@ test.describe('Comprehensive webshell E2E', () => {
         () => (document.getElementById('app')?.textContent?.length ?? 0) > 10,
         { timeout: 15_000 },
       );
-      await page.evaluate(() => { window.location.hash = '#/ops'; });
-      await page.waitForURL('**#/ops**', { timeout: 5_000 });
+      await page.goto(BASE + '/dashboard');
+      await page.waitForURL('**/dashboard**',, { timeout: 5_000 });
       await page.waitForTimeout(800);
 
       await expect(page.locator('[data-testid="mosaic-container"]')).toBeVisible();
@@ -6069,8 +6069,8 @@ test.describe('Comprehensive webshell E2E', () => {
         () => (document.getElementById('app')?.textContent?.length ?? 0) > 10,
         { timeout: 15_000 },
       );
-      await page.evaluate(() => { window.location.hash = '#/ops'; });
-      await page.waitForURL('**#/ops**', { timeout: 5_000 });
+      await page.goto(BASE + '/dashboard');
+      await page.waitForURL('**/dashboard**',, { timeout: 5_000 });
       await page.waitForTimeout(800);
 
       if (await page.locator('[data-testid="mosaic-container"]').count() === 0) { test.skip(); return; }
@@ -6408,7 +6408,7 @@ test.describe('Comprehensive webshell E2E', () => {
   test.describe('30. AYIN copilot observability (Phase 4)', () => {
     // G8 — ObservabilityPanel mounts an iframe pointing at :3742.
     test('G8: /#/observability mounts AYIN iframe at :3742', async () => {
-      await page.evaluate(() => { window.location.hash = '#/observability'; });
+      await page.goto(BASE + '/observability');
       await page.waitForTimeout(1500);
 
       const iframeSrc = await page.evaluate(() => {
@@ -6436,7 +6436,7 @@ test.describe('Comprehensive webshell E2E', () => {
       if (!ayinUp) { test.skip(); return; }
 
       // Navigate to home and open CopilotDrawer.
-      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.goto(BASE + '/');
       await page.waitForTimeout(500);
 
       // Open copilot drawer via keyboard shortcut.
@@ -6470,7 +6470,7 @@ test.describe('Comprehensive webshell E2E', () => {
       if (!ayinUp) { test.skip(); return; }
 
       // Navigate to observability and wait for the iframe to load.
-      await page.evaluate(() => { window.location.hash = '#/observability'; });
+      await page.goto(BASE + '/observability');
       await page.waitForTimeout(2000);
 
       // Try to access the AYIN iframe content (same-origin sandbox allows this

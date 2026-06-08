@@ -98,7 +98,7 @@
     debug:      'Debug — agent console | findings | terminal to reproduce and fix',
     'pr-review': 'Ship — diff what changed | terminal to push | build status confirm',
     focus:      'Agent — full-screen console, watch a single run live',
-    observe:    'Observe — agent console | live AYIN trace dataflow diagrams',
+    observe:    'Observe — agent console | live observability trace dataflow diagrams',
   };
 
   const PRESET_TITLES: Record<LayoutPreset, string> = {

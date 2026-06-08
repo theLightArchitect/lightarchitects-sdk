@@ -1,0 +1,3089 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lightspace — live demo</title>
+<!--
+  Lightspace mockup · LIVE DEMO
+  ──────────────────────────────────────────────────────────────────────
+  Timeline-driven cinematic playback of the d0 vision:
+    1. Lobby greets operator
+    2. Operator types intent
+    3. Submit → materialize choreography (≤1500ms per contract)
+    4. Cards stream in with stagger
+    5. Mermaid diagram draws node-by-node
+    6. LASDLC live-fills field-by-field in right drawer
+    7. Research cards arrive (Context7, arXiv)
+    8. SOUL surfaces a contradiction
+    9. Resolution modal opens → operator picks winner
+    10. Card graduates to drawer file (tombstone retained)
+    11. Operator runs /BUILD → canvas reflows
+    12. Branch-lane fork — 3 workers explore in parallel
+    13. CORSO commits; EVA + SOUL roll back
+    14. Wave 2a completes
+
+  Controls: play / pause / scrub / 0.5×–4× speed.
+  Maps to the 14 lightspace.* contracts at
+  ~/Projects/lightarchitects-sdk/standards/canon/contracts/{event.bus,wire.http,code.trait}/lightspace.*.v1.yaml
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Azeret+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Syne:wght@700;800&family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<style>
+/* ════════════════════════════════════════════════════════════════════
+ *  Design tokens
+ * ════════════════════════════════════════════════════════════════════ */
+:root {
+  --la-bg-base:     #07080f;
+  --la-bg-panel:    #0d0f18;
+  --la-bg-card:     #111420;
+  --la-bg-sunken:   #0a0c14;
+  --la-bg-elev:     #181c2a;
+  --la-hair-faint:  rgba(255,255,255,0.04);
+  --la-hair-base:   rgba(255,255,255,0.08);
+  --la-hair-strong: rgba(255,255,255,0.15);
+  --la-hair-accent: rgba(77,142,255,0.28);
+  --la-text-bright: rgba(255,255,255,0.95);
+  --la-text-base:   rgba(255,255,255,0.80);
+  --la-text-dim:    rgba(255,255,255,0.50);
+  --la-text-mute:   rgba(255,255,255,0.28);
+  --la-text-ghost:  rgba(255,255,255,0.14);
+
+  --la-ok:    #39ff8a;
+  --la-err:   #ff4d6a;
+  --la-warn:  #ffad2e;
+  --la-info:  #8aa9ff;
+  --la-acc:   #4d8eff;
+  --la-acc2:  #a98aff;
+  --la-acc3:  #ffd166;
+
+  --la-font-mono:    'Azeret Mono', 'JetBrains Mono', ui-monospace, monospace;
+  --la-font-display: 'Syne', sans-serif;
+  --la-font-serif:   'EB Garamond', Georgia, serif;
+
+  --la-tk-loose: 0.12em;
+  --la-tk-mid:   0.07em;
+  --la-tk-tight: 0.04em;
+
+  --la-fast: 0.15s ease;
+  --la-mid:  0.28s cubic-bezier(0.4,0,0.2,1);
+  --la-slow: 0.55s cubic-bezier(0.4,0,0.2,1);
+
+  --la-rail-w: 320px;
+  --la-rail-w-collapsed: 56px;
+  --la-drawer-w: 420px;
+  --la-drawer-w-collapsed: 44px;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--la-bg-base);
+  color: var(--la-text-base);
+  font-family: var(--la-font-mono);
+  font-size: 12px;
+  letter-spacing: var(--la-tk-tight);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+body::before {
+  content: "";
+  position: fixed; inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  background:
+    repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(0,0,0,0.18) 2px, rgba(0,0,0,0.18) 3px),
+    radial-gradient(ellipse at 50% -10%, rgba(77,142,255,0.04), transparent 60%);
+  mix-blend-mode: overlay;
+  opacity: 0.55;
+}
+
+/* Scene shell */
+#la-root {
+  display: grid;
+  grid-template-areas:
+    "topbar topbar topbar"
+    "rail   canvas  drawer"
+    "status status  status";
+  grid-template-rows: 38px 1fr 30px;
+  grid-template-columns: var(--la-rail-w) 1fr var(--la-drawer-w);
+  height: 100vh;
+  transition: grid-template-columns var(--la-mid);
+}
+#la-root.rail-collapsed   { grid-template-columns: var(--la-rail-w-collapsed) 1fr var(--la-drawer-w); }
+#la-root.drawer-collapsed { grid-template-columns: var(--la-rail-w) 1fr var(--la-drawer-w-collapsed); }
+#la-root.rail-collapsed.drawer-collapsed { grid-template-columns: var(--la-rail-w-collapsed) 1fr var(--la-drawer-w-collapsed); }
+
+#la-root.in-lobby .la-rail,
+#la-root.in-lobby .la-canvas,
+#la-root.in-lobby .la-drawer,
+#la-root.in-lobby .la-statusrail,
+#la-root.in-lobby .la-topbar { opacity: 0; pointer-events: none; }
+#la-root.in-lobby .la-lobby { opacity: 1; pointer-events: auto; }
+#la-root.materializing .la-canvas,
+#la-root.materializing .la-drawer { opacity: 0.18; }
+
+.la-lobby {
+  position: fixed; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at center top, #0e1426 0%, var(--la-bg-base) 70%);
+  z-index: 50;
+  opacity: 0;
+  transition: opacity var(--la-slow);
+  pointer-events: none;
+}
+
+/* Top bar */
+.la-topbar {
+  grid-area: topbar;
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--la-hair-base);
+  background: linear-gradient(180deg, var(--la-bg-panel) 0%, var(--la-bg-base) 100%);
+  font-size: 10px;
+  letter-spacing: var(--la-tk-mid);
+  text-transform: uppercase;
+  color: var(--la-text-dim);
+  transition: opacity var(--la-mid);
+}
+.la-tb-brand {
+  font-family: var(--la-font-display);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: var(--la-tk-loose);
+  color: var(--la-text-bright);
+  text-transform: uppercase;
+}
+.la-tb-brand .la-acc { color: var(--la-acc); }
+.la-tb-sep { color: var(--la-text-ghost); }
+.la-tb-crumb { font-size: 9px; }
+.la-tb-crumb b { color: var(--la-text-base); font-weight: 500; }
+.la-tb-mid { flex: 1; display: flex; gap: 16px; justify-content: center; }
+.la-tb-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid var(--la-hair-base);
+  border-radius: 2px;
+  font-size: 9px;
+  background: var(--la-bg-sunken);
+}
+.la-tb-pill .dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--la-ok);
+  box-shadow: 0 0 6px var(--la-ok);
+}
+.la-tb-pill.warn .dot { background: var(--la-warn); box-shadow: 0 0 6px var(--la-warn); }
+.la-tb-pill.acc  .dot { background: var(--la-acc);  box-shadow: 0 0 6px var(--la-acc);  }
+.la-tb-right { display: flex; gap: 8px; align-items: center; }
+.la-tb-btn {
+  background: transparent;
+  border: 1px solid var(--la-hair-base);
+  color: var(--la-text-dim);
+  font-family: var(--la-font-mono);
+  font-size: 9px;
+  letter-spacing: var(--la-tk-mid);
+  text-transform: uppercase;
+  padding: 3px 8px;
+  cursor: pointer;
+  border-radius: 2px;
+  transition: all var(--la-fast);
+}
+.la-tb-btn:hover { color: var(--la-text-bright); border-color: var(--la-acc); }
+
+/* Lobby */
+.la-lobby-inner { max-width: 680px; width: 90vw; }
+.la-lobby-brand {
+  font-family: var(--la-font-display);
+  font-weight: 800;
+  font-size: 64px;
+  letter-spacing: -0.02em;
+  color: var(--la-text-bright);
+  text-align: center;
+  line-height: 0.9;
+  margin: 0 0 8px;
+}
+.la-lobby-brand .la-acc { color: var(--la-acc); font-style: italic; }
+.la-lobby-tag {
+  font-family: var(--la-font-serif);
+  font-style: italic;
+  font-size: 16px;
+  text-align: center;
+  color: var(--la-text-dim);
+  letter-spacing: 0;
+  margin: 0 0 48px;
+}
+.la-lobby-greeting {
+  font-family: var(--la-font-serif);
+  font-size: 20px;
+  color: var(--la-text-bright);
+  text-align: center;
+  margin: 0 0 18px;
+  letter-spacing: 0.01em;
+}
+.la-lobby-greeting .la-name {
+  font-family: var(--la-font-display);
+  font-weight: 700;
+  font-style: normal;
+  color: var(--la-acc);
+}
+.la-lobby-input-wrap {
+  position: relative;
+  border: 1px solid var(--la-hair-strong);
+  background: var(--la-bg-card);
+  border-radius: 3px;
+  transition: border-color var(--la-fast), box-shadow var(--la-fast);
+}
+.la-lobby-input-wrap.is-focused {
+  border-color: var(--la-acc);
+  box-shadow: 0 0 0 4px rgba(77,142,255,0.08);
+}
+.la-lobby-input {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  color: var(--la-text-bright);
+  font-family: var(--la-font-mono);
+  font-size: 14px;
+  line-height: 1.55;
+  padding: 16px 18px 60px;
+  min-height: 130px;
+  outline: 0;
+  letter-spacing: var(--la-tk-tight);
+  word-break: break-word;
+}
+.la-lobby-placeholder { color: var(--la-text-ghost); }
+.la-lobby-placeholder.is-hidden { display: none; }
+.la-lobby-controls {
+  position: absolute;
+  left: 14px; right: 14px; bottom: 12px;
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 9px; letter-spacing: var(--la-tk-mid); text-transform: uppercase;
+  color: var(--la-text-mute);
+}
+.la-lobby-hints { display: flex; gap: 12px; }
+.la-lobby-hint kbd {
+  font-family: var(--la-font-mono);
+  background: var(--la-bg-sunken);
+  border: 1px solid var(--la-hair-base);
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-size: 9px;
+  color: var(--la-text-dim);
+}
+.la-lobby-submit {
+  background: var(--la-acc);
+  color: var(--la-bg-base);
+  border: 0;
+  font-family: var(--la-font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: var(--la-tk-mid);
+  padding: 5px 14px;
+  border-radius: 2px;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+.la-lobby-recent {
+  margin-top: 28px;
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: 10px; letter-spacing: var(--la-tk-mid);
+}
+.la-lobby-recent-h {
+  text-transform: uppercase; color: var(--la-text-mute);
+  font-size: 9px; padding-left: 4px; margin-bottom: 2px;
+}
+.la-lobby-recent-row {
+  display: flex; gap: 10px; align-items: center;
+  padding: 6px 10px;
+  border: 1px solid var(--la-hair-faint);
+  background: rgba(255,255,255,0.015);
+  transition: all var(--la-fast);
+}
+.la-lobby-recent-row .sid { color: var(--la-text-mute); font-size: 9px; }
+.la-lobby-recent-row .summ { flex: 1; color: var(--la-text-base); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.la-lobby-recent-row .ago { color: var(--la-text-mute); font-size: 9px; }
+
+/* Materialize phase overlay */
+.la-materialize-indicator {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  display: none;
+  flex-direction: column; align-items: center; gap: 14px;
+  z-index: 80;
+  font-family: var(--la-font-mono); font-size: 9px;
+  letter-spacing: var(--la-tk-loose); text-transform: uppercase;
+  color: var(--la-text-dim);
+  pointer-events: none;
+}
+#la-root.materializing .la-materialize-indicator { display: flex; }
+.la-mat-ring {
+  width: 72px; height: 72px;
+  border: 1px solid var(--la-hair-base);
+  border-top-color: var(--la-acc);
+  border-radius: 50%;
+  animation: la-spin 1s linear infinite;
+}
+@keyframes la-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+.la-mat-phases { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+.la-mat-phase {
+  display: flex; align-items: center; gap: 7px;
+  opacity: 0.3;
+  transition: opacity var(--la-mid), color var(--la-mid);
+}
+.la-mat-phase.is-done { opacity: 1; color: var(--la-ok); }
+.la-mat-phase.is-active { opacity: 1; color: var(--la-text-bright); }
+.la-mat-dot {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--la-hair-strong);
+}
+.la-mat-phase.is-done   .la-mat-dot { background: var(--la-ok); box-shadow: 0 0 4px var(--la-ok); }
+.la-mat-phase.is-active .la-mat-dot { background: var(--la-acc); box-shadow: 0 0 6px var(--la-acc); animation: la-pulse 1s infinite; }
+@keyframes la-pulse { 50% { transform: scale(1.4); } }
+
+/* Rail */
+.la-rail {
+  grid-area: rail;
+  display: flex; flex-direction: column;
+  background: var(--la-bg-panel);
+  border-right: 1px solid var(--la-hair-base);
+  overflow: hidden;
+  transition: opacity var(--la-slow);
+}
+.la-rail-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--la-hair-base);
+  font-family: var(--la-font-display);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: var(--la-tk-loose);
+  color: var(--la-text-bright);
+  text-transform: uppercase;
+}
+.la-rail-head .glyph { color: var(--la-acc); font-size: 12px; }
+.la-rail-collapse {
+  margin-left: auto;
+  background: transparent; border: 0;
+  color: var(--la-text-mute); cursor: pointer;
+  font-family: var(--la-font-mono); font-size: 11px;
+}
+.la-rail-collapse:hover { color: var(--la-text-bright); }
+.la-rail-conv {
+  flex: 1; overflow-y: auto;
+  padding: 12px 12px 8px;
+  display: flex; flex-direction: column; gap: 12px;
+  scrollbar-width: thin;
+}
+.la-rail-conv::-webkit-scrollbar { width: 4px; }
+.la-rail-conv::-webkit-scrollbar-thumb { background: var(--la-hair-base); }
+
+.la-msg { display: flex; flex-direction: column; gap: 4px; animation: la-msgin 0.28s ease both; }
+@keyframes la-msgin { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.la-msg-meta {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: var(--la-tk-mid);
+  color: var(--la-text-mute);
+}
+.la-msg-meta .who {
+  font-family: var(--la-font-display); font-weight: 700;
+  letter-spacing: var(--la-tk-loose);
+}
+.la-msg-meta .who.copilot { color: var(--la-acc); }
+.la-msg-meta .who.operator { color: var(--la-acc3); }
+.la-msg-meta .who.corso { color: #ff7a7a; }
+.la-msg-meta .who.eva   { color: #93f0c2; }
+.la-msg-meta .who.soul  { color: #c5a8ff; }
+.la-msg-meta .who.ayin  { color: var(--la-warn); }
+.la-msg-meta .who.quantum { color: var(--la-info); }
+.la-msg-meta .who.seraph  { color: var(--la-err); }
+.la-msg-body {
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--la-text-base);
+  border-left: 1px solid var(--la-hair-base);
+  padding-left: 9px;
+}
+.la-msg.is-operator .la-msg-body { color: var(--la-text-bright); border-left-color: var(--la-acc3); }
+.la-msg.is-copilot  .la-msg-body { border-left-color: var(--la-acc); }
+.la-msg.is-tool .la-msg-body {
+  font-size: 10px;
+  background: var(--la-bg-card);
+  border: 1px solid var(--la-hair-faint);
+  border-left: 1px solid var(--la-acc);
+  padding: 6px 9px;
+  color: var(--la-text-dim);
+  font-family: var(--la-font-mono);
+}
+.la-msg.is-corso .la-msg-body { border-left-color: #ff7a7a; }
+.la-msg.is-eva   .la-msg-body { border-left-color: #93f0c2; }
+.la-msg.is-soul  .la-msg-body { border-left-color: #c5a8ff; }
+.la-msg.is-ayin  .la-msg-body { border-left-color: var(--la-warn); }
+.la-msg-card-link {
+  margin-top: 4px;
+  font-size: 9px;
+  color: var(--la-acc);
+  letter-spacing: var(--la-tk-mid);
+  text-transform: uppercase;
+}
+.la-msg-card-link::before { content: "↳ "; opacity: 0.6; }
+.la-msg-typing {
+  display: inline-flex; gap: 3px;
+  align-items: center;
+  font-style: italic;
+  color: var(--la-text-mute);
+}
+.la-msg-typing span {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--la-text-mute);
+  animation: la-dot 1.2s infinite;
+}
+.la-msg-typing span:nth-child(2) { animation-delay: 0.18s; }
+.la-msg-typing span:nth-child(3) { animation-delay: 0.36s; }
+@keyframes la-dot { 50% { background: var(--la-text-bright); transform: translateY(-1px); } }
+
+.la-rail-input-wrap {
+  border-top: 1px solid var(--la-hair-base);
+  padding: 9px 10px;
+  background: var(--la-bg-sunken);
+  display: flex; gap: 6px; align-items: flex-end;
+}
+.la-rail-input {
+  flex: 1;
+  background: var(--la-bg-card);
+  color: var(--la-text-bright);
+  border: 1px solid var(--la-hair-base);
+  border-radius: 2px;
+  font-family: var(--la-font-mono);
+  font-size: 11px;
+  padding: 7px 9px;
+  min-height: 24px;
+  resize: vertical; outline: 0;
+  letter-spacing: var(--la-tk-tight);
+}
+.la-rail-send {
+  background: var(--la-acc);
+  border: 0;
+  color: var(--la-bg-base);
+  font-family: var(--la-font-mono);
+  font-size: 9px; font-weight: 700;
+  padding: 7px 12px;
+  border-radius: 2px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: var(--la-tk-mid);
+}
+
+#la-root.rail-collapsed .la-rail-head .label,
+#la-root.rail-collapsed .la-rail-conv,
+#la-root.rail-collapsed .la-rail-input-wrap { display: none; }
+.la-rail-iconstrip { display: none; flex-direction: column; gap: 12px; padding: 18px 8px; align-items: center; }
+#la-root.rail-collapsed .la-rail-iconstrip { display: flex; }
+.la-rail-icon {
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--la-hair-base);
+  background: var(--la-bg-card);
+  color: var(--la-text-dim);
+  font-family: var(--la-font-display);
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+/* Canvas */
+.la-canvas {
+  grid-area: canvas;
+  position: relative;
+  display: flex; flex-direction: column;
+  background: var(--la-bg-base);
+  transition: opacity var(--la-slow);
+  overflow: hidden;
+}
+.la-canvas-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--la-hair-faint);
+  font-size: 9px; text-transform: uppercase; letter-spacing: var(--la-tk-loose);
+  color: var(--la-text-mute);
+}
+.la-canvas-head .intent {
+  color: var(--la-text-bright);
+  font-family: var(--la-font-mono);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: var(--la-tk-tight);
+  font-size: 11px;
+  flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.la-canvas-head .intent .verb {
+  color: var(--la-acc);
+  background: rgba(77,142,255,0.08);
+  padding: 1px 6px;
+  margin-right: 4px;
+  border-radius: 2px;
+  font-weight: 600;
+}
+.la-canvas-head .intent-class {
+  color: var(--la-text-dim);
+  font-size: 9px;
+  white-space: nowrap;
+}
+.la-canvas-head .intent-class b { color: var(--la-acc2); }
+
+.la-canvas-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  grid-auto-rows: minmax(76px, auto);
+  gap: 12px;
+  padding: 14px;
+  overflow-y: auto;
+  align-content: start;
+  scrollbar-width: thin;
+}
+.la-canvas-grid::-webkit-scrollbar { width: 6px; }
+.la-canvas-grid::-webkit-scrollbar-thumb { background: var(--la-hair-base); }
+
+.la-empty-canvas {
+  grid-column: span 12;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 220px;
+  color: var(--la-text-ghost);
+  font-family: var(--la-font-serif); font-style: italic;
+  font-size: 13px;
+  text-align: center;
+}
+.la-empty-canvas .glyph {
+  font-family: var(--la-font-display); font-weight: 800;
+  font-size: 28px; letter-spacing: var(--la-tk-loose);
+  color: var(--la-text-mute);
+  margin-bottom: 8px;
+}
+
+/* Cards */
+.la-card {
+  background: var(--la-bg-card);
+  border: 1px solid var(--la-hair-base);
+  border-radius: 0;
+  position: relative;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  transition: border-color var(--la-fast), opacity var(--la-mid), transform var(--la-mid);
+  animation: la-cardin var(--la-mid);
+}
+@keyframes la-cardin {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.la-card:hover { border-color: var(--la-hair-accent); }
+.la-card.kind-monitor    { --kind-color: var(--la-info); }
+.la-card.kind-artifact   { --kind-color: var(--la-acc); }
+.la-card.kind-research   { --kind-color: var(--la-acc2); }
+.la-card.kind-instrument { --kind-color: var(--la-warn); }
+.la-card.kind-trace      { --kind-color: var(--la-ok); }
+.la-card.kind-branchlane { --kind-color: var(--la-acc3); }
+
+/* Fix #8 — instant kind taxonomy via left accent bar */
+.la-card { border-left-width: 3px; border-left-color: var(--kind-color); }
+.la-card::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 0; background: var(--kind-color); opacity: 0.18;
+  transition: width var(--la-mid), opacity var(--la-mid);
+}
+.la-card:hover::before { width: 6px; opacity: 0.28; }
+
+/* Fix #1 — skeleton card slots (appear at grid_revealed, fade before real card replaces) */
+.la-card-skeleton {
+  background: var(--la-bg-card);
+  border: 1px dashed var(--la-hair-base);
+  border-left: 3px dashed var(--kind-color);
+  border-radius: 0;
+  position: relative;
+  display: flex; flex-direction: column;
+  min-height: 110px;
+  opacity: 0;
+  animation: la-skel-in 0.45s ease both;
+}
+@keyframes la-skel-in {
+  0%   { opacity: 0; transform: translateY(6px) scale(0.985); }
+  100% { opacity: 0.78; transform: translateY(0) scale(1); }
+}
+.la-card-skeleton.kind-monitor    { --kind-color: var(--la-info); }
+.la-card-skeleton.kind-artifact   { --kind-color: var(--la-acc); }
+.la-card-skeleton.kind-research   { --kind-color: var(--la-acc2); }
+.la-card-skeleton.kind-instrument { --kind-color: var(--la-warn); }
+.la-card-skeleton.kind-trace      { --kind-color: var(--la-ok); }
+.la-card-skeleton.kind-branchlane { --kind-color: var(--la-acc3); }
+.la-card-skeleton.is-fading {
+  animation: la-skel-out 0.24s ease both;
+}
+@keyframes la-skel-out { to { opacity: 0; transform: scale(0.96); } }
+.la-skel-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 11px;
+  border-bottom: 1px dashed var(--la-hair-faint);
+}
+.la-skel-kind {
+  font-family: var(--la-font-display); font-weight: 700;
+  font-size: 9px; letter-spacing: var(--la-tk-loose);
+  color: var(--kind-color); opacity: 0.55;
+}
+.la-skel-tag {
+  font-family: var(--la-font-mono); font-size: 8px;
+  color: var(--la-text-mute); letter-spacing: var(--la-tk-mid);
+  text-transform: uppercase;
+}
+.la-skel-shimmer {
+  flex: 1;
+  background:
+    linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.04) 50%, transparent 100%) repeat-x,
+    repeating-linear-gradient(transparent 0 14px, rgba(255,255,255,0.025) 14px 15px);
+  background-size: 200% 100%, auto;
+  animation: la-shimmer 2.4s linear infinite;
+}
+@keyframes la-shimmer { 0% { background-position: -100% 0, 0 0; } 100% { background-position: 200% 0, 0 0; } }
+
+/* Fix #4 — card exit animation when canvas reflows scene */
+.la-card.is-exiting {
+  animation: la-card-out 0.32s ease forwards;
+  pointer-events: none;
+}
+@keyframes la-card-out {
+  to { opacity: 0; transform: translateY(14px) scale(0.97); }
+}
+
+/* Fix #5 — closing celebration: shipped badge + gate cell green flush */
+.la-shipped-badge {
+  display: none;
+  align-items: center; gap: 7px;
+  padding: 3px 10px;
+  background: rgba(57,255,138,0.10);
+  border: 1px solid var(--la-ok);
+  border-radius: 2px;
+  color: var(--la-ok);
+  font-family: var(--la-font-display); font-weight: 800;
+  font-size: 10px; letter-spacing: var(--la-tk-loose); text-transform: uppercase;
+  text-shadow: 0 0 8px rgba(57,255,138,0.6);
+  animation: la-ship-in 0.55s ease both, la-ship-pulse 1.6s ease-in-out infinite 0.55s;
+}
+.la-shipped-badge::before { content: "✓"; font-size: 12px; }
+#la-root.is-shipped .la-shipped-badge { display: inline-flex; }
+@keyframes la-ship-in {
+  from { opacity: 0; transform: scale(0.85); letter-spacing: 0.18em; }
+  to   { opacity: 1; transform: scale(1); letter-spacing: var(--la-tk-loose); }
+}
+@keyframes la-ship-pulse {
+  50% { box-shadow: 0 0 12px rgba(57,255,138,0.45); border-color: #6cffaa; }
+}
+.la-mon-val.is-flushing {
+  animation: la-cell-flush 0.7s ease both;
+}
+@keyframes la-cell-flush {
+  0%   { color: var(--la-warn); text-shadow: none; }
+  35%  { color: var(--la-ok); text-shadow: 0 0 10px var(--la-ok); transform: scale(1.07); }
+  100% { color: var(--la-ok); text-shadow: 0 0 4px rgba(57,255,138,0.35); transform: scale(1); }
+}
+#la-root.is-shipped .la-tb-pill.acc {
+  border-color: var(--la-ok);
+  box-shadow: 0 0 12px rgba(57,255,138,0.35);
+}
+#la-root.is-shipped .la-tb-pill.acc .dot { background: var(--la-ok); box-shadow: 0 0 8px var(--la-ok); }
+#la-root.is-shipped .la-tb-pill.acc b { color: var(--la-ok); }
+
+/* Fix #6 — confidence pills surfaced */
+.la-conf {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid var(--la-hair-base);
+  padding: 1px 6px;
+  font-size: 9px;
+}
+.la-conf .val { font-size: 10px; }
+.la-conf .tier { font-size: 8px; }
+.la-conf.verified .val::after {
+  content: " ⛉"; color: var(--la-ok); margin-left: 2px;
+  text-shadow: 0 0 4px rgba(57,255,138,0.5);
+}
+
+/* Fix #9 — cycle visualization in resolve modal */
+.la-cycle-viz {
+  display: flex; align-items: center; justify-content: center;
+  gap: 16px; padding: 14px 0 6px;
+  border-bottom: 1px dashed var(--la-hair-base);
+  margin-bottom: 4px;
+}
+.la-cycle-node {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 8px 12px;
+  border: 1.5px solid var(--la-warn);
+  background: rgba(255,173,46,0.06);
+  border-radius: 2px;
+  min-width: 70px;
+}
+.la-cycle-node .ag {
+  font-family: var(--la-font-display); font-weight: 700;
+  font-size: 9px; letter-spacing: var(--la-tk-mid);
+  color: var(--la-warn);
+}
+.la-cycle-node .id {
+  font-family: var(--la-font-mono); font-size: 8px;
+  color: var(--la-text-dim); letter-spacing: var(--la-tk-tight);
+}
+.la-cycle-arrow {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  font-family: var(--la-font-mono); font-size: 8px;
+  letter-spacing: var(--la-tk-mid); text-transform: uppercase;
+  color: var(--la-text-mute);
+}
+.la-cycle-arrow .arrows {
+  display: flex; flex-direction: column; gap: 0;
+  color: var(--la-warn); font-size: 11px; line-height: 1;
+}
+.la-cycle-depth {
+  font-family: var(--la-font-display); font-weight: 700;
+  font-size: 9px; letter-spacing: var(--la-tk-loose);
+  color: var(--la-warn);
+  padding: 3px 8px;
+  border: 1px solid var(--la-warn);
+  border-radius: 10px;
+  background: rgba(255,173,46,0.08);
+}
+.la-cycle-cite {
+  display: block; text-align: center;
+  font-family: var(--la-font-mono); font-size: 8px;
+  color: var(--la-text-dim); letter-spacing: var(--la-tk-mid);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.la-cycle-cite a { color: var(--la-acc); text-decoration: none; border-bottom: 1px dotted var(--la-acc); }
+
+/* Fix #7 — LASDLC drawer section dividers + active field highlight */
+.la-doc-section {
+  border-top: 1px solid var(--la-hair-strong);
+  padding-top: 12px;
+  margin-top: 14px;
+}
+.la-doc-field.is-drafting {
+  background: rgba(77,142,255,0.07);
+  border-left: 2px solid var(--la-acc);
+  padding-left: 8px;
+  margin-left: -10px;
+  margin-right: -2px;
+  border-bottom: 1px dotted rgba(77,142,255,0.20);
+}
+.la-doc-field.is-drafting .k { color: var(--la-acc); }
+
+/* Fix #13 — tombstone strip flashes on graduation */
+.la-tombstrip { transition: border-top-color var(--la-mid), background var(--la-mid); }
+.la-tombstrip.is-flash {
+  border-top-color: var(--la-acc2);
+  background: rgba(169,138,255,0.06);
+  animation: la-tomb-flash 0.9s ease;
+}
+@keyframes la-tomb-flash {
+  0%   { box-shadow: inset 0 4px 12px -4px rgba(169,138,255,0.5); }
+  100% { box-shadow: inset 0 0 0 0 transparent; }
+}
+.la-tomb .arrow { color: var(--la-acc2); margin: 0 2px; opacity: 0.6; }
+
+/* Fix #3 — branch-lane scaled up at /BUILD scene */
+.la-card.kind-branchlane.span-12 .la-lanes { gap: 14px; }
+.la-card.kind-branchlane.span-12 .la-lane { padding: 14px 16px; gap: 8px; }
+.la-card.kind-branchlane.span-12 .la-lane-task { font-size: 12px; line-height: 1.55; }
+.la-card.kind-branchlane.span-12 .la-lane-head { font-size: 11px; gap: 8px; }
+.la-card.kind-branchlane.span-12 .la-lane-head .ag { font-size: 10px; padding: 2px 6px; }
+.la-card.kind-branchlane.span-12 .la-lane-state { font-size: 10px; }
+.la-card.kind-branchlane.span-12 .la-lane-progress { height: 5px; margin-top: 8px; }
+.la-card.kind-branchlane.span-12 .la-lane.is-committed { border-width: 1.5px; }
+.la-card.kind-branchlane.span-12 .la-lane.is-committed::after {
+  font-size: 14px; top: 6px; right: 9px;
+  text-shadow: 0 0 8px rgba(57,255,138,0.7);
+}
+
+/* Progress bar glow on increment (applies to all lanes) */
+.la-lane-progress .fill { box-shadow: 0 0 0 0 var(--la-acc); transition: width 0.6s ease, box-shadow 0.6s ease; }
+.la-lane-progress .fill.is-pulsing { box-shadow: 0 0 8px var(--la-acc); }
+.la-lane.is-committed .fill { box-shadow: 0 0 10px var(--la-ok) !important; }
+.la-lane.is-committed { animation: la-lane-win 1s ease both; }
+@keyframes la-lane-win {
+  0%   { background: var(--la-bg-sunken); }
+  40%  { background: rgba(57,255,138,0.18); box-shadow: 0 0 24px rgba(57,255,138,0.4); }
+  100% { background: var(--la-bg-sunken); box-shadow: 0 0 0 transparent; }
+}
+
+/* Fix #14 — drawer empty state in mono (consistent register) */
+.la-drawer-empty {
+  font-family: var(--la-font-mono);
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: var(--la-tk-mid);
+  text-transform: uppercase;
+  color: var(--la-text-mute);
+}
+
+/* Fix #12 — lobby caret blinking */
+.la-lobby-caret {
+  display: none;
+  color: var(--la-acc);
+  font-weight: 400;
+  margin-left: 1px;
+  animation: la-caret 0.85s step-start infinite;
+}
+#la-root.in-lobby .la-lobby-caret { display: inline; }
+@keyframes la-caret { 50% { opacity: 0; } }
+
+/* Fix #15 — clickable recent sessions */
+.la-lobby-recent-row { cursor: pointer; transition: border-color var(--la-fast), background var(--la-fast); }
+.la-lobby-recent-row:hover { border-color: var(--la-acc); background: var(--la-bg-card); }
+.la-lobby-recent-row:hover .summ { color: var(--la-text-bright); }
+
+/* Fix #17 — throughput sparkline */
+.la-sparkline {
+  display: inline-flex; gap: 1px;
+  height: 12px; align-items: flex-end;
+  margin-left: 6px;
+}
+.la-sparkline .bar {
+  width: 2px; min-height: 1px;
+  background: var(--la-acc);
+  opacity: 0.45;
+  transition: height 0.3s ease, opacity 0.3s ease;
+}
+.la-sparkline .bar.tip { opacity: 1; background: var(--la-ok); box-shadow: 0 0 4px var(--la-ok); }
+
+/* Sibling-message hover highlights linked card */
+.la-msg-card-link { cursor: pointer; transition: color var(--la-fast); }
+.la-msg-card-link:hover { color: #82b1ff; }
+.la-card.is-highlighted {
+  border-color: var(--la-acc) !important;
+  box-shadow: 0 0 0 1px var(--la-acc), 0 0 24px rgba(77,142,255,0.28);
+}
+
+.la-card-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 11px;
+  border-bottom: 1px solid var(--la-hair-faint);
+  font-size: 9px;
+  letter-spacing: var(--la-tk-loose);
+  text-transform: uppercase;
+}
+.la-card-kind {
+  font-family: var(--la-font-display);
+  font-weight: 700;
+  color: var(--kind-color);
+  font-size: 9px;
+  letter-spacing: var(--la-tk-loose);
+}
+.la-card-title {
+  font-family: var(--la-font-mono);
+  font-weight: 500;
+  color: var(--la-text-bright);
+  text-transform: none;
+  letter-spacing: var(--la-tk-tight);
+  font-size: 11px;
+  flex: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.la-card-ctrls { display: flex; gap: 4px; }
+.la-card-ctrl {
+  background: transparent; border: 0;
+  width: 18px; height: 18px;
+  color: var(--la-text-mute);
+  font-family: var(--la-font-mono);
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.la-card-ctrl:hover { color: var(--la-text-bright); background: var(--la-hair-base); }
+
+.la-card-body {
+  flex: 1;
+  padding: 10px 11px;
+  font-size: 11px;
+  line-height: 1.5;
+  letter-spacing: var(--la-tk-tight);
+  color: var(--la-text-base);
+  overflow: hidden;
+  display: flex; flex-direction: column; gap: 7px;
+}
+
+.la-card-foot {
+  padding: 5px 11px;
+  border-top: 1px solid var(--la-hair-faint);
+  background: var(--la-bg-sunken);
+  display: flex; align-items: center; gap: 8px;
+  font-size: 8px;
+  letter-spacing: var(--la-tk-mid);
+  text-transform: uppercase;
+  color: var(--la-text-mute);
+  white-space: nowrap; overflow: hidden;
+}
+.la-prov {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 8px;
+}
+.la-prov .ag {
+  font-family: var(--la-font-display); font-weight: 700;
+  color: var(--la-text-bright);
+}
+.la-prov.corso .ag   { color: #ff7a7a; }
+.la-prov.eva   .ag   { color: #93f0c2; }
+.la-prov.soul  .ag   { color: #c5a8ff; }
+.la-prov.quantum .ag { color: var(--la-info); }
+.la-prov.seraph  .ag { color: var(--la-err); }
+.la-prov.ayin    .ag { color: var(--la-warn); }
+.la-prov.laex    .ag { color: var(--la-acc3); }
+.la-prov.copilot .ag { color: var(--la-acc); }
+.la-prov.engine  .ag { color: var(--la-text-dim); }
+.la-prov-src {
+  color: var(--la-text-dim);
+  font-size: 8px;
+  font-family: var(--la-font-mono);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.la-prov-trace {
+  margin-left: auto;
+  color: var(--la-text-mute);
+  font-family: var(--la-font-mono);
+  font-size: 8px;
+}
+
+.la-conf {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: rgba(255,255,255,0.04);
+  padding: 1px 5px;
+  border-radius: 6px;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: var(--la-tk-mid);
+}
+.la-conf .lab { color: var(--la-text-mute); text-transform: uppercase; }
+.la-conf .val { color: var(--la-ok); }
+.la-conf.warn .val { color: var(--la-warn); }
+.la-conf.low  .val { color: var(--la-err); }
+.la-conf .tier {
+  background: rgba(0,0,0,0.4);
+  padding: 0 4px;
+  border-radius: 2px;
+  font-size: 7px;
+  color: var(--la-text-dim);
+  text-transform: uppercase;
+}
+
+.la-contradicts {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: rgba(255,173,46,0.10);
+  border: 1px solid var(--la-warn);
+  color: var(--la-warn);
+  padding: 1px 6px;
+  border-radius: 2px;
+  font-size: 8px;
+  letter-spacing: var(--la-tk-mid);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.la-contradicts::before { content: "⚠"; font-size: 9px; }
+
+/* Monitor */
+.la-mon-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.la-mon-cell {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 5px 6px;
+  background: var(--la-bg-sunken);
+  border: 1px solid var(--la-hair-faint);
+}
+.la-mon-lab {
+  font-size: 8px; letter-spacing: var(--la-tk-loose);
+  text-transform: uppercase; color: var(--la-text-mute);
+}
+.la-mon-val {
+  font-family: var(--la-font-mono);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--la-text-bright);
+  letter-spacing: var(--la-tk-tight);
+  transition: color var(--la-fast);
+}
+.la-mon-val.ok { color: var(--la-ok); }
+.la-mon-val.warn { color: var(--la-warn); }
+.la-mon-val.err  { color: var(--la-err); }
+.la-mon-val.run  { color: var(--la-acc); }
+
+/* Research */
+.la-res-summ {
+  font-family: var(--la-font-serif);
+  font-style: italic;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--la-text-base);
+  letter-spacing: 0;
+}
+.la-res-cite {
+  background: var(--la-bg-sunken);
+  border-left: 2px solid var(--la-acc2);
+  padding: 4px 8px;
+  font-size: 10px;
+  color: var(--la-text-dim);
+  font-family: var(--la-font-mono);
+}
+.la-res-actions { display: flex; gap: 6px; }
+.la-btn-mini {
+  background: transparent;
+  border: 1px solid var(--la-hair-base);
+  color: var(--la-text-dim);
+  font-family: var(--la-font-mono);
+  font-size: 8px;
+  padding: 3px 7px;
+  letter-spacing: var(--la-tk-mid);
+  text-transform: uppercase;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.la-btn-mini:hover { color: var(--la-text-bright); border-color: var(--la-acc2); }
+.la-btn-mini.danger { color: var(--la-err); border-color: rgba(255,77,106,0.4); }
+.la-btn-mini.danger:hover { background: var(--la-err); color: var(--la-bg-base); }
+.la-btn-mini[disabled] { opacity: 0.4; cursor: not-allowed; }
+
+/* Instrument */
+.la-inst-field { display: flex; flex-direction: column; gap: 3px; margin-bottom: 5px; }
+.la-inst-field label {
+  font-size: 8px; letter-spacing: var(--la-tk-loose);
+  text-transform: uppercase; color: var(--la-text-mute);
+}
+.la-inst-field input {
+  background: var(--la-bg-sunken);
+  border: 1px solid var(--la-hair-base);
+  color: var(--la-text-bright);
+  font-family: var(--la-font-mono);
+  font-size: 10px;
+  padding: 4px 7px;
+  border-radius: 2px;
+}
+.la-inst-gate {
+  background: var(--la-bg-sunken);
+  border: 1px dashed var(--la-warn);
+  padding: 6px 9px;
+  font-size: 9px;
+  letter-spacing: var(--la-tk-tight);
+  color: var(--la-warn);
+  margin-bottom: 7px;
+}
+.la-inst-gate.ok { border-color: var(--la-ok); color: var(--la-ok); }
+.la-inst-gate b { font-family: var(--la-font-display); }
+
+/* Trace */
+.la-trace { display: flex; flex-direction: column; gap: 3px; max-height: 320px; overflow-y: auto; }
+.la-trace::-webkit-scrollbar { width: 3px; }
+.la-trace::-webkit-scrollbar-thumb { background: var(--la-hair-base); }
+.la-trace-row {
+  display: grid; grid-template-columns: 56px 16px 1fr;
+  gap: 7px; align-items: center;
+  font-family: var(--la-font-mono);
+  font-size: 10px;
+  letter-spacing: var(--la-tk-tight);
+  padding: 2px 0;
+  border-bottom: 1px solid var(--la-hair-faint);
+  animation: la-msgin 0.2s ease both;
+}
+.la-trace-row .t { color: var(--la-text-mute); font-size: 9px; }
+.la-trace-row .lvl { font-size: 9px; }
+.la-trace-row .lvl.info { color: var(--la-info); }
+.la-trace-row .lvl.ok   { color: var(--la-ok); }
+.la-trace-row .lvl.warn { color: var(--la-warn); }
+.la-trace-row .lvl.err  { color: var(--la-err); }
+.la-trace-row .msg { color: var(--la-text-base); }
+.la-trace-row .ag {
+  font-family: var(--la-font-display); font-weight: 700;
+  font-size: 9px;
+}
+.la-trace-row .ag.corso   { color: #ff7a7a; }
+.la-trace-row .ag.eva     { color: #93f0c2; }
+.la-trace-row .ag.soul    { color: #c5a8ff; }
+.la-trace-row .ag.quantum { color: var(--la-info); }
+.la-trace-row .ag.seraph  { color: var(--la-err); }
+.la-trace-row .ag.ayin    { color: var(--la-warn); }
+.la-trace-row .ag.copilot { color: var(--la-acc); }
+.la-trace-row .ag.operator { color: var(--la-acc3); }
+
+/* Artifact */
+.la-art-mermaid {
+  background: var(--la-bg-sunken);
+  border: 1px solid var(--la-hair-faint);
+  padding: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--la-font-mono);
+  font-size: 10px;
+  color: var(--la-text-dim);
+  position: relative;
+  min-height: 190px;
+  overflow: hidden;
+}
+.la-art-mermaid svg { max-width: 100%; max-height: 240px; }
+.la-art-stream-bar {
+  position: absolute;
+  bottom: 6px; left: 10px; right: 10px;
+  display: flex; gap: 5px; align-items: center;
+  font-size: 8px; letter-spacing: var(--la-tk-mid);
+  color: var(--la-text-mute);
+  text-transform: uppercase;
+}
+.la-art-stream-bar .barfill {
+  flex: 1; height: 2px; background: var(--la-hair-base); position: relative;
+}
+.la-art-stream-bar .barfill .fill {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  background: var(--la-acc);
+  transition: width var(--la-mid);
+}
+
+/* Branch-lane */
+.la-lanes { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 7px; }
+.la-lane {
+  background: var(--la-bg-sunken);
+  border: 1px solid var(--la-hair-faint);
+  padding: 7px 8px;
+  display: flex; flex-direction: column; gap: 4px;
+  position: relative;
+  transition: all var(--la-mid);
+}
+.la-lane-head {
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--la-font-display);
+  font-weight: 700;
+  font-size: 9px;
+  letter-spacing: var(--la-tk-loose);
+  text-transform: uppercase;
+}
+.la-lane-head .ag {
+  padding: 0 4px;
+  border-radius: 1px;
+  color: var(--la-bg-base);
+  font-size: 8px;
+}
+.la-lane-head .ag.corso { background: #ff7a7a; }
+.la-lane-head .ag.eva   { background: #93f0c2; }
+.la-lane-head .ag.soul  { background: #c5a8ff; }
+.la-lane-state {
+  font-size: 8px;
+  letter-spacing: var(--la-tk-mid);
+  color: var(--la-text-mute);
+}
+.la-lane-state.committed { color: var(--la-ok); }
+.la-lane-state.rolled { color: var(--la-text-mute); }
+.la-lane-state.exploring { color: var(--la-acc); }
+.la-lane-task {
+  font-size: 10px;
+  color: var(--la-text-base);
+  letter-spacing: var(--la-tk-tight);
+  line-height: 1.4;
+}
+.la-lane-progress {
+  height: 2px; width: 100%;
+  background: var(--la-hair-base);
+  position: relative;
+  margin-top: 4px;
+}
+.la-lane-progress .fill {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  background: var(--la-acc); transition: width 0.6s ease;
+}
+.la-lane.is-committed { border-color: var(--la-ok); }
+.la-lane.is-committed::after {
+  content: "★";
+  position: absolute; top: 4px; right: 6px;
+  color: var(--la-ok); font-size: 10px;
+}
+.la-lane.is-committed .fill { background: var(--la-ok); }
+.la-lane.is-rolled { opacity: 0.45; }
+.la-lane.is-rolled .fill { background: var(--la-text-mute); }
+
+.span-6  { grid-column: span 6; }
+.span-4  { grid-column: span 4; }
+.span-3  { grid-column: span 3; }
+.span-8  { grid-column: span 8; }
+.span-12 { grid-column: span 12; }
+.row-2   { grid-row: span 2; }
+
+.la-tombstrip {
+  border-top: 1px solid var(--la-hair-faint);
+  background: var(--la-bg-panel);
+  padding: 6px 14px;
+  display: flex; gap: 10px;
+  font-size: 9px; letter-spacing: var(--la-tk-mid);
+  color: var(--la-text-mute); text-transform: uppercase;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.la-tombstrip .tlab { color: var(--la-text-mute); }
+.la-tomb {
+  display: inline-flex; gap: 5px; align-items: center;
+  padding: 1px 7px;
+  border: 1px dashed var(--la-hair-base);
+  color: var(--la-text-dim);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.la-tomb:hover { color: var(--la-text-bright); border-color: var(--la-acc); }
+.la-tomb .kind { font-family: var(--la-font-display); font-weight: 700; }
+.la-tomb .kind.artifact   { color: var(--la-acc); }
+.la-tomb .kind.research   { color: var(--la-acc2); }
+.la-tomb .kind.monitor    { color: var(--la-info); }
+.la-tomb .kind.instrument { color: var(--la-warn); }
+.la-tomb .kind.trace      { color: var(--la-ok); }
+.la-tomb .kind.branchlane { color: var(--la-acc3); }
+
+/* Drawer */
+.la-drawer {
+  grid-area: drawer;
+  display: flex; flex-direction: column;
+  background: var(--la-bg-panel);
+  border-left: 1px solid var(--la-hair-base);
+  overflow: hidden;
+  transition: opacity var(--la-slow);
+}
+.la-drawer-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--la-hair-base);
+  font-family: var(--la-font-display);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: var(--la-tk-loose);
+  color: var(--la-text-bright);
+  text-transform: uppercase;
+}
+.la-drawer-head .count {
+  margin-left: auto;
+  font-family: var(--la-font-mono);
+  font-weight: 500;
+  font-size: 9px;
+  color: var(--la-text-mute);
+  letter-spacing: var(--la-tk-tight);
+}
+.la-drawer-collapse {
+  background: transparent; border: 0;
+  color: var(--la-text-mute); cursor: pointer;
+  font-family: var(--la-font-mono); font-size: 11px;
+}
+.la-drawer-body { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.la-drawer-list {
+  flex: 0 0 220px;
+  border-bottom: 1px solid var(--la-hair-base);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.la-drawer-list::-webkit-scrollbar { width: 3px; }
+.la-drawer-list::-webkit-scrollbar-thumb { background: var(--la-hair-base); }
+.la-file-row {
+  padding: 7px 12px;
+  display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid var(--la-hair-faint);
+  cursor: pointer;
+  animation: la-msgin 0.22s ease both;
+}
+.la-file-row:hover { background: var(--la-bg-card); }
+.la-file-row.is-active {
+  background: rgba(77,142,255,0.08);
+  border-left: 2px solid var(--la-acc);
+  padding-left: 10px;
+}
+.la-file-mime {
+  font-family: var(--la-font-display);
+  font-weight: 700;
+  font-size: 8px;
+  letter-spacing: var(--la-tk-mid);
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: var(--la-bg-sunken);
+  color: var(--la-text-dim);
+}
+.la-file-mime.md  { color: var(--la-ok); background: rgba(57,255,138,0.06); }
+.la-file-mime.svg { color: var(--la-acc2); background: rgba(169,138,255,0.06); }
+.la-file-mime.pdf { color: var(--la-err); background: rgba(255,77,106,0.06); }
+.la-file-mime.yml { color: var(--la-warn); background: rgba(255,173,46,0.06); }
+.la-file-mime.ts  { color: var(--la-info); background: rgba(138,169,255,0.06); }
+.la-file-mime.html{ color: var(--la-acc); background: rgba(77,142,255,0.06); }
+.la-file-info { flex: 1; min-width: 0; }
+.la-file-name {
+  font-size: 11px; color: var(--la-text-bright);
+  letter-spacing: var(--la-tk-tight);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.la-file-meta {
+  font-size: 8px;
+  color: var(--la-text-mute);
+  letter-spacing: var(--la-tk-mid);
+  text-transform: uppercase;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.la-drawer-view {
+  flex: 1;
+  overflow-y: auto;
+  padding: 13px 14px;
+  font-family: var(--la-font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+  letter-spacing: var(--la-tk-tight);
+  color: var(--la-text-base);
+}
+.la-drawer-view::-webkit-scrollbar { width: 4px; }
+.la-drawer-view::-webkit-scrollbar-thumb { background: var(--la-hair-base); }
+.la-drawer-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100%;
+  color: var(--la-text-ghost);
+  font-family: var(--la-font-serif); font-style: italic;
+  font-size: 12px; padding: 40px;
+  text-align: center;
+}
+
+.la-doc-title {
+  font-family: var(--la-font-display);
+  font-weight: 800;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: var(--la-tk-loose);
+  color: var(--la-text-bright);
+  margin: 0 0 4px;
+}
+.la-doc-subtitle {
+  font-family: var(--la-font-serif);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--la-text-dim);
+  margin: 0 0 16px;
+  letter-spacing: 0;
+}
+.la-doc-section {
+  border-top: 1px solid var(--la-hair-faint);
+  padding-top: 9px;
+  margin-top: 11px;
+}
+.la-doc-h {
+  font-family: var(--la-font-display);
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: var(--la-tk-loose);
+  color: var(--la-acc);
+  margin: 0 0 4px;
+}
+.la-doc-field {
+  display: grid; grid-template-columns: 110px 1fr;
+  gap: 6px;
+  font-size: 10px;
+  padding: 3px 0;
+  border-bottom: 1px dotted var(--la-hair-faint);
+  animation: la-fieldin 0.2s ease both;
+}
+@keyframes la-fieldin { from { opacity: 0; transform: translateX(2px); } to { opacity: 1; transform: translateX(0); } }
+.la-doc-field .k {
+  color: var(--la-text-mute);
+  letter-spacing: var(--la-tk-mid);
+  text-transform: uppercase;
+  font-size: 9px;
+}
+.la-doc-field .v { color: var(--la-text-bright); font-family: var(--la-font-mono); }
+.la-doc-field.is-drafting .v {
+  color: var(--la-acc);
+}
+.la-doc-field.is-drafting .v::after {
+  content: "▍";
+  color: var(--la-acc);
+  animation: la-blink 0.8s step-start infinite;
+}
+@keyframes la-blink { 50% { opacity: 0; } }
+.la-doc-field.pending .v { color: var(--la-text-ghost); font-style: italic; }
+.la-doc-conf-pill {
+  display: inline-block;
+  font-family: var(--la-font-mono);
+  font-size: 8px; font-weight: 600;
+  background: rgba(57,255,138,0.10);
+  color: var(--la-ok);
+  padding: 1px 5px;
+  border-radius: 6px;
+  margin-left: 6px;
+  letter-spacing: var(--la-tk-mid);
+}
+.la-doc-source {
+  margin-top: 18px;
+  padding: 9px 12px;
+  background: var(--la-bg-card);
+  border-left: 2px solid var(--la-acc2);
+  font-family: var(--la-font-serif);
+  font-style: italic;
+  font-size: 11px;
+  color: var(--la-text-base);
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+.la-doc-source-meta {
+  font-family: var(--la-font-mono);
+  font-style: normal;
+  font-size: 9px;
+  color: var(--la-text-mute);
+  margin-top: 5px;
+  letter-spacing: var(--la-tk-mid);
+  text-transform: uppercase;
+}
+.la-doc-source-meta a {
+  color: var(--la-acc); text-decoration: none;
+  border-bottom: 1px dotted var(--la-acc);
+}
+.la-doc-pre {
+  background: var(--la-bg-sunken);
+  border: 1px solid var(--la-hair-faint);
+  padding: 8px 11px;
+  font-size: 10px;
+  color: var(--la-text-base);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin: 8px 0;
+  border-radius: 2px;
+}
+
+#la-root.drawer-collapsed .la-drawer-body,
+#la-root.drawer-collapsed .la-drawer-head .label,
+#la-root.drawer-collapsed .la-drawer-head .count { display: none; }
+.la-drawer-iconstrip { display: none; flex-direction: column; gap: 10px; padding: 16px 6px; align-items: center; }
+#la-root.drawer-collapsed .la-drawer-iconstrip { display: flex; }
+.la-drawer-icon {
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--la-hair-base);
+  background: var(--la-bg-card);
+  font-family: var(--la-font-display); font-weight: 700;
+  font-size: 9px;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.la-drawer-icon.md { color: var(--la-ok); }
+.la-drawer-icon.svg { color: var(--la-acc2); }
+.la-drawer-icon.pdf { color: var(--la-err); }
+.la-drawer-icon.yml { color: var(--la-warn); }
+
+/* Status rail */
+.la-statusrail {
+  grid-area: status;
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 14px;
+  border-top: 1px solid var(--la-hair-base);
+  background: var(--la-bg-panel);
+  font-size: 9px;
+  letter-spacing: var(--la-tk-mid);
+  text-transform: uppercase;
+  color: var(--la-text-dim);
+  transition: opacity var(--la-mid);
+}
+.la-sr-section { display: flex; gap: 6px; align-items: center; }
+.la-sr-section .lab { color: var(--la-text-mute); }
+.la-sr-section .val { color: var(--la-text-bright); font-family: var(--la-font-mono); letter-spacing: var(--la-tk-tight); text-transform: none; }
+.la-sr-section .val.ok { color: var(--la-ok); }
+.la-sr-section .val.warn { color: var(--la-warn); }
+.la-sr-section .val.acc { color: var(--la-acc); }
+.la-sr-divider { width: 1px; height: 14px; background: var(--la-hair-base); }
+.la-sr-spend { margin-left: auto; }
+
+/* Resolution modal */
+.la-resolve {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(7,8,15,0.78);
+  z-index: 90;
+  align-items: center; justify-content: center;
+  padding: 40px;
+  backdrop-filter: blur(3px);
+}
+.la-resolve.is-open { display: flex; }
+.la-resolve-panel {
+  width: 720px; max-width: 92vw;
+  background: var(--la-bg-card);
+  border: 1px solid var(--la-warn);
+  display: flex; flex-direction: column;
+  animation: la-modal-in 0.3s ease both;
+}
+@keyframes la-modal-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+.la-resolve-head {
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--la-hair-base);
+  font-family: var(--la-font-display);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: var(--la-tk-loose);
+  text-transform: uppercase;
+  color: var(--la-warn);
+}
+.la-resolve-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.la-resolve-sub {
+  font-size: 11px; color: var(--la-text-dim);
+  font-family: var(--la-font-serif); font-style: italic;
+}
+.la-resolve-claims { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.la-resolve-claim {
+  border: 1px solid var(--la-hair-base);
+  background: var(--la-bg-sunken);
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.la-resolve-claim.is-winner {
+  border-color: var(--la-ok);
+  background: rgba(57,255,138,0.05);
+}
+.la-resolve-tier { font-size: 8px; letter-spacing: var(--la-tk-mid); color: var(--la-text-mute); text-transform: uppercase; }
+.la-resolve-text { font-family: var(--la-font-serif); font-size: 12px; color: var(--la-text-base); line-height: 1.5; }
+.la-resolve-prov { font-size: 8px; letter-spacing: var(--la-tk-mid); color: var(--la-text-mute); text-transform: uppercase; }
+.la-resolve-actions { display: flex; gap: 8px; }
+
+/* ════════════════════════════════════════════════════════════════════
+ *  Timeline player (live demo control)
+ * ════════════════════════════════════════════════════════════════════ */
+.la-tlplayer {
+  position: fixed;
+  top: 6px; right: 14px;
+  display: flex; gap: 8px; z-index: 200;
+  background: rgba(7,8,15,0.92);
+  padding: 5px 10px;
+  border: 1px solid var(--la-hair-base);
+  border-radius: 2px;
+  align-items: center;
+  font-family: var(--la-font-mono);
+  font-size: 9px;
+  letter-spacing: var(--la-tk-mid);
+  text-transform: uppercase;
+  color: var(--la-text-dim);
+  backdrop-filter: blur(4px);
+}
+.la-tlplayer button {
+  background: transparent; border: 1px solid var(--la-hair-base);
+  color: var(--la-text-dim); font-family: var(--la-font-mono);
+  padding: 2px 8px; cursor: pointer; border-radius: 2px;
+  font-size: 11px; line-height: 1;
+}
+.la-tlplayer button:hover { color: var(--la-text-bright); border-color: var(--la-acc); }
+.la-tlplayer button.is-playing {
+  color: var(--la-bg-base); border-color: var(--la-acc); background: var(--la-acc);
+}
+.la-tlplayer input[type="range"] {
+  width: 260px;
+  accent-color: var(--la-acc);
+  background: transparent;
+}
+.la-tlplayer select {
+  background: var(--la-bg-card); color: var(--la-text-bright);
+  border: 1px solid var(--la-hair-base); font-family: var(--la-font-mono);
+  font-size: 9px; padding: 2px 4px; border-radius: 2px;
+}
+.la-tlplayer .label { color: var(--la-text-mute); font-size: 8px; }
+.la-tlplayer .time {
+  color: var(--la-text-base);
+  font-variant-numeric: tabular-nums;
+  font-size: 9px;
+  min-width: 80px; text-align: right;
+}
+
+</style>
+</head>
+<body>
+
+<!-- Timeline player -->
+<div class="la-tlplayer">
+  <span class="label">demo</span>
+  <button id="tl-restart" title="restart">↺</button>
+  <button id="tl-play" class="is-playing" title="play/pause">▶</button>
+  <input type="range" id="tl-scrub" min="0" max="58000" step="100" value="0">
+  <span class="time" id="tl-time">0.0s / 58.0s</span>
+  <select id="tl-speed" title="speed">
+    <option value="0.5">0.5×</option>
+    <option value="1" selected>1×</option>
+    <option value="2">2×</option>
+    <option value="4">4×</option>
+  </select>
+</div>
+
+<div id="la-root" class="in-lobby">
+  <!-- Top bar -->
+  <header class="la-topbar">
+    <span class="la-tb-brand">Light<span class="la-acc">space</span></span>
+    <span class="la-tb-sep">·</span>
+    <span class="la-tb-crumb">session <b>39b72c26</b></span>
+    <span class="la-tb-sep">·</span>
+    <span class="la-tb-crumb">cwd <b>~/Projects/lightarchitects-sdk</b></span>
+
+    <div class="la-tb-mid">
+      <span class="la-tb-pill acc"><span class="dot"></span>workspace <b id="la-ws-state">idle · awaiting intent</b></span>
+      <span class="la-tb-pill"><span class="dot"></span>provider <b>anthropic/claude-opus-4-7</b></span>
+      <span class="la-tb-pill warn"><span class="dot"></span>budget <b id="la-budget">$0.00 / $5.00</b></span>
+    </div>
+
+    <div class="la-tb-right">
+      <button class="la-tb-btn" id="la-toggle-rail">Rail</button>
+      <button class="la-tb-btn" id="la-toggle-drawer">Drawer</button>
+    </div>
+  </header>
+
+  <!-- Lobby -->
+  <div class="la-lobby">
+    <div class="la-lobby-inner">
+      <h1 class="la-lobby-brand">Light<span class="la-acc">space</span></h1>
+      <p class="la-lobby-tag">The workspace materialises around your intent.</p>
+      <p class="la-lobby-greeting">
+        Good morning, <span class="la-name">Light Architect</span> — what's on your mind?
+      </p>
+      <div class="la-lobby-input-wrap" id="la-lobby-wrap">
+        <div class="la-lobby-input" id="la-lobby-input">
+          <span id="la-lobby-typed"></span><span class="la-lobby-caret" id="la-lobby-caret">▍</span>
+          <span class="la-lobby-placeholder" id="la-lobby-placeholder">I want to plan the IntentCanvas SDK feature for the webshell…</span>
+        </div>
+        <div class="la-lobby-controls">
+          <div class="la-lobby-hints">
+            <span class="la-lobby-hint"><kbd>/</kbd> slash command</span>
+            <span class="la-lobby-hint"><kbd>↩</kbd> submit</span>
+            <span class="la-lobby-hint"><kbd>⇧↩</kbd> newline</span>
+          </div>
+          <button class="la-lobby-submit">Begin →</button>
+        </div>
+      </div>
+      <div class="la-lobby-recent">
+        <div class="la-lobby-recent-h">Recent sessions · click to resume</div>
+        <div class="la-lobby-recent-row" data-session="b704d6e">
+          <span class="sid">b704d6e</span>
+          <span class="summ">copilot-chatroom-core · L1 + chatroom merge · 3033 tests passing</span>
+          <span class="ago">2d</span>
+        </div>
+        <div class="la-lobby-recent-row" data-session="d783ed2">
+          <span class="sid">d783ed2</span>
+          <span class="summ">unified-litellm-router · provider switching shipped</span>
+          <span class="ago">5d</span>
+        </div>
+        <div class="la-lobby-recent-row" data-session="e20ab1e">
+          <span class="sid">e20ab1e</span>
+          <span class="summ">webshell-supervisor-autonomy · XEA 92 EXEMPLARY</span>
+          <span class="ago">9d</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="la-materialize-indicator">
+    <div class="la-mat-ring"></div>
+    <div class="la-mat-phases">
+      <div class="la-mat-phase" data-phase="begin"><span class="la-mat-dot"></span>begin</div>
+      <div class="la-mat-phase" data-phase="rail_collapsed"><span class="la-mat-dot"></span>rail collapsed</div>
+      <div class="la-mat-phase" data-phase="grid_revealed"><span class="la-mat-dot"></span>grid revealed</div>
+      <div class="la-mat-phase" data-phase="drawer_revealed"><span class="la-mat-dot"></span>drawer revealed</div>
+      <div class="la-mat-phase" data-phase="cards_streaming"><span class="la-mat-dot"></span>cards streaming</div>
+      <div class="la-mat-phase" data-phase="complete"><span class="la-mat-dot"></span>complete</div>
+    </div>
+  </div>
+
+  <!-- Rail -->
+  <aside class="la-rail">
+    <div class="la-rail-head">
+      <span class="glyph">◆</span>
+      <span class="label">Copilot</span>
+      <button class="la-rail-collapse" id="la-rail-collapse-x">‹</button>
+    </div>
+    <div class="la-rail-iconstrip">
+      <div class="la-rail-icon" title="Expand copilot">◆</div>
+    </div>
+    <div class="la-rail-conv" id="la-conv"></div>
+    <div class="la-rail-input-wrap">
+      <textarea class="la-rail-input" placeholder="Continue the conversation…"></textarea>
+      <button class="la-rail-send">Send</button>
+    </div>
+  </aside>
+
+  <!-- Canvas -->
+  <main class="la-canvas">
+    <div class="la-canvas-head">
+      <span class="intent" id="la-intent-text-wrap">
+        <span class="verb" id="la-intent-verb" style="display:none"></span><span id="la-intent-text"></span>
+      </span>
+      <span class="la-shipped-badge" id="la-shipped-badge">Wave 2a Shipped</span>
+      <span class="intent-class" id="la-intent-class">intent · <b>—</b></span>
+    </div>
+    <div class="la-canvas-grid" id="la-grid"></div>
+    <div class="la-tombstrip" id="la-tombstrip" style="display:none">
+      <span class="tlab">Tombstones</span>
+      <div id="la-tombs"></div>
+    </div>
+  </main>
+
+  <!-- Drawer -->
+  <aside class="la-drawer">
+    <div class="la-drawer-head">
+      <span class="label">Drawer</span>
+      <span class="count" id="la-drawer-count">0 files</span>
+      <button class="la-drawer-collapse" id="la-drawer-collapse-x">›</button>
+    </div>
+    <div class="la-drawer-iconstrip" id="la-drawer-iconstrip"></div>
+    <div class="la-drawer-body">
+      <div class="la-drawer-list" id="la-files"></div>
+      <div class="la-drawer-view" id="la-drawerview">
+        <div class="la-drawer-empty">drawer empty — files arrive as the agent works</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Status rail -->
+  <footer class="la-statusrail">
+    <div class="la-sr-section"><span class="lab">spans</span><span class="val ok" id="sr-spans">0</span></div>
+    <div class="la-sr-divider"></div>
+    <div class="la-sr-section"><span class="lab">last event</span><span class="val" id="sr-last">—</span></div>
+    <div class="la-sr-divider"></div>
+    <div class="la-sr-section"><span class="lab">throughput</span><span class="val" id="sr-throughput">0.0 evt/s</span><span class="la-sparkline" id="sr-sparkline"></span></div>
+    <div class="la-sr-divider"></div>
+    <div class="la-sr-section"><span class="lab">contradictions</span><span class="val" id="sr-contras">0</span></div>
+    <div class="la-sr-divider"></div>
+    <div class="la-sr-section"><span class="lab">replay</span><span class="val acc">recording</span></div>
+    <div class="la-sr-section la-sr-spend">
+      <span class="lab">tokens</span><span class="val" id="sr-tokens">0k / 1m</span>
+    </div>
+  </footer>
+
+  <!-- Resolution modal -->
+  <div class="la-resolve" id="la-resolve">
+    <div class="la-resolve-panel">
+      <div class="la-resolve-head">⚠ Contradiction — operator decision required</div>
+      <div class="la-resolve-body">
+        <div class="la-cycle-viz">
+          <div class="la-cycle-node">
+            <span class="ag">CARD A</span>
+            <span class="id">card-aaa · Context7</span>
+          </div>
+          <div class="la-cycle-arrow">
+            <span class="arrows">▶<br>◀</span>
+            <span>contradicts</span>
+          </div>
+          <div class="la-cycle-node">
+            <span class="ag">CARD B</span>
+            <span class="id">card-bbb · Firecrawl</span>
+          </div>
+          <div class="la-cycle-depth">depth = 2 · cycle_yielded</div>
+        </div>
+        <div class="la-cycle-cite">
+          fired by <a href="#">lightspace.contradiction-resolution.v1#max_contradiction_depth</a> · span ayin-cycle-9c2a
+        </div>
+        <div class="la-resolve-sub">
+          Two research cards report conflicting values for the same library default.
+          The engine detected the cycle above and yielded to you (engine cannot pick a winner without violating Communication Covenant #2).
+        </div>
+        <div class="la-resolve-claims">
+          <div class="la-resolve-claim is-winner">
+            <div class="la-resolve-tier">VERIFIED · confidence 0.94 · proposed winner</div>
+            <div class="la-resolve-text">"Default tokio mpsc channel timeout is <b>30 seconds</b>."</div>
+            <div class="la-resolve-prov">QUANTUM · context7://tokio/mpsc · span ayin-3f8a</div>
+          </div>
+          <div class="la-resolve-claim">
+            <div class="la-resolve-tier">SINGLE_SOURCE · confidence 0.62</div>
+            <div class="la-resolve-text">"Default tokio mpsc channel timeout is <b>60 seconds</b>."</div>
+            <div class="la-resolve-prov">QUANTUM · firecrawl: blog.archived.dev · span ayin-7e2c</div>
+          </div>
+        </div>
+        <div class="la-resolve-actions">
+          <button class="la-btn-mini" style="border-color:var(--la-ok);color:var(--la-ok)">Accept proposed winner</button>
+          <button class="la-btn-mini">Choose other</button>
+          <button class="la-btn-mini">Both stand — annotate</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════════
+ *  STATE MANAGER (single source of truth)
+ *  Timeline events mutate this; renderAll rebuilds DOM from state.
+ * ════════════════════════════════════════════════════════════════════ */
+
+const initialState = () => ({
+  ui: {
+    inLobby: true,
+    materializing: false,
+    matPhase: null,
+    matPhasesSeen: [],
+    rail: 'expanded',
+    drawer: 'expanded',
+    contradiction: false,
+    shipped: false,
+    tombFlash: false,
+  },
+  status: {
+    wsState: 'idle · awaiting intent',
+    budget: 0.00,
+    budgetTarget: 0.00,
+    spans: 0,
+    lastEvent: '—',
+    throughput: 0.0,
+    throughputHistory: [],   // last 12 samples for sparkline
+    contradictions: 0,
+    tokens: 0,
+  },
+  intent: { text: '', verb: '', class: '—' },
+  lobbyInput: '',
+  conv: [],
+  cards: [],          // [{ id, kind, title, body or builder(), prov, conf, contradicts }]
+  skeletons: [],      // [{ kind, tag, slot }] — placeholder cards before real cards arrive
+  tombstones: [],     // [{ id, kind, title, fileTarget? }]
+  files: [],          // [{ id, name, mime, meta, prov }]
+  activeFileId: null,
+  highlightCardId: null,
+  // dynamic content state
+  lasdlc: {
+    project: null, codename: null, tier: null, phase: null,
+    tplv: null, pillars: null, northstar: null,
+    g1_8: false, g9_14: false,
+    activeField: null,   // the currently-drafting key — gets bg highlight
+  },
+  mermaidNodes: 0,    // 0..6 (count of nodes shown in the live arch-draft card)
+  citation: { sources: 0, verified: 0, multi: 0, contras: 0 },
+  branchLanes: null,  // [{ag, state, task, prog, pulse}] or null
+  diffFeed: [],       // for the diff-feed card
+  gateMatrix: null,   // for the build-time card
+});
+
+let state = initialState();
+
+/* ════════════════════════════════════════════════════════════════════
+ *  MUTATIONS (called by timeline events)
+ * ════════════════════════════════════════════════════════════════════ */
+
+function setLobbyInput(s)         { state.lobbyInput = s; renderLobbyInput(); }
+function exitLobby()              { state.ui.inLobby = false; document.getElementById('la-root').classList.remove('in-lobby'); state.status.wsState = 'materialising'; renderTopBar(); }
+
+/* Fix #1 — pre-render hairline skeleton slots at grid_revealed.
+   Real cards subsequently REPLACE matching skeletons by kind+tag. */
+function addSkeletons(slots) {
+  state.skeletons = slots.map((s, i) => ({ kind: s.kind, tag: s.tag, span: s.span, slot: i }));
+  renderCanvas();
+}
+function clearSkeletons() {
+  state.skeletons = [];
+  renderCanvas();
+}
+function setMaterializing(on)     { state.ui.materializing = on; document.getElementById('la-root').classList.toggle('materializing', on); }
+function setMatPhase(phase) {
+  state.ui.matPhase = phase;
+  if (!state.ui.matPhasesSeen.includes(phase)) state.ui.matPhasesSeen.push(phase);
+  renderMatIndicator();
+  if (phase === 'complete') {
+    state.ui.materializing = false;
+    document.getElementById('la-root').classList.remove('materializing');
+    state.status.wsState = 'materialised';
+    renderTopBar();
+  }
+}
+function setIntent(verb, text, klass) {
+  state.intent = { verb: verb || '', text: text || '', class: klass || '—' };
+  renderIntent();
+}
+function addConv(who, text, time, isTool, agentClass, cardLink, cardLinkLabel) {
+  state.conv.push({
+    who, text, time,
+    isTool: !!isTool,
+    agentClass: agentClass || null,
+    cardLink: cardLink || null,
+    cardLinkLabel: cardLinkLabel || null,
+  });
+  renderConv();
+}
+function addCard(card) {
+  // Consume one matching skeleton (same kind) when available, otherwise just append.
+  const idx = state.skeletons.findIndex(s => s.kind === card.kind);
+  if (idx !== -1) state.skeletons.splice(idx, 1);
+  state.cards.push(card);
+  renderCanvas();
+}
+function updateCard(id, patch) {
+  const c = state.cards.find(x => x.id === id);
+  if (!c) return;
+  Object.assign(c, patch);
+  renderCanvas();
+}
+function detachCard(id, options) {
+  const idx = state.cards.findIndex(x => x.id === id);
+  if (idx === -1) return;
+  const c = state.cards[idx];
+  if (options && options.ghost) state.tombstones.push({ id: c.id, kind: c.kind, title: c.title });
+  state.cards.splice(idx, 1);
+  renderCanvas();
+}
+function graduateCard(id, file) {
+  const c = state.cards.find(x => x.id === id);
+  if (c) state.tombstones.push({ id: c.id, kind: c.kind, title: c.title, fileTarget: file.id });
+  detachCard(id, { ghost: false });
+  addFile(file);
+  focusFile(file.id);
+  flashTombstrip();
+}
+/* Fix #4 — stagger out, then in. Cards animate-exit with class on DOM nodes,
+   we wipe state after the animation completes. */
+function clearCanvas(toTombstones) {
+  if (toTombstones) {
+    state.cards.forEach(c => state.tombstones.push({ id: c.id, kind: c.kind, title: c.title }));
+  }
+  const grid = document.getElementById('la-grid');
+  const cardEls = Array.from(grid.querySelectorAll('.la-card'));
+  if (cardEls.length === 0) { state.cards = []; renderCanvas(); return; }
+  cardEls.forEach((el, i) => {
+    el.style.animationDelay = (i * 60) + 'ms';
+    el.classList.add('is-exiting');
+  });
+  // Wipe state after the stagger window (≤ 60ms × N + 320ms anim)
+  const settle = Math.min(800, cardEls.length * 60 + 320);
+  state.cards = [];
+  setTimeout(() => { renderCanvas(); renderIntent(); }, settle);
+}
+
+/* Fix #5 — closing celebration */
+function shipBuild() {
+  state.ui.shipped = true;
+  document.getElementById('la-root').classList.add('is-shipped');
+  // Flush the gate-matrix cells from warn → ok in sequence
+  const cells = Array.from(document.querySelectorAll('[data-id="card-gate-matrix"] .la-mon-val'));
+  cells.forEach((cell, i) => {
+    setTimeout(() => {
+      cell.classList.add('is-flushing');
+      cell.classList.remove('warn');
+      cell.classList.add('ok');
+      // also rewrite text from "5/7" → "7/7" if it isn't already
+      if (cell.textContent.match(/^\d+\/7$/)) cell.textContent = '7/7';
+    }, i * 180);
+  });
+}
+
+/* Fix #11 — animate budget value over the next ~1.4s instead of jumping */
+function tweenBudget(target) {
+  const start = state.status.budget;
+  const startMs = performance.now();
+  const dur = 1400;
+  state.status.budgetTarget = target;
+  function step() {
+    if (state.status.budgetTarget !== target) return; // superseded
+    const t = Math.min(1, (performance.now() - startMs) / dur);
+    const ease = 1 - Math.pow(1 - t, 3); // easeOutCubic
+    state.status.budget = start + (target - start) * ease;
+    renderTopBar();
+    if (t < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+/* Fix #13 — tombstone strip flashes on graduation */
+function flashTombstrip() {
+  const strip = document.getElementById('la-tombstrip');
+  strip.classList.remove('is-flash');
+  void strip.offsetWidth;
+  strip.classList.add('is-flash');
+  setTimeout(() => strip.classList.remove('is-flash'), 900);
+}
+function addFile(file) {
+  if (state.files.find(f => f.id === file.id)) return;
+  state.files.push(file);
+  renderFiles();
+}
+function focusFile(id) {
+  state.activeFileId = id;
+  renderFiles();
+  renderDrawerView();
+}
+function setLasdlcField(key, value) {
+  state.lasdlc[key] = value;
+  state.lasdlc.activeField = key; // mark this field as the freshly-drafting one (Fix #7)
+  if (state.activeFileId === 'file-lasdlc.md') renderDrawerView();
+}
+function setLasdlcGroup(group, value) {
+  state.lasdlc[group] = value;
+  if (state.activeFileId === 'file-lasdlc.md') renderDrawerView();
+}
+function addMermaidNode() {
+  state.mermaidNodes = Math.min(6, state.mermaidNodes + 1);
+  renderCanvas();
+}
+function setCitation(patch) { Object.assign(state.citation, patch); renderCanvas(); }
+function setBranchLanes(lanes) { state.branchLanes = lanes; renderCanvas(); }
+function updateBranchLane(ag, patch) {
+  if (!state.branchLanes) return;
+  const l = state.branchLanes.find(x => x.ag === ag);
+  if (l) Object.assign(l, patch);
+  renderCanvas();
+}
+function addDiffRow(row) {
+  state.diffFeed.push(row);
+  renderCanvas();
+}
+function setGateMatrix(m) { state.gateMatrix = m; renderCanvas(); }
+function openResolve()  { state.ui.contradiction = true;  document.getElementById('la-resolve').classList.add('is-open'); }
+function closeResolve() { state.ui.contradiction = false; document.getElementById('la-resolve').classList.remove('is-open'); }
+function setStatus(patch) {
+  // Special-case budget: tween instead of jump (Fix #11)
+  if (patch.budget !== undefined && patch.budget !== state.status.budget) {
+    tweenBudget(patch.budget);
+    delete patch.budget;
+  }
+  Object.assign(state.status, patch);
+  renderStatus();
+  renderTopBar();
+}
+function tickSpan(name) {
+  state.status.spans += 1;
+  state.status.lastEvent = name;
+  state.status.throughput = +(state.status.throughput * 0.85 + 0.6).toFixed(1);
+  // Fix #17 — keep last 12 samples for sparkline
+  state.status.throughputHistory.push(state.status.throughput);
+  if (state.status.throughputHistory.length > 12) state.status.throughputHistory.shift();
+  renderStatus();
+}
+
+/* Fix #7 — mark a LASDLC field as actively drafting (left border + bg) */
+function setLasdlcDraftingField(key) {
+  state.lasdlc.activeField = key;
+  if (state.activeFileId === 'file-lasdlc.md') renderDrawerView();
+}
+
+/* Fix #3 — branch-lane: mark a fill as just-incremented for the glow */
+function pulseBranchLane(ag) {
+  const l = state.branchLanes && state.branchLanes.find(x => x.ag === ag);
+  if (!l) return;
+  l.pulse = true;
+  renderCanvas();
+  setTimeout(() => { l.pulse = false; renderCanvas(); }, 700);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ *  RENDERERS
+ * ════════════════════════════════════════════════════════════════════ */
+
+function renderLobbyInput() {
+  // Fix #12 — real blinking caret. We render the typed text + a caret span.
+  const typed = document.getElementById('la-lobby-typed');
+  const ph    = document.getElementById('la-lobby-placeholder');
+  if (typed) typed.textContent = state.lobbyInput;
+  if (ph)    ph.classList.toggle('is-hidden', state.lobbyInput.length > 0);
+}
+function renderMatIndicator() {
+  const phases = ['begin', 'rail_collapsed', 'grid_revealed', 'drawer_revealed', 'cards_streaming', 'complete'];
+  phases.forEach((p, i) => {
+    const el = document.querySelector(`.la-mat-phase[data-phase="${p}"]`);
+    if (!el) return;
+    el.classList.remove('is-active', 'is-done');
+    const seenIdx = state.ui.matPhasesSeen.indexOf(p);
+    if (seenIdx === -1) return;
+    if (p === state.ui.matPhase && p !== 'complete') el.classList.add('is-active');
+    else el.classList.add('is-done');
+  });
+}
+function renderTopBar() {
+  document.getElementById('la-ws-state').textContent = state.status.wsState;
+  document.getElementById('la-budget').textContent = `$${state.status.budget.toFixed(2)} / $5.00`;
+}
+function renderIntent() {
+  const verb = document.getElementById('la-intent-verb');
+  verb.textContent = state.intent.verb;
+  verb.style.display = state.intent.verb ? '' : 'none';
+  document.getElementById('la-intent-text').textContent = state.intent.text;
+  document.getElementById('la-intent-class').innerHTML =
+    `intent · <b>${state.intent.class}</b>${state.cards.length ? ' · ' + state.cards.length + ' cards' : ''}${state.files.length ? ' · ' + state.files.length + ' files' : ''}`;
+}
+function renderConv() {
+  const c = document.getElementById('la-conv');
+  c.innerHTML = state.conv.map(m => {
+    const cls = m.isTool ? 'is-tool' : `is-${m.who}`;
+    const whoCls = m.agentClass || m.who;
+    const linkAttr = m.cardLink ? ` data-card-link="${m.cardLink}"` : '';
+    const linkRow  = m.cardLink ? `<div class="la-msg-card-link"${linkAttr}>${m.cardLinkLabel || 'view card'}</div>` : '';
+    return `
+      <div class="la-msg ${cls}"${linkAttr}>
+        <div class="la-msg-meta">
+          <span class="who ${whoCls}">${m.isTool ? 'tool · ' + m.who : m.who}</span>
+          ${m.time ? `<span>${m.time}</span>` : ''}
+        </div>
+        <div class="la-msg-body">${m.text}</div>
+        ${linkRow}
+      </div>`;
+  }).join('');
+  // Fix #10 — wire hover/click on messages with data-card-link to highlight the card
+  c.querySelectorAll('[data-card-link]').forEach(el => {
+    const cardId = el.dataset.cardLink;
+    el.addEventListener('mouseenter', () => { state.highlightCardId = cardId; renderCanvas(); });
+    el.addEventListener('mouseleave', () => { state.highlightCardId = null;    renderCanvas(); });
+    el.addEventListener('click', () => {
+      const card = document.querySelector(`.la-card[data-id="${cardId}"]`);
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  });
+  c.scrollTop = c.scrollHeight;
+}
+
+/* Canvas */
+function renderCanvas() {
+  const grid = document.getElementById('la-grid');
+  const cardsHtml = state.cards.map((c, i) => {
+    const span = sizeForCard(c, i);
+    const highlightCls = state.highlightCardId === c.id ? ' is-highlighted' : '';
+    return `
+      <section class="la-card kind-${c.kind} ${span}${highlightCls}" data-id="${c.id}" style="animation-delay:${(i % 4) * 70}ms">
+        <header class="la-card-head">
+          <span class="la-card-kind">${c.kind}</span>
+          <span class="la-card-title">${c.title}</span>
+          <div class="la-card-ctrls">
+            <button class="la-card-ctrl" title="minimize">_</button>
+            <button class="la-card-ctrl" title="graduate">↳</button>
+            <button class="la-card-ctrl" title="detach">×</button>
+          </div>
+        </header>
+        <div class="la-card-body">${renderCardBody(c)}</div>
+        <footer class="la-card-foot">
+          ${provHtml(c.prov)}
+          ${c.conf ? confHtml(c.conf) : ''}
+          ${c.contradicts ? `<span class="la-contradicts">1 contradicts</span>` : ''}
+          <span class="la-prov-trace">⊕ trace ${c.prov?.spanId || ''}</span>
+        </footer>
+      </section>`;
+  }).join('');
+
+  // Fix #1 — render skeleton slots (alongside real cards) so canvas never reads as "empty void"
+  const skelHtml = state.skeletons.map((s, i) => `
+    <section class="la-card-skeleton kind-${s.kind} ${s.span || 'span-6'}" style="animation-delay:${i * 75}ms">
+      <div class="la-skel-head">
+        <span class="la-skel-kind">${s.kind}</span>
+        <span class="la-skel-tag">${s.tag || 'awaiting'}</span>
+      </div>
+      <div class="la-skel-shimmer"></div>
+    </section>`).join('');
+
+  if (state.cards.length === 0 && state.skeletons.length === 0) {
+    grid.innerHTML = `
+      <div class="la-empty-canvas">
+        <div class="glyph">◇</div>
+        <div>workspace empty — cards arrive as the agent reasons</div>
+      </div>`;
+  } else {
+    grid.innerHTML = cardsHtml + skelHtml;
+  }
+  renderTombstrip();
+  renderIntent();
+}
+
+function renderTombstrip() {
+  const strip = document.getElementById('la-tombstrip');
+  const tombs = document.getElementById('la-tombs');
+  if (state.tombstones.length === 0) { strip.style.display = 'none'; return; }
+  strip.style.display = 'flex';
+  tombs.innerHTML = state.tombstones.map(t => {
+    const target = t.fileTarget ? `<span class="arrow">→</span><span style="color:var(--la-acc2)">${t.fileTarget}</span>` : '';
+    return `<span class="la-tomb" ${t.fileTarget ? `data-file="${t.fileTarget}"` : ''}><span class="kind ${t.kind}">${t.kind.toUpperCase().slice(0, 3)}</span>${t.title}${target}</span>`;
+  }).join('');
+  // Wire tombstone clicks to open the graduated file
+  tombs.querySelectorAll('.la-tomb[data-file]').forEach(el => {
+    el.addEventListener('click', () => focusFile(el.dataset.file));
+  });
+}
+
+function sizeForCard(c, i) {
+  if (c.kind === 'artifact')   return 'span-6 row-2';
+  // Fix #3 — branch-lane is the hero of /BUILD: full-width, 3 rows tall
+  if (c.kind === 'branchlane') return 'span-12 row-2';
+  if (c.kind === 'trace')      return 'span-6';
+  if (c.kind === 'monitor')    return 'span-4';
+  if (c.kind === 'instrument') return 'span-4';
+  if (c.kind === 'research')   return 'span-6';
+  return 'span-6';
+}
+
+function renderCardBody(c) {
+  if (typeof c.body === 'function') return c.body(state);
+  return c.body || '';
+}
+
+function provHtml(p) {
+  if (!p) return '';
+  const ag = (p.agent || '').toLowerCase();
+  return `
+    <span class="la-prov ${ag}">
+      <span class="ag">${(p.agent || '').toUpperCase()}</span>
+      <span class="la-prov-src">${(p.src || '')}</span>
+    </span>`;
+}
+
+function confHtml(c) {
+  let cls = '';
+  if (c.value < 0.6) cls = 'low';
+  else if (c.value < 0.8) cls = 'warn';
+  // Fix #6 — VERIFIED gets ⛉ glyph via .verified class
+  if (c.tier === 'VERIFIED') cls += ' verified';
+  return `
+    <span class="la-conf ${cls.trim()}">
+      <span class="lab">conf</span>
+      <span class="val">${c.value.toFixed(2)}</span>
+      <span class="tier">${c.tier}</span>
+    </span>`;
+}
+
+/* Files */
+function renderFiles() {
+  const list = document.getElementById('la-files');
+  if (state.files.length === 0) {
+    list.innerHTML = '';
+  } else {
+    list.innerHTML = state.files.map(f => `
+      <div class="la-file-row ${f.id === state.activeFileId ? 'is-active' : ''}" data-id="${f.id}">
+        <span class="la-file-mime ${f.mime}">${f.mime.toUpperCase()}</span>
+        <div class="la-file-info">
+          <div class="la-file-name">${f.name}</div>
+          <div class="la-file-meta">${f.prov.agent} · ${f.meta}</div>
+        </div>
+      </div>`).join('');
+    list.querySelectorAll('.la-file-row').forEach(row => {
+      row.addEventListener('click', () => { focusFile(row.dataset.id); });
+    });
+  }
+  document.getElementById('la-drawer-count').textContent = `${state.files.length} file${state.files.length === 1 ? '' : 's'}`;
+}
+
+function renderDrawerView() {
+  const view = document.getElementById('la-drawerview');
+  if (!state.activeFileId) {
+    view.innerHTML = `<div class="la-drawer-empty">drawer empty — files arrive as the agent works</div>`;
+    return;
+  }
+  const f = state.files.find(x => x.id === state.activeFileId);
+  if (!f) {
+    view.innerHTML = `<div class="la-drawer-empty">file not loaded</div>`;
+    return;
+  }
+  // Dispatch to doc renderer
+  const renderer = DOC_RENDERERS[f.id] || DOC_RENDERERS.generic;
+  view.innerHTML = renderer(f);
+}
+
+/* Status rail */
+function renderStatus() {
+  document.getElementById('sr-spans').textContent = state.status.spans;
+  document.getElementById('sr-last').textContent = state.status.lastEvent;
+  document.getElementById('sr-throughput').textContent = state.status.throughput.toFixed(1) + ' evt/s';
+  const c = document.getElementById('sr-contras');
+  c.textContent = state.status.contradictions;
+  c.className = 'val' + (state.status.contradictions > 0 ? ' warn' : '');
+  document.getElementById('sr-tokens').textContent = (state.status.tokens / 1000).toFixed(0) + 'k / 1m';
+  // Fix #17 — sparkline
+  const sl = document.getElementById('sr-sparkline');
+  const hist = state.status.throughputHistory;
+  if (!sl) return;
+  if (hist.length === 0) { sl.innerHTML = ''; return; }
+  const max = Math.max(...hist, 1);
+  sl.innerHTML = hist.map((v, i) => {
+    const h = Math.max(1, Math.round((v / max) * 11));
+    const tip = i === hist.length - 1 ? ' tip' : '';
+    return `<span class="bar${tip}" style="height:${h}px"></span>`;
+  }).join('');
+}
+
+/* Renders everything from state — used for seek */
+function renderAll() {
+  const root = document.getElementById('la-root');
+  root.classList.toggle('in-lobby', state.ui.inLobby);
+  root.classList.toggle('materializing', state.ui.materializing);
+  root.classList.toggle('rail-collapsed', state.ui.rail === 'collapsed');
+  root.classList.toggle('drawer-collapsed', state.ui.drawer === 'collapsed');
+  root.classList.toggle('is-shipped', state.ui.shipped);
+  document.getElementById('la-resolve').classList.toggle('is-open', state.ui.contradiction);
+  renderLobbyInput();
+  renderMatIndicator();
+  renderTopBar();
+  renderIntent();
+  renderConv();
+  renderCanvas();
+  renderFiles();
+  renderDrawerView();
+  renderStatus();
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ *  CARD BODY BUILDERS (closures that read live state)
+ * ════════════════════════════════════════════════════════════════════ */
+
+const Cards = {
+  research_c7: () => ({
+    id: 'card-research-c7', kind: 'research',
+    title: 'Context7 — agentic UI patterns',
+    body: () => `
+      <div class="la-res-summ">"Reactive instrument panels in agent workspaces (Cursor, Devin, Copilot Workspace) all rely on fixed-pane templates; JIT card summoning driven by conversation context is not yet a published primitive."</div>
+      <div class="la-res-cite">context7://search/agentic-workspace-ui · 3 docs cached</div>
+      <div class="la-res-actions">
+        <button class="la-btn-mini">↳ open in drawer</button>
+        <button class="la-btn-mini">cite</button>
+        <button class="la-btn-mini">minimize</button>
+      </div>`,
+    prov: { agent: 'QUANTUM', src: 'context7://', spanId: 'ayin-3f8a' },
+    conf: { value: 0.91, tier: 'VERIFIED' },
+  }),
+
+  arch_draft: () => ({
+    id: 'card-arch-draft', kind: 'artifact',
+    title: 'Architecture · C2 container',
+    body: () => `
+      <div class="la-art-mermaid">${renderMermaidProgressive(state.mermaidNodes)}
+        <div class="la-art-stream-bar">
+          <span>streaming</span>
+          <div class="barfill"><div class="fill" style="width:${Math.round((state.mermaidNodes / 6) * 100)}%"></div></div>
+          <span>seq ${state.mermaidNodes}/6</span>
+        </div>
+      </div>
+      <div class="la-res-actions">
+        <button class="la-btn-mini">↳ open in drawer</button>
+        <button class="la-btn-mini">graduate</button>
+        <button class="la-btn-mini">copy</button>
+      </div>`,
+    prov: { agent: 'copilot', src: 'mermaid-stream', spanId: 'ayin-4d2f' },
+    conf: { value: 0.79, tier: 'INFERRED' },
+  }),
+
+  strand_coverage: () => ({
+    id: 'card-strand-coverage', kind: 'monitor',
+    title: 'Strand coverage — 10 gates',
+    body: () => `
+      <div class="la-mon-grid">
+        <div class="la-mon-cell"><div class="la-mon-lab">A · architecture</div><div class="la-mon-val ok">PASS</div></div>
+        <div class="la-mon-cell"><div class="la-mon-lab">S · security</div><div class="la-mon-val warn">WARN</div></div>
+        <div class="la-mon-cell"><div class="la-mon-lab">Q · quality</div><div class="la-mon-val warn">PEND</div></div>
+        <div class="la-mon-cell"><div class="la-mon-lab">C · canon</div><div class="la-mon-val ok">PASS</div></div>
+        <div class="la-mon-cell"><div class="la-mon-lab">K · knowledge</div><div class="la-mon-val ok">PASS</div></div>
+        <div class="la-mon-cell"><div class="la-mon-lab">T · testing</div><div class="la-mon-val err">0%</div></div>
+        <div class="la-mon-cell"><div class="la-mon-lab">R · research</div><div class="la-mon-val run">RUN</div></div>
+        <div class="la-mon-cell"><div class="la-mon-lab">D · docs</div><div class="la-mon-val warn">PEND</div></div>
+      </div>`,
+    prov: { agent: 'CORSO', src: 'helix://corso/lens/strands', spanId: 'ayin-1b8e' },
+  }),
+
+  research_fork: () => ({
+    id: 'card-research-fork', kind: 'research',
+    title: 'arXiv — Fork, Explore, Commit',
+    body: () => `
+      <div class="la-res-summ">"OS primitives for agentic exploration; atomic commit/rollback over isolated branches. Maps to our branch-lane card kind."</div>
+      <div class="la-res-cite">arxiv://2602.08199 · cached locally</div>
+      <div class="la-res-actions">
+        <button class="la-btn-mini">↳ open in drawer</button>
+        <button class="la-btn-mini">cite</button>
+      </div>`,
+    prov: { agent: 'QUANTUM', src: 'arxiv://2602.08199', spanId: 'ayin-9e1d' },
+    conf: { value: 0.86, tier: 'MULTI_SOURCE' },
+  }),
+
+  citation_ledger: () => ({
+    id: 'card-citation-ledger', kind: 'monitor',
+    title: 'Citation ledger',
+    body: () => `
+      <div class="la-mon-grid">
+        <div class="la-mon-cell"><div class="la-mon-lab">sources</div><div class="la-mon-val ok">${state.citation.sources}</div></div>
+        <div class="la-mon-cell"><div class="la-mon-lab">verified tier</div><div class="la-mon-val ok">${state.citation.verified}</div></div>
+        <div class="la-mon-cell"><div class="la-mon-lab">multi source</div><div class="la-mon-val ok">${state.citation.multi}</div></div>
+        <div class="la-mon-cell"><div class="la-mon-lab">contradictions</div><div class="la-mon-val ${state.citation.contras > 0 ? 'warn' : ''}">${state.citation.contras}</div></div>
+      </div>`,
+    prov: { agent: 'SOUL', src: 'helix://soul/citations', spanId: 'ayin-2c5f' },
+    contradicts: false, // mutated when contradiction emerges
+  }),
+
+  trace_decisions: () => ({
+    id: 'card-trace-decisions', kind: 'trace',
+    title: 'Decision feed · /PLAN',
+    body: () => {
+      const rows = [
+        { t: '14:02:17', lvl: 'info', ag: 'operator', msg: 'submitted intent · /PLAN routed' },
+        { t: '14:02:18', lvl: 'info', ag: 'copilot',  msg: 'phase=materialize_begin' },
+        { t: '14:02:19', lvl: 'ok',   ag: 'copilot',  msg: 'context7.query-docs · 3 results' },
+        { t: '14:02:21', lvl: 'ok',   ag: 'copilot',  msg: 'attached card-arch-draft (artifact)' },
+        { t: '14:02:23', lvl: 'info', ag: 'soul',     msg: 'citation_ledger.append × 4' },
+        { t: '14:02:25', lvl: 'warn', ag: 'corso',    msg: 'lens: missing contradiction-resolution contract' },
+        { t: '14:02:31', lvl: 'ok',   ag: 'copilot',  msg: 'pending_graduations: card-arch-draft → drawer/c2.svg' },
+      ];
+      return `
+        <div class="la-trace">
+          ${rows.map(r => `
+            <div class="la-trace-row">
+              <span class="t">${r.t}</span>
+              <span class="lvl ${r.lvl}">${r.lvl.toUpperCase().slice(0, 1)}</span>
+              <span class="msg"><span class="ag ${r.ag}">${r.ag.toUpperCase()}</span> · ${r.msg}</span>
+            </div>`).join('')}
+        </div>`;
+    },
+    prov: { agent: 'AYIN', src: 'ayin://traces/session', spanId: 'ayin-trace-root' },
+  }),
+
+  wave_dispatch: () => ({
+    id: 'card-wave-dispatch', kind: 'monitor',
+    title: 'Wave dispatch · current',
+    body: () => `
+      <div class="la-mon-grid">
+        <div class="la-mon-cell"><div class="la-mon-lab">phase</div><div class="la-mon-val ok">3 / 7</div></div>
+        <div class="la-mon-cell"><div class="la-mon-lab">wave</div><div class="la-mon-val run">2a / 4</div></div>
+        <div class="la-mon-cell"><div class="la-mon-lab">tasks</div><div class="la-mon-val run">12 / 23</div></div>
+        <div class="la-mon-cell"><div class="la-mon-lab">gate score</div><div class="la-mon-val ok">87 STRONG</div></div>
+      </div>`,
+    prov: { agent: 'CORSO', src: 'helix://corso/builds/active.yaml', spanId: 'ayin-3a8e' },
+  }),
+
+  budget: () => ({
+    id: 'card-budget', kind: 'monitor',
+    title: 'Budget · tokens + time',
+    body: () => `
+      <div class="la-mon-grid">
+        <div class="la-mon-cell"><div class="la-mon-lab">anthropic</div><div class="la-mon-val ok">$${state.status.budget.toFixed(2)}</div></div>
+        <div class="la-mon-cell"><div class="la-mon-lab">litellm</div><div class="la-mon-val ok">$0.12</div></div>
+        <div class="la-mon-cell"><div class="la-mon-lab">time</div><div class="la-mon-val ok">1h 02m</div></div>
+        <div class="la-mon-cell"><div class="la-mon-lab">eta</div><div class="la-mon-val warn">~25m</div></div>
+      </div>`,
+    prov: { agent: 'AYIN', src: 'ayin://meters/spend', spanId: 'ayin-8e2c' },
+  }),
+
+  branch_lane: () => ({
+    id: 'card-branch-lane', kind: 'branchlane',
+    title: 'Branch-lane · 3-worker fork · fork-span ayin-7c8e',
+    body: () => {
+      const lanes = state.branchLanes || [];
+      const winner = lanes.find(l => l.state === 'committed');
+      return `
+        <div class="la-lanes">
+          ${lanes.map(l => `
+            <div class="la-lane ${l.state === 'committed' ? 'is-committed' : (l.state === 'rolled' ? 'is-rolled' : '')}">
+              <div class="la-lane-head">
+                <span class="ag ${l.ag.toLowerCase()}">${l.ag}</span>
+                <span class="la-lane-state ${l.state}">${l.state}</span>
+              </div>
+              <div class="la-lane-task">${l.task}</div>
+              <div class="la-lane-progress"><div class="fill ${l.pulse ? 'is-pulsing' : ''}" style="width:${Math.round(l.prog * 100)}%"></div></div>
+              ${l.outcome ? `<div style="font-size:9px;color:var(--la-text-mute);letter-spacing:var(--la-tk-mid);text-transform:uppercase;margin-top:2px">${l.outcome}</div>` : ''}
+            </div>
+          `).join('')}
+        </div>
+        ${winner ? `<div style="font-size:11px;color:var(--la-ok);letter-spacing:var(--la-tk-mid);text-transform:uppercase;margin-top:8px;text-shadow:0 0 6px rgba(57,255,138,0.4)">★ ${winner.ag} committed · ${(lanes.length - 1)} lanes rolled back · proptest 1000 traces byte-equivalent</div>` : '<div style="font-size:10px;color:var(--la-text-mute);letter-spacing:var(--la-tk-mid);text-transform:uppercase;margin-top:8px">exploring · winner selected by content-hash quorum + permutation proptest</div>'}
+      `;
+    },
+    prov: { agent: 'engine', src: 'lightspace://branch-lane/fork-7c8e', spanId: 'ayin-fork-7c8e' },
+  }),
+
+  diff_feed: () => ({
+    id: 'card-diff-feed', kind: 'trace',
+    title: 'Diff feed · wave 2a',
+    body: () => `
+      <div class="la-trace">
+        ${state.diffFeed.length === 0 ? '<div style="color:var(--la-text-ghost);font-style:italic;font-size:10px;text-align:center;padding:20px 0">waiting for commits…</div>' :
+          state.diffFeed.map(r => `
+            <div class="la-trace-row">
+              <span class="t">${r.t}</span>
+              <span class="lvl ${r.lvl || 'ok'}">${(r.lvl || 'ok').toUpperCase().slice(0, 1)}</span>
+              <span class="msg"><span class="ag ${r.ag}">${r.ag.toUpperCase()}</span> · ${r.msg}</span>
+            </div>`).join('')}
+      </div>`,
+    prov: { agent: 'AYIN', src: 'ayin://traces/wave-2a', spanId: 'ayin-diff' },
+  }),
+
+  gate_matrix: () => ({
+    id: 'card-gate-matrix', kind: 'monitor',
+    title: 'Gate matrix · A·S·Q',
+    body: () => {
+      const m = state.gateMatrix || { A: '7/7', S: '6/7', Q: '7/7', T: '5/7' };
+      return `
+        <div class="la-mon-grid">
+          <div class="la-mon-cell"><div class="la-mon-lab">A · architecture</div><div class="la-mon-val ok">${m.A}</div></div>
+          <div class="la-mon-cell"><div class="la-mon-lab">S · security</div><div class="la-mon-val warn">${m.S}</div></div>
+          <div class="la-mon-cell"><div class="la-mon-lab">Q · quality</div><div class="la-mon-val ok">${m.Q}</div></div>
+          <div class="la-mon-cell"><div class="la-mon-lab">T · testing</div><div class="la-mon-val warn">${m.T}</div></div>
+        </div>`;
+    },
+    prov: { agent: 'CORSO', src: 'helix://corso/lens/gate-matrix', spanId: 'ayin-gm' },
+  }),
+};
+
+/* ════════════════════════════════════════════════════════════════════
+ *  FILE DEFINITIONS + DRAWER DOC RENDERERS
+ * ════════════════════════════════════════════════════════════════════ */
+
+const Files = {
+  lasdlc: () => ({ id: 'file-lasdlc.md', name: 'LASDLC.lightspace-v0.1.md', mime: 'md', meta: '4.2 KB · drafting…',
+    prov: { agent: 'copilot', src: 'helix://plans/lightspace-lasdlc' } }),
+  c7:     () => ({ id: 'file-c7-ui.md',  name: 'Context7 — Agentic UI Patterns.md', mime: 'md', meta: '12 KB · cached',
+    prov: { agent: 'QUANTUM', src: 'context7://' } }),
+  arxiv:  () => ({ id: 'file-arxiv-2602.pdf', name: 'arxiv-2602.08199 — Fork, Explore, Commit.pdf', mime: 'pdf', meta: '380 KB · cached',
+    prov: { agent: 'QUANTUM', src: 'https://arxiv.org/abs/2602.08199' } }),
+  c2:     () => ({ id: 'file-c2-diagram.svg', name: 'arch · C2 container.svg', mime: 'svg', meta: '6.1 KB · graduated',
+    prov: { agent: 'copilot', src: 'graduated://card-arch-draft' } }),
+  wave2a: () => ({ id: 'file-wave2a-plan.md', name: 'wave-2a plan.md', mime: 'md', meta: '3.7 KB',
+    prov: { agent: 'copilot', src: 'helix://plans/lightspace/wave-2a' } }),
+  reducer:() => ({ id: 'file-reducer-impl.rs.md', name: 'reducer.rs (excerpt).md', mime: 'md', meta: '18 KB · live',
+    prov: { agent: 'CORSO', src: 'worktree://feat/lightspace/engine/reducer.rs' } }),
+  proof:  () => ({ id: 'file-permutation-proof.md', name: 'permutation property proof.md', mime: 'md', meta: '5.2 KB',
+    prov: { agent: 'QUANTUM', src: 'helix://quantum/proofs/permutation' } }),
+};
+
+const DOC_RENDERERS = {
+  'file-lasdlc.md': (f) => {
+    const L = state.lasdlc;
+    // Fix #7 — highlight the actively-drafting field (left border + bg).
+    // Keyed by parameter; field is "drafting" if it matches L.activeField.
+    const fld = (k, val, key) => {
+      const drafting = key && L.activeField === key;
+      if (val == null) return `<div class="la-doc-field pending"><span class="k">${k}</span><span class="v">pending</span></div>`;
+      if (drafting)    return `<div class="la-doc-field is-drafting"><span class="k">${k}</span><span class="v">${val}</span></div>`;
+      return `<div class="la-doc-field"><span class="k">${k}</span><span class="v">${val}</span></div>`;
+    };
+    const tierVal = L.tier ? `${L.tier} <span class="la-doc-conf-pill">confidence 0.92</span>` : null;
+    return `
+      <div class="la-doc-title">LASDLC · lightspace v0.1</div>
+      <div class="la-doc-subtitle">Live-filling form · authored by copilot · drafting…</div>
+
+      <div class="la-doc-section">
+        <div class="la-doc-h">Frontmatter</div>
+        ${fld('project', L.project, 'project')}
+        ${fld('codename', L.codename, 'codename')}
+        ${fld('tier', tierVal, 'tier')}
+        ${fld('phase', L.phase, 'phase')}
+        ${fld('template version', L.tplv, 'tplv')}
+      </div>
+
+      <div class="la-doc-section">
+        <div class="la-doc-h">Northstar lineage</div>
+        ${fld('pillars', L.pillars, 'pillars')}
+        ${fld('northstar text', L.northstar, 'northstar')}
+      </div>
+
+      <div class="la-doc-section">
+        <div class="la-doc-h">Phases · LARGE tier</div>
+        <div class="la-doc-field"><span class="k">phase 1 — plan</span><span class="v">drafting (C1 · C2 · C3 · C4 · ERD · sequence)</span></div>
+        <div class="la-doc-field pending"><span class="k">phase 2 — research</span><span class="v">pending</span></div>
+        <div class="la-doc-field pending"><span class="k">phase 3 — implement</span><span class="v">4 waves · 2a + 2b split</span></div>
+        <div class="la-doc-field pending"><span class="k">phase 4 — verify</span><span class="v">pending</span></div>
+        <div class="la-doc-field pending"><span class="k">phase 4.5 — wiring rehearsal</span><span class="v">pending</span></div>
+        <div class="la-doc-field pending"><span class="k">phase 5 — ship</span><span class="v">pending</span></div>
+        <div class="la-doc-field pending"><span class="k">phase 6 — learn</span><span class="v">pending</span></div>
+      </div>
+
+      <div class="la-doc-section">
+        <div class="la-doc-h">Post-build guarantees (14 hard)</div>
+        ${L.g1_8 ? `
+          <div class="la-doc-field"><span class="k">G1</span><span class="v">cargo clippy clean</span></div>
+          <div class="la-doc-field"><span class="k">G2</span><span class="v">14 contracts validate</span></div>
+          <div class="la-doc-field"><span class="k">G3</span><span class="v">reducer.reduce() pure</span></div>
+          <div class="la-doc-field"><span class="k">G4</span><span class="v">determinism · 1000 traces</span></div>
+          <div class="la-doc-field"><span class="k">G5</span><span class="v">materialize ≤ 1500ms</span></div>
+          <div class="la-doc-field"><span class="k">G6</span><span class="v">provenance enforcement</span></div>
+          <div class="la-doc-field"><span class="k">G7</span><span class="v">gating fail-closed</span></div>
+          <div class="la-doc-field"><span class="k">G8</span><span class="v">SSE monotonic seq</span></div>` : '<div class="la-doc-field pending"><span class="k">G1–G8</span><span class="v">drafting…</span></div>'}
+        ${L.g9_14 ? `
+          <div class="la-doc-field"><span class="k">G9</span><span class="v">replay byte-equivalence</span></div>
+          <div class="la-doc-field"><span class="k">G10</span><span class="v">HMAC tamper detection</span></div>
+          <div class="la-doc-field"><span class="k">G11</span><span class="v">SSE p99 empirical baseline</span></div>
+          <div class="la-doc-field"><span class="k">G12</span><span class="v">IDOR negative test</span></div>
+          <div class="la-doc-field"><span class="k">G13</span><span class="v">gate auto-re-eval</span></div>
+          <div class="la-doc-field is-drafting"><span class="k">G14</span><span class="v">contradiction-loop HITL pin</span></div>` : '<div class="la-doc-field pending"><span class="k">G9–G14</span><span class="v">pending</span></div>'}
+      </div>`;
+  },
+  'file-c7-ui.md': () => `
+    <div class="la-doc-title">Agentic UI Patterns</div>
+    <div class="la-doc-subtitle">Context7 · cached 2026-06-06 · 12 KB</div>
+    <p style="font-family:var(--la-font-serif);font-size:13px;line-height:1.6;color:var(--la-text-base);letter-spacing:0">
+      Modern agentic IDE patterns rely on fixed-pane templates (Cursor's "Composer", Devin's "Plan/Code/Browser" trio,
+      OpenAI's "Canvas" document view). Each ships a predefined surface set; no published primitive captures
+      JIT card summoning driven by conversation context.
+    </p>
+    <div class="la-doc-source">
+      "The fundamental constraint is that conversation evolves but the workspace doesn't — operators rearrange
+      panes manually, and the cost of switching context lives at the operator, not the agent."
+      <div class="la-doc-source-meta">Cursor team interview · 2026-04-22 · <a href="#">archive.example/cursor-interview</a></div>
+    </div>
+    <div class="la-doc-section">
+      <div class="la-doc-h">Findings</div>
+      <p>1. Three competitors ship some variant of "live artifact" pane (OpenAI Canvas, Anthropic Artifact, Lovable).</p>
+      <p>2. None ship multi-card JIT layout driven by conversation reasoning.</p>
+      <p>3. Anthropic's Computer Use frames the workspace itself as the artifact, closest precedent we found.</p>
+    </div>`,
+  'file-arxiv-2602.pdf': () => `
+    <div class="la-doc-title">Fork, Explore, Commit</div>
+    <div class="la-doc-subtitle">OS Primitives for Agentic Exploration · arXiv:2602.08199</div>
+    <p style="font-family:var(--la-font-serif);font-size:13px;line-height:1.6;letter-spacing:0">
+      We describe a family of OS primitives — fork, explore, commit — that allow multiple agent processes to
+      operate on isolated branches of a workspace and atomically commit or roll back.
+    </p>
+    <div class="la-doc-source">
+      "Three concurrent fork()s on the same workspace produce three trial branches; commit selects the winning
+      branch by content-hash agreement quorum. Losers roll back via copy-on-write reversal."
+      <div class="la-doc-source-meta">§3.2 Commit Protocol · <a href="#">arxiv.org/abs/2602.08199</a> · accessed 2026-06-06</div>
+    </div>
+    <div class="la-doc-section">
+      <div class="la-doc-h">Maps to lightspace.branch-lane.v1</div>
+      <p>The branch-lane card kind visualizes this primitive — each lane is a fork, the committed lane is highlighted,
+      rolled-back lanes dim and show their outcome_summary.</p>
+    </div>`,
+  'file-c2-diagram.svg': () => `
+    <div class="la-doc-title">Architecture · C2 container</div>
+    <div class="la-doc-subtitle">Live mermaid · graduated to drawer</div>
+    <div style="background:var(--la-bg-sunken);padding:16px;border:1px solid var(--la-hair-faint);margin-top:8px;border-radius:2px">
+      ${renderMermaidProgressive(6)}
+    </div>
+    <div class="la-doc-source">
+      Graduated from <code>card-arch-draft</code> at 14:02:33. Tombstone retained on canvas for re-summon.
+      <div class="la-doc-source-meta">Provenance: copilot · graduated://card-arch-draft · span ayin-4d2f</div>
+    </div>`,
+  'file-wave2a-plan.md': () => `
+    <div class="la-doc-title">Wave 2a · plan</div>
+    <div class="la-doc-subtitle">CORSO-owned · 3.7 KB</div>
+    <div class="la-doc-section">
+      <div class="la-doc-h">Scope</div>
+      <p>Author the WebEvent variants (10 new), event-type contracts (already shipped), and SSE wire integration.
+      Wave 2a freezes at merge; Wave 2b consumes the frozen surface.</p>
+    </div>
+    <div class="la-doc-section">
+      <div class="la-doc-h">File-function map</div>
+      <div class="la-doc-field"><span class="k">events/types.rs</span><span class="v">+10 variants · EVA</span></div>
+      <div class="la-doc-field"><span class="k">engine/state.rs</span><span class="v">CREATE · CORSO</span></div>
+      <div class="la-doc-field"><span class="k">engine/reducer.rs</span><span class="v">CREATE · CORSO</span></div>
+      <div class="la-doc-field"><span class="k">engine/gates.rs</span><span class="v">CREATE · CORSO</span></div>
+      <div class="la-doc-field"><span class="k">engine/contradictions.rs</span><span class="v">CREATE · CORSO</span></div>
+      <div class="la-doc-field"><span class="k">engine/tick.rs</span><span class="v">CREATE · CORSO</span></div>
+      <div class="la-doc-field"><span class="k">tests/permutation_property.rs</span><span class="v">CREATE · QUANTUM</span></div>
+    </div>`,
+  'file-reducer-impl.rs.md': () => `
+    <div class="la-doc-title">reducer.rs · excerpt</div>
+    <div class="la-doc-subtitle">CORSO · 18 KB · live in worktree</div>
+    <div class="la-doc-pre">impl Reducer for Lightspace {
+    fn reduce(&self, state: &CanvasState, event: &CanvasEvent)
+        -> Result&lt;CanvasState, ReducerError&gt;
+    {
+        let mut next = state.clone();
+        match event {
+            CanvasEvent::Card(card) =&gt; {
+                if card.provenance.agent.is_empty() ||
+                   card.provenance.source.is_empty() {
+                    return Err(ReducerError::StateInvariantBroken(
+                        "E_CANVAS_CARD_PROVENANCE_MISSING"
+                    ));
+                }
+                validate_provenance_source_scheme(&card.provenance.source)?;
+                // ... (full body in plan §IX)
+            }
+            // ... 9 more variants (no wildcard arm — exhaustive)
+        }
+        next.snapshot_seq = next.snapshot_seq.saturating_add(1);
+        self.assert_invariants(&next)?;
+        Ok(next)
+    }
+}</div>
+    <div class="la-doc-source">
+      No <code>unreachable!()</code> — match is exhaustive by enumeration. Adding a CanvasEvent
+      variant in v0.2.0 becomes a compile-time error until handled.
+      <div class="la-doc-source-meta">Builders Cookbook §0 · no-panic discipline</div>
+    </div>`,
+  'file-permutation-proof.md': () => `
+    <div class="la-doc-title">Permutation property · proof sketch</div>
+    <div class="la-doc-subtitle">QUANTUM · 5.2 KB · proptest harness</div>
+    <p style="font-family:var(--la-font-serif);font-size:13px;line-height:1.5;letter-spacing:0">
+      <i>Claim</i>: for any event batch <code>E</code> containing zero or more (Update, Gating) pairs on
+      the same (card_id, gate_id), all permutations of <code>E</code> reduce to byte-equivalent post-state.
+    </p>
+    <div class="la-doc-source">
+      "The reducer treats (Update, Gating) as a commutative pair: applying both in any order, then re-evaluating
+      the gate against the resulting state, yields the same outcome. CWE-367 TOCTOU closure."
+      <div class="la-doc-source-meta">SCRUM SERAPH R2 + CORSO R2 · 2026-06-06</div>
+    </div>
+    <div class="la-doc-pre">proptest! {
+    #[test]
+    fn gating_update_pair_commutative(
+        events in prop::collection::vec(any::&lt;CanvasEvent&gt;(), 1..100)
+    ) {
+        let perms = permutations(&events).take(20);
+        let mut states = perms.map(|p| {
+            p.iter().fold(initial_state(), |s, e| reducer.reduce(&s, e).unwrap())
+        });
+        let first = states.next().unwrap();
+        for s in states {
+            prop_assert_eq!(serialize(&first), serialize(&s));
+        }
+    }
+}</div>`,
+  generic: (f) => `<div class="la-doc-title">${f.name}</div><div class="la-doc-subtitle">${f.meta}</div>`,
+};
+
+/* ════════════════════════════════════════════════════════════════════
+ *  MERMAID SVG STUB (progressive — nodes appear over time)
+ *  viewBox scaled to 480x340 per critique Fix #2; node positions and
+ *  font sizes doubled so the diagram fills the hero artifact card.
+ * ════════════════════════════════════════════════════════════════════ */
+function renderMermaidProgressive(n) {
+  const nodes = [
+    { x: 12,  y: 16,  w: 160, h: 56,  label: 'Webshell UI',         color: '#4d8eff', font: 'Azeret Mono', font_size: 14 },
+    { x: 12,  y: 112, w: 160, h: 56,  label: 'SSE',                 color: '#39ff8a', font: 'Azeret Mono', font_size: 14 },
+    { x: 240, y: 16,  w: 200, h: 112, label: 'Reducer',             color: '#a98aff', font: 'Syne',        font_size: 17,
+      sublabels: ['pure (state, event) → state', '14 contracts · 10 variants', 'object-safe · panic-free'] },
+    { x: 240, y: 158, w: 200, h: 56,  label: 'Persistence + HMAC',  color: '#ffad2e', font: 'Azeret Mono', font_size: 12 },
+    { x: 12,  y: 212, w: 160, h: 56,  label: 'AYIN spans',          color: '#ff4d6a', font: 'Azeret Mono', font_size: 14 },
+  ];
+  const arrows = [
+    { x1: 172, y1: 44,  x2: 240, y2: 44 },
+    { x1: 172, y1: 140, x2: 240, y2: 70 },
+    { x1: 340, y1: 128, x2: 340, y2: 158 },
+    { x1: 240, y1: 186, x2: 172, y2: 240 },
+  ];
+  const visibleNodes = nodes.slice(0, Math.min(5, n));
+  const visibleArrows = n >= 6 ? arrows : [];
+  return `
+    <svg viewBox="0 0 480 290" xmlns="http://www.w3.org/2000/svg"
+         preserveAspectRatio="xMidYMid meet" style="width:100%;height:auto;max-height:300px">
+      ${visibleNodes.map((node, i) => `
+        <g style="opacity:0;animation:la-cardin 0.4s ease both;animation-delay:${i * 60}ms">
+          <rect x="${node.x}" y="${node.y}" width="${node.w}" height="${node.h}" rx="3"
+                fill="${rgba(node.color, 0.10)}" stroke="${node.color}" stroke-width="1.5"/>
+          <text x="${node.x + node.w/2}" y="${node.y + (node.sublabels ? 28 : node.h/2 + 5)}"
+                font-family="${node.font}" font-weight="${node.font === 'Syne' ? 700 : 500}"
+                font-size="${node.font_size}" fill="${node.color}" text-anchor="middle"
+                letter-spacing="${node.font === 'Syne' ? '0.08em' : '0.02em'}">${node.label}</text>
+          ${(node.sublabels || []).map((sl, j) => `
+            <text x="${node.x + node.w/2}" y="${node.y + 52 + j * 16}"
+                  font-family="Azeret Mono" font-size="10" fill="rgba(255,255,255,0.55)"
+                  text-anchor="middle" letter-spacing="0.02em">${sl}</text>`).join('')}
+        </g>`).join('')}
+      ${visibleArrows.map(a => `
+        <line x1="${a.x1}" y1="${a.y1}" x2="${a.x2}" y2="${a.y2}"
+              stroke="rgba(255,255,255,0.35)" stroke-width="1.5" marker-end="url(#arr)"
+              style="opacity:0;animation:la-cardin 0.3s ease both;animation-delay:300ms"/>`).join('')}
+      <text x="12" y="282" font-family="Azeret Mono" font-size="10" fill="rgba(255,255,255,0.4)"
+            letter-spacing="0.06em">${n < 6 ? `drawing… node ${n}/6` : `complete · 6 nodes`}</text>
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L10,5 L0,10 Z" fill="rgba(255,255,255,0.55)"/>
+        </marker>
+      </defs>
+    </svg>`;
+}
+function rgba(hex, a) {
+  const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ *  TIMELINE (each event mutates state; renderer reacts)
+ *  Total ~58s @ 1× speed
+ * ════════════════════════════════════════════════════════════════════ */
+
+const lobbyText = "I want to plan the IntentCanvas SDK feature for the webshell.";
+
+const TIMELINE = [
+  // Lobby (1.5s idle, then operator types)
+  ...typeIntoLobbyEvents(2000, lobbyText, 50),
+  // Submit
+  { t: 7600, fn: () => { exitLobby(); setStatus({ budget: 0.04, tokens: 320 }); } },
+
+  // Materialize choreography (≤1500ms per @api lightspace.event.workspace-materialize.v1)
+  { t: 7700, fn: () => { setMaterializing(true); setMatPhase('begin'); } },
+  { t: 7950, fn: () => { setMatPhase('rail_collapsed'); } },
+  { t: 8200, fn: () => {
+    setMatPhase('grid_revealed');
+    setIntent('/PLAN', lobbyText, 'planning');
+    // Fix #1 — paint skeleton slots BEFORE real cards arrive so canvas reads as "composing"
+    addSkeletons([
+      { kind: 'research', tag: 'context7',       span: 'span-6' },
+      { kind: 'monitor',  tag: 'strand coverage', span: 'span-4' },
+      { kind: 'artifact', tag: 'architecture',   span: 'span-6 row-2' },
+      { kind: 'research', tag: 'prior art',      span: 'span-6' },
+      { kind: 'monitor',  tag: 'citations',      span: 'span-4' },
+      { kind: 'trace',    tag: 'decision feed',  span: 'span-6' },
+    ]);
+  } },
+  { t: 8500, fn: () => { setMatPhase('drawer_revealed'); } },
+  { t: 8800, fn: () => { setMatPhase('cards_streaming'); } },
+  { t: 9100, fn: () => { setMatPhase('complete'); tickSpan('lightspace.materialize'); } },
+
+  // First conversation
+  { t: 9000, fn: () => addConv('operator', lobbyText, '14:02:17') },
+  { t: 9300, fn: () => addConv('copilot', 'Initiating /PLAN. Materialising the canvas — research, architecture-draft, coverage monitors, live LASDLC.', '14:02:18', false, null, 'card-arch-draft', 'view architecture-draft on canvas') },
+
+  // Cards stream in (with stagger)
+  { t: 9500, fn: () => { addCard(Cards.research_c7()); tickSpan('lightspace.card.emitted'); } },
+  { t: 9700, fn: () => addConv('tool', 'context7.query-docs · query="redux replay pure reducer event sourcing" · ✓ 3 sources cached', '14:02:19', true) },
+
+  // Drawer fills (LASDLC live form)
+  { t: 9900, fn: () => { addFile(Files.lasdlc()); focusFile('file-lasdlc.md'); tickSpan('lightspace.drawer_file.emitted'); } },
+  { t: 10200, fn: () => { setLasdlcField('project', 'lightarchitects-sdk'); tickSpan('lightspace.update'); } },
+  { t: 10500, fn: () => { setLasdlcField('codename', 'lightspace'); tickSpan('lightspace.update'); } },
+  { t: 10800, fn: () => { setLasdlcField('tier', 'LARGE'); tickSpan('lightspace.update'); } },
+  { t: 11100, fn: () => { setLasdlcField('phase', 'phase-1-plan'); tickSpan('lightspace.update'); } },
+  { t: 11400, fn: () => { setLasdlcField('tplv', '2.8.2'); tickSpan('lightspace.update'); } },
+
+  { t: 10700, fn: () => addCard(Cards.strand_coverage()) },
+
+  // arch-draft card + mermaid streaming
+  { t: 11500, fn: () => { addCard(Cards.arch_draft()); addConv('copilot', 'Drafting C2 container — drawing node-by-node.', '14:02:23'); } },
+  { t: 11800, fn: () => { addMermaidNode(); tickSpan('lightspace.update'); } },
+  { t: 12200, fn: () => { addMermaidNode(); tickSpan('lightspace.update'); } },
+  { t: 12600, fn: () => { addMermaidNode(); tickSpan('lightspace.update'); } },
+  { t: 13000, fn: () => { addMermaidNode(); tickSpan('lightspace.update'); } },
+  { t: 13400, fn: () => { addMermaidNode(); tickSpan('lightspace.update'); } },
+  { t: 13800, fn: () => { addMermaidNode(); tickSpan('lightspace.update'); } },
+
+  { t: 12100, fn: () => setLasdlcGroup('pillars', 'P1 · P2 · P3 · P4') },
+  { t: 12500, fn: () => setLasdlcGroup('northstar', 'Lightspace materialises the workspace around the operator\'s intent — JIT card summoning, provenance-bound observations, deterministic replay.') },
+  { t: 13500, fn: () => setLasdlcGroup('g1_8', true) },
+
+  // arXiv research
+  { t: 14200, fn: () => addConv('copilot', 'Pulling arXiv 2602.08199 for branch-lane prior art.', '14:02:28') },
+  { t: 14500, fn: () => { addCard(Cards.research_fork()); tickSpan('lightspace.card.emitted'); } },
+  { t: 14800, fn: () => { addFile(Files.arxiv()); tickSpan('lightspace.drawer_file.emitted'); } },
+  { t: 15100, fn: () => { addFile(Files.c7()); tickSpan('lightspace.drawer_file.emitted'); } },
+
+  // Citation ledger + trace
+  { t: 15600, fn: () => { setCitation({ sources: 4, verified: 2, multi: 1, contras: 0 }); addCard(Cards.citation_ledger()); } },
+  { t: 16400, fn: () => addCard(Cards.trace_decisions()) },
+  { t: 16800, fn: () => clearSkeletons() }, // wipe any remaining slot placeholders
+
+  // CORSO chimes in
+  { t: 17500, fn: () => addConv('corso', 'Architecture lens: contract surface needs <code>lightspace.contradiction-resolution.v1</code> per Canon XLIII §contract_composition. Authoring stub.', '14:02:35', false, 'corso') },
+  { t: 19000, fn: () => addConv('copilot', 'Adding it. Confidence + contradiction surfacing is first-class.', '14:02:37') },
+
+  // Citation count grows + LASDLC G9-14
+  { t: 18000, fn: () => setCitation({ sources: 12, verified: 7, multi: 4, contras: 0 }) },
+  { t: 19500, fn: () => setLasdlcGroup('g9_14', true) },
+  { t: 20000, fn: () => setCitation({ sources: 47, verified: 32, multi: 11, contras: 0 }) },
+
+  // Contradiction emerges
+  { t: 21000, fn: () => addConv('soul', 'Citation review: two sources disagree on tokio mpsc default timeout. Surfacing for resolution.', '14:02:41', false, 'soul', 'card-citation-ledger', 'view citation-ledger on canvas') },
+  { t: 21500, fn: () => { setCitation({ contras: 1 }); setStatus({ contradictions: 1 }); updateCard('card-citation-ledger', { contradicts: true }); } },
+  { t: 22000, fn: () => addConv('ayin', 'lightspace.contradiction.cycle_detected · depth=2 · cycle_yielded=true', '14:02:42', false, 'ayin') },
+  { t: 22500, fn: () => { openResolve(); tickSpan('lightspace.contradiction.resolved'); } },
+
+  // Operator resolves
+  { t: 26500, fn: () => { closeResolve(); setStatus({ contradictions: 0 }); setCitation({ contras: 0 }); updateCard('card-citation-ledger', { contradicts: false }); addConv('operator', 'Accept VERIFIED winner.', '14:02:46'); } },
+  { t: 27000, fn: () => addConv('copilot', 'Recorded. Loser tombstoned at 60s TTL. Citation ledger updated.', '14:02:47') },
+
+  // Mermaid graduates to drawer
+  { t: 28500, fn: () => { graduateCard('card-arch-draft', Files.c2()); tickSpan('lightspace.graduate'); } },
+  { t: 29500, fn: () => addConv('copilot', 'C2 graduated to drawer/c2.svg. Tombstone retained for re-summon.', '14:02:50') },
+
+  // /PLAN closes
+  { t: 31500, fn: () => addConv('copilot', '/PLAN scaffold ready. LASDLC at 78% complete; 14/14 contracts validate. Phase 1 [A] gate within reach.', '14:02:55') },
+
+  // Operator pivots to /BUILD
+  { t: 33000, fn: () => addConv('operator', 'Looks good. /BUILD wave 2a.', '14:03:00') },
+  { t: 33500, fn: () => addConv('copilot', 'Dispatching wave 2a — Reducer + auto-gate-re-eval. 3 workers forking from feat/lightspace HEAD.', '14:03:01') },
+
+  // Canvas reflows for /BUILD — stagger-out, intent flash, skeletons, then real cards
+  { t: 34000, fn: () => {
+    clearCanvas(true);
+    setIntent('/BUILD', 'wave 2a — Reducer + auto-gate-re-eval', 'execution');
+    setStatus({ budget: 2.14, tokens: 412000 });
+    // Fix #1 — paint /BUILD skeletons immediately so the reflowed canvas reads as "composing", not "empty"
+    addSkeletons([
+      { kind: 'monitor',    tag: 'wave dispatch',    span: 'span-4' },
+      { kind: 'monitor',    tag: 'budget',           span: 'span-4' },
+      { kind: 'monitor',    tag: 'gate matrix',      span: 'span-4' },
+      { kind: 'branchlane', tag: '3-worker fork',    span: 'span-12 row-2' },
+      { kind: 'trace',      tag: 'diff feed',        span: 'span-6' },
+    ]);
+  } },
+  { t: 34700, fn: () => addCard(Cards.wave_dispatch()) },
+  { t: 34900, fn: () => addCard(Cards.budget()) },
+  { t: 35100, fn: () => {
+    setBranchLanes([
+      { ag: 'CORSO', state: 'exploring', task: 'auto_reeval_gates_for_field(): exhaustive match + permutation proptest over (Update, Gating) batches', prog: 0.10 },
+      { ag: 'EVA',   state: 'exploring', task: 'attempting Option B — gating as renderer-side concern; violates G7 fail-closed', prog: 0.08 },
+      { ag: 'SOUL',  state: 'exploring', task: 'attempting Option C — contract-side gating policy schema; drifts from Canon XLIII', prog: 0.05 },
+    ]);
+    addCard(Cards.branch_lane());
+  } },
+  { t: 35400, fn: () => addCard(Cards.diff_feed()) },
+  { t: 35700, fn: () => { setGateMatrix({ A: '7/7', S: '6/7', Q: '7/7', T: '5/7' }); addCard(Cards.gate_matrix()); clearSkeletons(); } },
+
+  // Branch-lane progress (each increment pulses the progress bar fill — Fix #3)
+  { t: 36500, fn: () => { updateBranchLane('CORSO', { prog: 0.30 }); pulseBranchLane('CORSO'); } },
+  { t: 37000, fn: () => { updateBranchLane('EVA',   { prog: 0.25 }); pulseBranchLane('EVA'); } },
+  { t: 37500, fn: () => { updateBranchLane('SOUL',  { prog: 0.18 }); pulseBranchLane('SOUL'); } },
+  { t: 38000, fn: () => { updateBranchLane('CORSO', { prog: 0.55 }); pulseBranchLane('CORSO'); addDiffRow({ t: '15:42:08', ag: 'corso', msg: 'commit a8c4b1 · engine/state.rs +47 / -3' }); tickSpan('lightspace.branch_lane'); } },
+  { t: 38800, fn: () => { updateBranchLane('EVA',   { prog: 0.42 }); pulseBranchLane('EVA'); } },
+  { t: 39200, fn: () => { updateBranchLane('SOUL',  { prog: 0.32 }); pulseBranchLane('SOUL'); } },
+  { t: 39800, fn: () => { updateBranchLane('CORSO', { prog: 0.80 }); pulseBranchLane('CORSO'); addDiffRow({ t: '15:42:11', ag: 'corso', msg: 'commit b3f2d8 · engine/reducer.rs +82 / -19' }); } },
+  { t: 40500, fn: () => { updateBranchLane('EVA',   { prog: 0.55 }); pulseBranchLane('EVA'); } },
+  { t: 40800, fn: () => { updateBranchLane('SOUL',  { prog: 0.32 }); } },
+  { t: 41500, fn: () => { updateBranchLane('CORSO', { prog: 0.95 }); pulseBranchLane('CORSO'); addDiffRow({ t: '15:42:18', ag: 'corso', msg: 'commit c7e9a2 · engine/gates.rs +123 / -0 (NEW)' }); } },
+  { t: 42500, fn: () => { updateBranchLane('CORSO', { prog: 1.0, state: 'committed' }); addDiffRow({ t: '15:42:24', ag: 'corso', msg: 'commit d2a6f0 · engine/contradictions.rs +96 / -0 (NEW)' }); tickSpan('lightspace.branch_lane'); } },
+  { t: 43000, fn: () => {
+    updateBranchLane('EVA',  { state: 'rolled', outcome: 'rolled back · violates G7 fail-closed' });
+    updateBranchLane('SOUL', { state: 'rolled', outcome: 'rolled back · Canon XLIII drift' });
+    addDiffRow({ t: '15:42:31', ag: 'corso', msg: 'commit e9b3c4 · tests/permutation_property.rs +71 / -0' });
+  } },
+  { t: 43800, fn: () => addConv('copilot', 'CORSO committed. Permutation proptest passed (1000 traces · byte-equivalent). EVA + SOUL rolled back with summaries preserved.', '14:03:12') },
+
+  // Wave-2a files appear
+  { t: 44500, fn: () => { addFile(Files.wave2a()); focusFile('file-wave2a-plan.md'); } },
+  { t: 45500, fn: () => { addFile(Files.reducer()); focusFile('file-reducer-impl.rs.md'); } },
+  { t: 46500, fn: () => addFile(Files.proof()) },
+
+  // Gate matrix tightens — Fix #5: trigger the closing celebration here
+  { t: 47500, fn: () => {
+    setGateMatrix({ A: '7/7', S: '7/7', Q: '7/7', T: '7/7' });
+    shipBuild(); // gate cells flush green in sequence, SHIPPED badge appears
+  } },
+  { t: 48000, fn: () => addConv('ayin', 'lightspace.update · seq 47 · throughput 3.4 evt/s · p99 0.4ms', '14:03:18', false, 'ayin') },
+
+  // Closing
+  { t: 49500, fn: () => addConv('copilot', '<b>Wave 2a SHIPPED.</b> All 10 strands green · 5,124 tests passing · 14/14 contracts validate · permutation proptest byte-equivalent over 1,000 traces.', '14:03:19') },
+  { t: 52000, fn: () => addConv('operator', '/VERIFY.', '14:03:21') },
+  { t: 52500, fn: () => addConv('copilot', 'Dispatching property + integration suites. cargo test --workspace --all-features in progress…', '14:03:22') },
+  { t: 54000, fn: () => addConv('ayin', '5,124 tests passed · 0 failed · 1m 12s', '14:03:24', false, 'ayin') },
+  { t: 55500, fn: () => addConv('copilot', 'Wave 2a verified. Ready for Phase 4.5 wiring rehearsal whenever you are.', '14:03:26') },
+];
+
+const TOTAL_DURATION = 58000;
+
+/* Helper — generate typing events into lobby */
+function typeIntoLobbyEvents(startMs, text, charDelayMs) {
+  const events = [];
+  for (let i = 0; i <= text.length; i++) {
+    events.push({
+      t: startMs + i * charDelayMs,
+      fn: () => setLobbyInput(text.slice(0, i)),
+    });
+  }
+  return events;
+}
+
+/* Sort timeline by t for safety */
+TIMELINE.sort((a, b) => a.t - b.t);
+
+/* ════════════════════════════════════════════════════════════════════
+ *  PLAYER (play / pause / seek / speed)
+ * ════════════════════════════════════════════════════════════════════ */
+
+let currentTime = 0;
+let lastFiredIdx = -1;
+let isPlaying = false;
+let speed = 1;
+let rafId = null;
+let lastWallTime = 0;
+
+function play() {
+  if (isPlaying) return;
+  // If at end, restart
+  if (currentTime >= TOTAL_DURATION) restart();
+  isPlaying = true;
+  lastWallTime = performance.now();
+  document.getElementById('tl-play').textContent = '⏸';
+  document.getElementById('tl-play').classList.add('is-playing');
+  rafId = requestAnimationFrame(step);
+}
+function pause() {
+  if (!isPlaying) return;
+  isPlaying = false;
+  document.getElementById('tl-play').textContent = '▶';
+  document.getElementById('tl-play').classList.remove('is-playing');
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = null;
+}
+function step() {
+  if (!isPlaying) return;
+  const now = performance.now();
+  const dt = (now - lastWallTime) * speed;
+  lastWallTime = now;
+  currentTime = Math.min(TOTAL_DURATION, currentTime + dt);
+  // Fire events whose t has passed
+  while (lastFiredIdx + 1 < TIMELINE.length && TIMELINE[lastFiredIdx + 1].t <= currentTime) {
+    lastFiredIdx++;
+    try { TIMELINE[lastFiredIdx].fn(); } catch (e) { console.error('timeline event error', lastFiredIdx, e); }
+  }
+  updatePlayerUI();
+  if (currentTime >= TOTAL_DURATION) {
+    pause();
+  } else {
+    rafId = requestAnimationFrame(step);
+  }
+}
+function seek(toMs) {
+  // Reset state, then fast-forward by firing all events with t <= toMs
+  state = initialState();
+  const root = document.getElementById('la-root');
+  root.classList.add('in-lobby');
+  root.classList.remove('materializing', 'rail-collapsed', 'drawer-collapsed', 'is-shipped');
+  document.getElementById('la-resolve').classList.remove('is-open');
+  lastFiredIdx = -1;
+  currentTime = 0;
+  // Fire events instantly (skip animations)
+  while (lastFiredIdx + 1 < TIMELINE.length && TIMELINE[lastFiredIdx + 1].t <= toMs) {
+    lastFiredIdx++;
+    try { TIMELINE[lastFiredIdx].fn(); } catch (e) { console.error('seek event error', lastFiredIdx, e); }
+  }
+  currentTime = toMs;
+  renderAll();
+  updatePlayerUI();
+}
+function restart() {
+  pause();
+  state = initialState();
+  const root = document.getElementById('la-root');
+  root.classList.add('in-lobby');
+  root.classList.remove('materializing', 'rail-collapsed', 'drawer-collapsed', 'is-shipped');
+  document.getElementById('la-resolve').classList.remove('is-open');
+  lastFiredIdx = -1;
+  currentTime = 0;
+  renderAll();
+  updatePlayerUI();
+  play();
+}
+function updatePlayerUI() {
+  document.getElementById('tl-scrub').value = String(Math.round(currentTime));
+  document.getElementById('tl-time').textContent =
+    (currentTime / 1000).toFixed(1) + 's / ' + (TOTAL_DURATION / 1000).toFixed(1) + 's';
+}
+
+/* Wire up controls */
+document.getElementById('tl-play').addEventListener('click', () => { isPlaying ? pause() : play(); });
+document.getElementById('tl-restart').addEventListener('click', restart);
+document.getElementById('tl-scrub').addEventListener('input', (e) => {
+  const wasPlaying = isPlaying;
+  pause();
+  seek(parseInt(e.target.value, 10));
+  if (wasPlaying) play();
+});
+document.getElementById('tl-speed').addEventListener('change', (e) => {
+  speed = parseFloat(e.target.value);
+});
+
+/* Toggles */
+document.getElementById('la-toggle-rail').addEventListener('click', () => {
+  state.ui.rail = state.ui.rail === 'expanded' ? 'collapsed' : 'expanded';
+  document.getElementById('la-root').classList.toggle('rail-collapsed');
+});
+document.getElementById('la-toggle-drawer').addEventListener('click', () => {
+  state.ui.drawer = state.ui.drawer === 'expanded' ? 'collapsed' : 'expanded';
+  document.getElementById('la-root').classList.toggle('drawer-collapsed');
+});
+document.getElementById('la-rail-collapse-x').addEventListener('click', () => document.getElementById('la-toggle-rail').click());
+document.getElementById('la-drawer-collapse-x').addEventListener('click', () => document.getElementById('la-toggle-drawer').click());
+
+/* Fix #15 — recent sessions clickable; clicking pretends to "resume" that session
+   (in mockup, just bumps the demo into materialize early with that session id). */
+document.querySelectorAll('.la-lobby-recent-row[data-session]').forEach(row => {
+  row.addEventListener('click', () => {
+    const sid = row.dataset.session;
+    const summ = row.querySelector('.summ').textContent;
+    setLobbyInput('resume ' + sid);
+    addConv('operator', `resume ${sid} — ${summ}`, '14:02:17');
+    pause();
+    // Seek forward to materialize-begin so operator instantly sees the workspace
+    seek(7700);
+    play();
+  });
+});
+
+/* Auto-play on load */
+window.addEventListener('load', () => {
+  renderAll();
+  setTimeout(play, 400);
+});
+
+</script>
+
+</body>
+</html>

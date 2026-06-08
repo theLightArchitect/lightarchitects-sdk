@@ -6,12 +6,12 @@
   import type { PreflightReport } from '$lib/types';
 
   const subsystems = [
-    { polytope: 'Pentachoron', sibling: 'QUANTUM' },
-    { polytope: 'Tesseract', sibling: 'AYIN' },
-    { polytope: 'Hexadecachoron', sibling: 'CORSO' },
-    { polytope: 'Icositetrachoron', sibling: 'LÆX' },
-    { polytope: 'Rectified 5-Cell', sibling: 'EVA' },
-    { polytope: 'Duoprism', sibling: 'SERAPH' },
+    { polytope: 'Pentachoron',       sibling: 'Research' },
+    { polytope: 'Tesseract',         sibling: 'Observability' },
+    { polytope: 'Hexadecachoron',    sibling: 'Engineering' },
+    { polytope: 'Icositetrachoron',  sibling: 'Standards' },
+    { polytope: 'Rectified 5-Cell',  sibling: 'DevOps' },
+    { polytope: 'Duoprism',          sibling: 'Security' },
   ];
 
   let activeIdx = $state(0);

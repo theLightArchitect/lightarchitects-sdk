@@ -1,6 +1,8 @@
 node_modules/
 dist/
+build/
 coverage/
+.svelte-kit/
 .pnpm-store/
 *.local
 .DS_Store

@@ -5,10 +5,10 @@
   import DiffViewer from '../components/editor/DiffViewer.svelte';
   import { codeStore } from '$lib/stores';
   import { authHeaders } from '$lib/auth';
-  import { matchRoute } from '$lib/routes';
+  import { page } from '$app/state';
 
-  // Params injected by app.svelte via screenParams store / prop.
-  let { params = {} }: { params?: Record<string, string> } = $props();
+  // Route params come from SvelteKit's /editor/[...filepath] route.
+  const params = $derived(page.params);
 
   // Derived current file path from route params or store.
   let currentPath = $state<string | null>(null);

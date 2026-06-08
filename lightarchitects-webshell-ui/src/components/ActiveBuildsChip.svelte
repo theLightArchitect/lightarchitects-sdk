@@ -1,6 +1,6 @@
 <script lang="ts">
   import { builds } from '$lib/stores';
-  import { navigate } from '$lib/routes';
+  import { goto } from '$app/navigation';
 
   let count = $derived($builds.filter(b => b.status === 'in_progress').length);
 </script>
@@ -8,7 +8,7 @@
 {#if count > 0}
   <button
     class="chip"
-    onclick={() => navigate('/ops')}
+    onclick={() => goto('/dashboard')}
     title="{count} build{count !== 1 ? 's' : ''} running. Click to view."
     data-testid="active-builds-chip"
   >

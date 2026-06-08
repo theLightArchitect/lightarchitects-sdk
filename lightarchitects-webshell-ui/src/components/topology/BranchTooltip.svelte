@@ -1,6 +1,6 @@
 <script lang="ts">
   import { gitforestTree } from '$lib/stores';
-  import { navigate } from '$lib/routes';
+  import { goto } from '$app/navigation';
   import type { BranchNode } from '$lib/gitforest';
 
   interface Props {
@@ -68,7 +68,7 @@
 
   function handleClick() {
     onclose();
-    navigate('/builds', {});
+    goto('/builds');
   }
 
   function handleKeydown(e: KeyboardEvent) {

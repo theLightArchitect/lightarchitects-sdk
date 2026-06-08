@@ -2,7 +2,7 @@
   import { builds, conductorTasks, conductorStats } from '$lib/stores';
   import ConductorPanel from '$lib/../components/ConductorPanel.svelte';
   import type { Build, ConductorTask } from '$lib/types';
-  import { navigate } from '$lib/routes';
+  import { goto } from '$app/navigation';
 
   let allBuilds    = $derived($builds);
   let allTasks     = $derived($conductorTasks);
@@ -50,7 +50,7 @@
             {@const taskCount = activeTasksFor(build.id)}
             <button
               class="build-row"
-              onclick={() => navigate('/builds/:buildId/:view', { buildId: build.id, view: 'comms' })}
+              onclick={() => goto(`/builds/${build.id}/comms`)}
             >
               <div class="build-name">{build.name}</div>
               <div class="build-meta">

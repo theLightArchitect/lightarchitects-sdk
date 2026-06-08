@@ -9,7 +9,7 @@
     snapshotContextForCopilot, copilotContextStatus, recentEventBuffer, copilotGrounding,
     ayinStatus,
   } from '$lib/stores';
-  import { navigate } from '$lib/routes';
+  import { goto } from '$app/navigation';
   import { SIBLING_COLORS, getChatActorPolytope } from '$lib/design-tokens';
   import { api } from '$lib/api';
   import * as sessionMgr from '$lib/copilot/session';
@@ -1087,7 +1087,7 @@
 
         {#if $ayinStatus === 'connected'}
           <button
-            onclick={() => navigate('/observability')}
+            onclick={() => goto('/observability')}
             class="hdr-action hdr-action--ayin"
             title="View session spans in AYIN Lineage Circuit"
             aria-label="View in AYIN"

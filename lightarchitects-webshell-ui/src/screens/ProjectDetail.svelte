@@ -4,6 +4,8 @@
   import { SIBLING_COLORS, ROADMAP, getMetaSkillPolytope, getMetaSkillColor } from '$lib/design-tokens';
   import type { Build, PlanPhaseStatus, ProjectMeta, ProjectInitRequest } from '$lib/types';
   import { api, ApiError } from '$lib/api';
+  import { page } from '$app/state';
+  import { goto } from '$app/navigation';
   import PhaseTimeline from '$lib/../components/PhaseTimeline.svelte';
   import PolytopeIcon from '$lib/../components/PolytopeIcon.svelte';
   import PolytopeDecor from '$lib/../components/PolytopeDecor.svelte';
@@ -23,10 +25,10 @@
   let projectState = $state<ProjectState>({ tag: 'loading' });
 
   // ── Derived URL context ───────────────────────────────────────────────────────
-  // projectId = everything after '#/project/' in the URL hash.
+  // projectId comes from the SvelteKit route param /project/[projectId].
   // Typical form: 'Projects-lightarchitects-sdk' (pathToId of normalizedPath).
   // The slug is everything after the leading 'Projects-'.
-  let projectId = $derived(window.location.hash.replace('#/project/', ''));
+  let projectId = $derived(page.params.projectId ?? '');
   let slug = $derived(projectId.replace(/^Projects-/, ''));
 
   // For display — last segment of the path-hash as a readable name.
@@ -134,15 +136,15 @@
   // ── Navigation ────────────────────────────────────────────────────────────────
   function openBuild(buildId: string) {
     currentBuildId.set(buildId);
-    window.location.hash = `/workspace/${buildId}`;
+    goto(`/builds/${buildId}`);
   }
 
   function goBack() {
-    window.location.hash = '/';
+    goto('/');
   }
 
   function newPlan() {
-    window.location.hash = '/intake';
+    goto('/intake');
   }
 
   // ── Pillar/phase helpers (preserved) ─────────────────────────────────────────

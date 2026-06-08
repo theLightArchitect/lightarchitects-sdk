@@ -15,6 +15,7 @@
   import PresetChips from '$lib/../components/Cockpit/PresetChips.svelte';
   import { api } from '$lib/api';
   import { authHeaders } from '$lib/auth';
+  import { goto } from '$app/navigation';
   import { activeBuild, workerSlots, conductorState, conductorTasks, gitStore, gitApi, gitforestTree } from '$lib/stores';
   import { selectedTarget, selectedPreset, lastWaveId } from '$lib/cockpit/stores';
   import { select } from '$lib/cockpit/stores/selection';
@@ -115,13 +116,65 @@
     <!-- Bento grid — d2 scope -->
     <div class="bento-d2">
 
-      <!-- ── BUILD HEALTH ────────────────────────────────────────────── -->
-      <div class="card card-health" data-area="health" data-card-role="build-health">
-        <BuildHealthCard />
+      <!-- ── FILE PORTAL ───────────────────────────────────────────────── -->
+      <div class="card card-portal scoped" data-area="portal" data-card-role="d2-portal">
+        <div class="card-label" style="padding: 8px 10px 0; display:flex; align-items:center; gap:6px;">
+          FILES CHANGED
+          <span class="portal-kind-badge">BUILD SCOPE</span>
+        </div>
+        <div class="portal-list" style="flex:1; overflow-y:auto; padding: 4px 0;">
+          {#if gitFiles.length === 0}
+            <div class="empty-state" style="padding: 8px 10px;">{gitLoading ? 'scanning…' : 'no modified files'}</div>
+          {:else}
+            {#each gitFiles.slice(0, 12) as f}
+              {@const fname = f.path.split('/').pop() ?? f.path}
+              {@const fdir  = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/') + 1) : ''}
+              {@const dotClass = f.status === '??' ? 'dim' : f.status === 'M' || f.status === ' M' || f.status === 'AM' ? 'warn' : f.status === 'A' ? 'ok' : 'dim'}
+              <button
+                class="portal-item"
+                onclick={() => { const cod = currentScope?.codename ?? $activeBuild?.codename ?? ''; if (cod && f.path) goto(`/cockpit/file/${encodeURIComponent(cod)}/${f.path.split('/').map(encodeURIComponent).join('/')}`); }}
+                title="Open {f.path} at d3"
+              >
+                <span class="pi-dot {dotClass}"></span>
+                <span class="pi-info">
+                  <span class="pi-name">{fdir}<b>{fname}</b></span>
+                  <div class="pi-change-bar">
+                    <span class="pi-bar-add" style="width: {f.status === 'A' ? '100%' : '40%'}"></span>
+                    <span class="pi-bar-rem" style="width: {f.status === 'D' ? '100%' : f.status === ' M' || f.status === 'AM' ? '30%' : '0%'}"></span>
+                  </div>
+                  <div class="pi-attr">
+                    <span class="pi-attr-wave">{f.status}</span>
+                    <span class="pi-attr-sep">·</span>
+                    <span class="pi-attr-phase">{fname.endsWith('.rs') ? 'rust' : fname.endsWith('.svelte') ? 'svelte' : 'file'}</span>
+                  </div>
+                </span>
+                <span class="pi-drill" aria-hidden="true">→</span>
+              </button>
+            {/each}
+            {#if gitFiles.length > 12}
+              <div class="portal-more">+{gitFiles.length - 12} more files</div>
+            {/if}
+          {/if}
+        </div>
+        <div class="pi-footer">
+          <span class="pf-lines">
+            <span class="pf-add">+{gitFiles.filter(f => f.status === 'A').length} new</span>
+            &nbsp;
+            <span class="pf-rem">{gitFiles.filter(f => f.status === 'D').length > 0 ? `−${gitFiles.filter(f => f.status === 'D').length} del` : ''}</span>
+          </span>
+          <span class="pf-domains">
+            {#if gitFiles.some(f => f.path.endsWith('.rs'))}<span class="pf-dom">[Q]</span>{/if}
+            {#if gitFiles.some(f => f.path.includes('auth') || f.path.includes('security'))}<span class="pf-dom">[S]</span>{/if}
+            {#if gitFiles.some(f => f.path.includes('test') || f.path.endsWith('_test.rs'))}<span class="pf-dom">[T]</span>{/if}
+          </span>
+          <span class="pf-risks" style="margin-left: auto;">
+            <span class="pf-risk ok">{gitFiles.length} files</span>
+          </span>
+        </div>
       </div>
 
       <!-- ── ESCALATIONS / HITL ────────────────────────────────────────── -->
-      <div class="card card-hitl" data-area="escalations" data-card-role="hitl-escalations">
+      <div class="card card-hitl" data-area="hitl" data-card-role="hitl-escalations">
         <HitlEscalationsCard />
       </div>
 
@@ -303,11 +356,12 @@
   .bento-d2 {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
-    grid-template-rows: auto 1fr auto auto;
+    grid-template-rows: 1.5fr 1.5fr 1fr auto;
     grid-template-areas:
-      "health escalations fleet"
+      "portal portal hitl"
+      "portal portal wave"
       "decisions decisions git"
-      "wave wave wave";
+      "health health fleet";
     gap: 12px;
     flex: 1;
     min-height: 0;
@@ -315,12 +369,85 @@
 
   .card { background: var(--la-bg-panel); border: 1px solid var(--la-hair-base); padding: 12px; display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow: hidden; }
   .card-label { font-size: 9px; font-weight: 700; letter-spacing: var(--la-tk-loose); color: var(--la-text-mute); display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .card-portal    { grid-area: portal; padding: 0; display: flex; flex-direction: column; }
   .card-health    { grid-area: health; }
-  .card-hitl      { grid-area: escalations; }
+  .card-hitl      { grid-area: hitl; }
   .card-fleet     { grid-area: fleet; }
   .card-decisions { grid-area: decisions; overflow-y: auto; }
   .card-git       { grid-area: git; }
   .card-wave      { grid-area: wave; }
+
+  /* Portal card accent */
+  .card.scoped {
+    border-color: color-mix(in srgb, var(--scope-accent, var(--scope-d2)) 35%, var(--la-hair-base));
+    position: relative;
+  }
+  .card.scoped::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
+    background: var(--scope-accent, var(--scope-d2));
+  }
+  .card.scoped .card-label { color: var(--scope-accent, var(--scope-d2)); }
+
+  .portal-kind-badge {
+    font-size: 7px; font-weight: 700; letter-spacing: 0.06em;
+    color: color-mix(in srgb, var(--scope-accent, var(--scope-d2)) 70%, transparent);
+    background: color-mix(in srgb, var(--scope-accent, var(--scope-d2)) 12%, transparent);
+    padding: 1px 5px;
+    border: 1px solid color-mix(in srgb, var(--scope-accent, var(--scope-d2)) 25%, transparent);
+  }
+
+  /* Portal list */
+  .portal-list { display: flex; flex-direction: column; }
+  .portal-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; cursor: pointer;
+    border: 1px solid transparent; border-radius: 0;
+    background: none; text-align: left; width: 100%;
+    transition: background 0.12s, border-color 0.12s;
+    overflow: visible; position: relative;
+  }
+  .portal-item:hover {
+    background: color-mix(in srgb, var(--scope-accent, var(--scope-d2)) 7%, transparent);
+    border-color: color-mix(in srgb, var(--scope-accent, var(--scope-d2)) 20%, transparent);
+  }
+  .portal-more { font-size: 8px; color: var(--la-text-mute); padding: 4px 10px; }
+
+  .pi-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; margin-top: 1px; }
+  .pi-dot.ok   { background: var(--la-semantic-ok);    box-shadow: 0 0 5px var(--la-semantic-ok); }
+  .pi-dot.warn { background: var(--la-semantic-warn);  box-shadow: 0 0 5px var(--la-semantic-warn); }
+  .pi-dot.err  { background: var(--la-semantic-error); box-shadow: 0 0 5px var(--la-semantic-error); }
+  .pi-dot.dim  { background: var(--la-text-mute); }
+
+  .pi-info { flex: 1; min-width: 0; }
+  .pi-name { font-size: 10px; font-weight: 500; color: var(--la-text-bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pi-name :global(b) { font-weight: 700; }
+
+  .pi-change-bar { display: flex; height: 3px; border-radius: 1px; overflow: hidden; background: var(--la-hair-base); margin-top: 3px; max-width: 80px; }
+  .pi-bar-add { height: 100%; background: var(--la-semantic-ok);    flex-shrink: 0; transition: width 0.4s; }
+  .pi-bar-rem { height: 100%; background: var(--la-semantic-error);  flex-shrink: 0; transition: width 0.4s; }
+
+  .pi-attr { display: flex; align-items: center; gap: 3px; margin-top: 2px; font-size: 8px; color: var(--la-text-mute); }
+  .pi-attr-wave  { color: var(--la-text-dim); font-weight: 500; }
+  .pi-attr-sep   { opacity: 0.4; }
+  .pi-attr-phase { color: var(--la-text-mute); }
+
+  .pi-drill { font-size: 9px; color: var(--la-text-mute); flex-shrink: 0; opacity: 0; transform: translateX(-4px); transition: all 0.12s; }
+  .portal-item:hover .pi-drill { opacity: 1; transform: translateX(0); color: var(--scope-accent, var(--scope-d2)); }
+
+  .pi-footer {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px 5px;
+    border-top: 1px solid var(--la-hair-base);
+    flex-shrink: 0; flex-wrap: wrap;
+  }
+  .pf-lines { font-size: 9px; font-weight: 600; }
+  .pf-add { color: var(--la-semantic-ok); }
+  .pf-rem { color: var(--la-semantic-error); }
+  .pf-domains { display: flex; gap: 4px; }
+  .pf-dom { font-size: 8px; font-weight: 700; color: var(--la-semantic-error); background: color-mix(in srgb, var(--la-semantic-error) 12%, transparent); padding: 0 4px; border-radius: 2px; }
+  .pf-risks { display: flex; gap: 4px; }
+  .pf-risk { font-size: 8px; font-weight: 700; padding: 0 4px; border-radius: 2px; }
+  .pf-risk.ok { color: var(--la-semantic-ok); background: color-mix(in srgb, var(--la-semantic-ok) 10%, transparent); }
 
   .empty-state { color: var(--la-text-mute); font-size: 10px; }
   .dim-note    { color: var(--la-text-mute); font-weight: 400; }

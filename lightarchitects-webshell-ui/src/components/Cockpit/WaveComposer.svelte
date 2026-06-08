@@ -14,7 +14,7 @@
   } from '$lib/cockpit/stores';
   import { dispatchWave } from '$lib/cockpit/waveComposer';
   import { DOMAIN_AGENT_COLORS } from '$lib/design-tokens';
-  import { navigate } from '$lib/routes';
+  import { goto } from '$app/navigation';
   import AgentTaskRowCard from './AgentTaskRow.svelte';
 
   const PRESETS: CockpitPreset[] = [
@@ -195,7 +195,7 @@
           <span class="wc-bid">{successBuildId.slice(0, 8)}</span>
           <button
             class="wc-deeplink"
-            onclick={() => navigate('/autonomous')}
+            onclick={() => goto('/autonomous')}
             data-testid="wc-view-autonomous"
           >View in Autonomous Panel →</button>
         </div>

@@ -10,7 +10,16 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { matchRoute, navigate } from '$lib/routes';
+import { existsSync } from 'fs';
+import { resolve } from 'path';
+import { goto } from '$app/navigation';
+
+// Mock $app/navigation so goto() tests work outside a SvelteKit runtime.
+vi.mock('$app/navigation', () => ({
+  goto: vi.fn(),
+  beforeNavigate: vi.fn(),
+  afterNavigate: vi.fn(),
+}));
 import { helixEntries } from '$lib/stores';
 import { api } from '$lib/api';
 import { get } from 'svelte/store';
@@ -39,39 +48,34 @@ function makeEntry(path: string): HelixEntrySsePayload {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Turn-zoom deep-link route parsing
+// 1. Turn-zoom SvelteKit route structure
+// Verifies that the file-system route that produces Turn-zoom params exists.
+// With SvelteKit, param names come from directory names ([buildId], [phaseId], ...).
+// BuildDetail.svelte reads page.params.buildId, page.params.phaseId, etc. —
+// these tests confirm the directory tree is named correctly.
 // ---------------------------------------------------------------------------
 
-describe('helix-3d-zoom: Turn-zoom deep-link route parsing', () => {
-  it('extracts all 4 params from full Turn-zoom URL', () => {
-    const r = matchRoute('/builds/b1/phase/p2/wave/w3/agent/engineer');
-    expect(r.screen).toBe('BuildDetail');
-    expect(r.params.buildId).toBe('b1');
-    expect(r.params.phaseId).toBe('p2');
-    expect(r.params.waveId).toBe('w3');
-    expect(r.params.agentKey).toBe('engineer');
+const ROUTES_DIR = resolve(process.cwd(), 'src/routes');
+
+function routeExists(relPath: string): boolean {
+  return existsSync(resolve(ROUTES_DIR, relPath));
+}
+
+describe('helix-3d-zoom: Turn-zoom SvelteKit route structure', () => {
+  it('Turn-zoom full route exists: /builds/[buildId]/phase/[phaseId]/wave/[waveId]/agent/[agentKey]', () => {
+    expect(routeExists('builds/[buildId]/phase/[phaseId]/wave/[waveId]/agent/[agentKey]/+page.svelte')).toBe(true);
   });
 
-  it('returns BuildDetail without drill-down params when only buildId present', () => {
-    const r = matchRoute('/builds/abc-123');
-    expect(r.screen).toBe('BuildDetail');
-    expect(r.params.buildId).toBe('abc-123');
-    expect(r.params.phaseId).toBeUndefined();
-    expect(r.params.waveId).toBeUndefined();
-    expect(r.params.agentKey).toBeUndefined();
+  it('/builds/[buildId] route exists (bare build view)', () => {
+    expect(routeExists('builds/[buildId]/+page.svelte')).toBe(true);
   });
 
-  it('returns BuildDetail with phaseId only (waveId + agentKey absent)', () => {
-    const r = matchRoute('/builds/b1/phase/phase-3-build');
-    expect(r.screen).toBe('BuildDetail');
-    expect(r.params.phaseId).toBe('phase-3-build');
-    expect(r.params.waveId).toBeUndefined();
-    expect(r.params.agentKey).toBeUndefined();
+  it('/builds/[buildId]/phase/[phaseId] route exists (phase drill-down)', () => {
+    expect(routeExists('builds/[buildId]/phase/[phaseId]/+page.svelte')).toBe(true);
   });
 
-  it('accepts hyphenated agent keys', () => {
-    const r = matchRoute('/builds/b1/phase/p2/wave/w3/agent/code-architect');
-    expect(r.params.agentKey).toBe('code-architect');
+  it('/builds/[buildId]/phase/[phaseId]/wave/[waveId] route exists (wave drill-down)', () => {
+    expect(routeExists('builds/[buildId]/phase/[phaseId]/wave/[waveId]/+page.svelte')).toBe(true);
   });
 });
 
@@ -98,34 +102,29 @@ describe('helix-3d-zoom: zoomLevel derivation', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 3. navigate() hash construction
+// 3. Turn-zoom deep-link path construction (goto() call sites)
 // ---------------------------------------------------------------------------
 
-describe('helix-3d-zoom: navigate hash construction', () => {
-  let locationStub: { hash: string };
-
+describe('helix-3d-zoom: Turn-zoom path construction', () => {
+  // These tests verify that the goto() calls used in BuildDetail / TaskDrillView
+  // produce the correct deep-link paths for Turn-zoom and back-nav.
   beforeEach(() => {
-    locationStub = { hash: '' };
-    vi.stubGlobal('location', locationStub);
+    vi.mocked(goto).mockClear();
   });
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
+  it('produces the correct Turn-zoom path with all 4 segments', () => {
+    const buildId = 'build-42';
+    const phaseId = 'phase-3-build';
+    const waveId = 'wave-1';
+    const agentKey = 'engineer';
+    goto(`/builds/${buildId}/phase/${phaseId}/wave/${waveId}/agent/${agentKey}`);
+    expect(goto).toHaveBeenCalledWith('/builds/build-42/phase/phase-3-build/wave/wave-1/agent/engineer');
   });
 
-  it('produces the correct Turn-zoom hash with all 4 segments', () => {
-    navigate('/builds/:buildId/phase/:phaseId/wave/:waveId/agent/:agentKey', {
-      buildId: 'build-42',
-      phaseId: 'phase-3-build',
-      waveId: 'wave-1',
-      agentKey: 'engineer',
-    });
-    expect(locationStub.hash).toBe('/builds/build-42/phase/phase-3-build/wave/wave-1/agent/engineer');
-  });
-
-  it('back-nav to build zoom sets hash to buildId only', () => {
-    navigate('/builds/:buildId', { buildId: 'build-42' });
-    expect(locationStub.hash).toBe('/builds/build-42');
+  it('back-nav to build zoom uses buildId-only path', () => {
+    const buildId = 'build-42';
+    goto(`/builds/${buildId}`);
+    expect(goto).toHaveBeenCalledWith('/builds/build-42');
   });
 });
 

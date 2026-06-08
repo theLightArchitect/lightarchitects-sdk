@@ -1,7 +1,7 @@
 <script lang="ts">
   import { gitforestTree } from '$lib/stores';
   import type { BranchNode, WorktreeAssignment } from '$lib/gitforest';
-  import { navigate } from '$lib/routes';
+  import { goto } from '$app/navigation';
 
   // ── Derived data ────────────────────────────────────────────────────────────
 
@@ -177,7 +177,7 @@
   function handleCardClick(node: BranchNode): void {
     if (hitlOpen === node.id) return;
     const id = node.name.replace(/^feat\//, '');
-    navigate('/builds/:buildId', { buildId: id });
+    goto(`/builds/${id}`);
   }
 </script>
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { api } from '$lib/api';
   import { authHeaders } from '$lib/auth';
-  import { navigate } from '$lib/routes';
+  import { goto } from '$app/navigation';
 
   interface Props {
     params?: Record<string, string>;
@@ -200,7 +200,7 @@
       </span>
     </div>
     <button
-      onclick={() => navigate('/dashboard')}
+      onclick={() => goto('/dashboard')}
       class="text-[10px] text-[#475569] hover:text-[#94a3b8] transition-colors px-2 py-1"
     >Back</button>
   </div>

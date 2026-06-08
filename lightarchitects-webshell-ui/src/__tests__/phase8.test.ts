@@ -167,11 +167,12 @@ describe('Phase 8: Claude GUI Control + Polish', () => {
   });
 
   describe('Responsive layout', () => {
-    it('app.svelte has 1024px breakpoint for Helix3D panel', async () => {
+    it('root layout has 1024px breakpoint for Helix3D panel', async () => {
       const fs = await import('fs');
       const path = await import('path');
+      // Layout is now src/routes/+layout.svelte (SvelteKit migration — was src/app.svelte)
       const content = fs.readFileSync(
-        path.resolve(process.cwd(), 'src/app.svelte'),
+        path.resolve(process.cwd(), 'src/routes/+layout.svelte'),
         'utf-8'
       );
       expect(content).toContain('1024');

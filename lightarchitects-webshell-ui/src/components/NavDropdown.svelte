@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { navigate } from '$lib/routes';
-  import { currentRoute } from '$lib/stores';
+  import { goto } from '$app/navigation';
+  import { page } from '$app/state';
 
   interface NavItem {
     label: string;
@@ -60,7 +60,9 @@
   let open = $state(false);
   let rootEl = $state<HTMLDivElement | null>(null);
 
-  let activeRoute = $derived($currentRoute);
+  // Cast to string: page.url.pathname is typed as a route-union by SvelteKit;
+  // isActive() compares it against '' for the edge case of the root path.
+  const activeRoute = $derived(page.url.pathname as string);
 
   function isActive(hash: string): boolean {
     if (hash === '/dashboard') return activeRoute.startsWith('/dashboard') || activeRoute.startsWith('/monitor') || activeRoute.startsWith('/ops');
@@ -100,7 +102,7 @@
   }
 
   function pick(hash: string) {
-    navigate(hash);
+    goto(hash);
     open = false;
   }
 

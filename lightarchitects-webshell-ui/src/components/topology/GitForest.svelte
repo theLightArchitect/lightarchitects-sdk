@@ -9,7 +9,7 @@
   import type { GitForestTopology, BranchNode } from '$lib/gitforest';
   import { countActiveWorktrees, computeFadeLevel, polytopeClusterFor } from '$lib/gitforest';
   import { PulseLayer } from '$lib/pulseLayer';
-  import { navigate } from '$lib/routes';
+  import { goto } from '$app/navigation';
   import BranchTooltip from '$lib/../components/topology/BranchTooltip.svelte';
   import { fetchGitLog, commitTypeColor, localBranchName } from '$lib/gitlog';
   import type { GitLogData, GitCommit, GitBranch } from '$lib/gitlog';
@@ -245,7 +245,7 @@
 
   function handleHitboxClick(nodeId: string) {
     hideTooltip();
-    navigate('/builds', {});
+    goto('/builds');
   }
 
   function handleContextMenu(e: MouseEvent, nodeId: string, btn: HTMLButtonElement) {
@@ -1424,7 +1424,7 @@
   <canvas bind:this={overlayCanvas} class="forest-overlay" aria-hidden="true"></canvas>
 
   <!-- A11y shadow hitboxes (Phase 3.5): invisible buttons over branch tips for keyboard/SR users -->
-  <!-- Phase 6: hover → BranchTooltip; click → navigate('/builds'); contextmenu → pin tooltip -->
+  <!-- Phase 6: hover → BranchTooltip; click → goto('/builds'); contextmenu → pin tooltip -->
   {#each hitboxes as hb (hb.id)}
     <button
       class="forest-hitbox"

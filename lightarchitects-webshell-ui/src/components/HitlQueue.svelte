@@ -1,6 +1,6 @@
 <script lang="ts">
   import { builds } from '$lib/stores';
-  import { navigate } from '$lib/routes';
+  import { goto } from '$app/navigation';
 
   interface HitlSearchItem {
     number: number;
@@ -82,7 +82,7 @@
             <span class="hq-elapsed" title="Waiting for {elapsed(build.updatedAt)}">{elapsed(build.updatedAt)}</span>
             <button
               class="hq-review-btn"
-              onclick={() => navigate(`/builds/${build.id}/decisions`)}
+              onclick={() => goto(`/builds/${build.id}/decisions`)}
             >
               Review decisions
             </button>

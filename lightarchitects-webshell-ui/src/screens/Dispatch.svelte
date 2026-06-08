@@ -1,12 +1,13 @@
 <script lang="ts">
+  import { page } from '$app/state';
   import SquadDispatch from './SquadDispatch.svelte';
   import HitlQueue from '$lib/../components/HitlQueue.svelte';
 
-  // runId is set when navigating to /dispatch/run/:runId (orphan run context).
-  // Passed through to SquadDispatch for pre-loading a prior run from history.
-  let { runId }: { runId?: string } = $props();
+  // runId comes from the SvelteKit route param /dispatch/run/[runId].
+  const runId = $derived(page.params.runId);
 
-  const tab = $derived(new URLSearchParams(location.hash.split('?')[1] ?? '').get('tab'));
+  // ?tab= query param (e.g. /dispatch?tab=approval).
+  const tab = $derived(page.url.searchParams.get('tab'));
 </script>
 
 {#if tab === 'approval'}

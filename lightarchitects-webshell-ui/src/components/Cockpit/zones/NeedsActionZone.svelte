@@ -2,7 +2,7 @@
   import { builds, conductorTasks } from '$lib/stores';
   import { selectedTarget } from '$lib/cockpit/stores';
   import { needsActionItems } from '$lib/cockpit/engineerLens';
-  import { navigate } from '$lib/routes';
+  import { goto } from '$app/navigation';
 
   const items = $derived(needsActionItems($selectedTarget, $builds, $conductorTasks));
 </script>
@@ -21,7 +21,7 @@
           {#if item.buildId}
             <button
               class="action-verb"
-              onclick={() => navigate('/builds/:buildId/:view', { buildId: item.buildId!, view: 'comms' })}
+              onclick={() => goto(`/builds/${item.buildId!}/comms`)}
             >{item.verb}</button>
           {:else}
             <span class="action-verb-static">{item.verb}</span>

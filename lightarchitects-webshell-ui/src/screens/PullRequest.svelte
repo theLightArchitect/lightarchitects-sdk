@@ -8,19 +8,20 @@
   import PRCreateForm from '../components/git/PRCreateForm.svelte';
   import PRReviewSurface from '../components/git/PRReviewSurface.svelte';
   import { authHeaders } from '$lib/auth';
+  import { page } from '$app/state';
 
-  // Params injected by App.svelte.
-  let { params = {} }: { params?: Record<string, string> } = $props();
+  // Route params from SvelteKit /pr/[number] or /pr/new.
+  const params = $derived(page.params);
 
-  // Detect mode: if params.number is present we're on /pr/:number.
+  // Detect mode: /pr/[number] is review, /pr/new is create.
   const prNumber = $derived(params.number ? parseInt(params.number, 10) : null);
   const isReview = $derived(prNumber !== null && !isNaN(prNumber as number));
 
-  // Owner/repo — derived from URL params or sensible defaults.
+  // Owner/repo/cwd — query params (e.g. /pr/42?owner=Org&repo=name&cwd=.).
   // In a live system these would be parsed from `git remote get-url origin`.
-  const owner = $derived(params.owner ?? 'TheLightArchitects');
-  const repo  = $derived(params.repo  ?? '');
-  const cwd   = $derived(params.cwd   ?? '.');
+  const owner = $derived(page.url.searchParams.get('owner') ?? 'TheLightArchitects');
+  const repo  = $derived(page.url.searchParams.get('repo')  ?? '');
+  const cwd   = $derived(page.url.searchParams.get('cwd')   ?? '.');
 
   // ── Review mode: load diff ──────────────────────────────────────────────────
 

@@ -4,7 +4,7 @@
   import { STATUS_COLORS } from '$lib/design-tokens';
   import { api } from '$lib/api';
   import type { BuildStatus, OverallStatus } from '$lib/types';
-  import { navigate } from '$lib/routes';
+  import { goto } from '$app/navigation';
   import { subscribeByTopic, type WebEventV2 } from '$lib/sse';
 
   // ── Counters ──────────────────────────────────────────────────────────────
@@ -93,37 +93,37 @@
 </script>
 
 <div class="stats-topbar" role="status" aria-label="Build fleet status">
-  <button class="stat stat-btn" onclick={() => navigate('/builds')} title="All builds">
+  <button class="stat stat-btn" onclick={() => goto('/builds')} title="All builds">
     <span class="stat-val">{totalBuilds}</span>
     <span class="stat-label">BUILDS</span>
   </button>
   <div class="stat-sep" aria-hidden="true"></div>
 
-  <button class="stat stat-btn" class:stat-hot={activeBuilds > 0} onclick={() => navigate('/builds?filter=active')} title="Active builds">
+  <button class="stat stat-btn" class:stat-hot={activeBuilds > 0} onclick={() => goto('/builds?filter=active')} title="Active builds">
     <span class="stat-val">{activeBuilds}</span>
     <span class="stat-label">ACTIVE</span>
   </button>
   <div class="stat-sep" aria-hidden="true"></div>
 
-  <button class="stat stat-btn" class:stat-hot={activeAgents > 0} onclick={() => navigate('/ops')} title="Agent fleet">
+  <button class="stat stat-btn" class:stat-hot={activeAgents > 0} onclick={() => goto('/ops')} title="Agent fleet">
     <span class="stat-val">{activeAgents}</span>
     <span class="stat-label">AGENTS</span>
   </button>
   <div class="stat-sep" aria-hidden="true"></div>
 
-  <button class="stat stat-btn" onclick={() => navigate('/builds?filter=gates')} title="Recent gate verdicts">
+  <button class="stat stat-btn" onclick={() => goto('/builds?filter=gates')} title="Recent gate verdicts">
     <span class="stat-val">{recentGates}</span>
     <span class="stat-label">GATES</span>
   </button>
   <div class="stat-sep" aria-hidden="true"></div>
 
-  <button class="stat stat-btn" class:stat-warn={hitlPending > 0} onclick={() => navigate('/run?tab=approval')} title="Pending approvals">
+  <button class="stat stat-btn" class:stat-warn={hitlPending > 0} onclick={() => goto('/run?tab=approval')} title="Pending approvals">
     <span class="stat-val">{hitlPending}</span>
     <span class="stat-label">Approval</span>
   </button>
   <div class="stat-sep" aria-hidden="true"></div>
 
-  <button class="stat stat-btn" class:stat-warn={staleCount > 0} onclick={() => navigate('/builds?filter=stale')} title="Stale / idle builds">
+  <button class="stat stat-btn" class:stat-warn={staleCount > 0} onclick={() => goto('/builds?filter=stale')} title="Stale / idle builds">
     <span class="stat-val">{staleCount}</span>
     <span class="stat-label">Idle</span>
   </button>

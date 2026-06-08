@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { activeBuild, currentBuildId, activityFeed, ensureBuildInStore } from '$lib/stores';
-  import { matchRoute, navigate } from '$lib/routes';
+  import { goto } from '$app/navigation';
+  import { page } from '$app/state';
   import { api } from '$lib/api';
   import KanbanView  from '$lib/../components/views/KanbanView.svelte';
   import ListView    from '$lib/../components/views/ListView.svelte';
@@ -48,32 +49,22 @@
     )
   );
 
-  function syncFromHash() {
-    const { params } = matchRoute(window.location.hash.slice(1) || '/');
-    if (params.buildId) {
-      currentBuildId.set(params.buildId);
+  // Hydrate params from SvelteKit route. Runs on mount and re-runs on every
+  // navigation because page.params is reactive — replaces onMount + hashchange.
+  $effect(() => {
+    if (page.params.buildId) {
+      currentBuildId.set(page.params.buildId);
       // Session builds (POST /api/builds) are not in the portfolio snapshot.
       // Fetch and insert so activeBuild resolves and AgentConsole can render.
-      ensureBuildInStore(params.buildId);
+      ensureBuildInStore(page.params.buildId);
     }
-    if (params.view && (VIEW_MODES as string[]).includes(params.view)) {
-      viewMode = params.view as ViewMode;
+    if (page.params.view && (VIEW_MODES as string[]).includes(page.params.view)) {
+      viewMode = page.params.view as ViewMode;
     }
-    // helix-viz-remap: sync Turn-zoom deep-link params
-    phaseId  = params.phaseId  ?? null;
-    waveId   = params.waveId   ?? null;
-    agentKey = params.agentKey ?? null;
-    // Phase 5: L3 task drill-down
-    taskId   = params.taskId   ?? null;
-  }
-
-  // Hydrate currentBuildId + viewMode when navigating directly to /builds/:id/:view
-  onMount(syncFromHash);
-
-  // Sync view on back/forward navigation
-  $effect(() => {
-    window.addEventListener('hashchange', syncFromHash);
-    return () => window.removeEventListener('hashchange', syncFromHash);
+    phaseId  = page.params.phaseId  ?? null;
+    waveId   = page.params.waveId   ?? null;
+    agentKey = page.params.agentKey ?? null;
+    taskId   = page.params.taskId   ?? null;
   });
 
   const VIEW_TABS: { key: ViewMode; label: string; desc: string }[] = [
@@ -167,13 +158,13 @@
       <nav aria-label="breadcrumb" class="zoom-breadcrumb">
         <button
           class="crumb-seg"
-          onclick={() => navigate('/builds', {})}
+          onclick={() => goto('/builds')}
         >PORTFOLIO</button>
         <span class="crumb-sep" aria-hidden="true">›</span>
         {#if zoomLevel === 'turn'}
           <button
             class="crumb-seg"
-            onclick={() => navigate('/builds/:buildId', { buildId: build.id })}
+            onclick={() => goto(`/builds/${build.id}`)}
           >{build.name}</button>
           <span class="crumb-sep" aria-hidden="true">›</span>
           <span class="crumb-seg crumb-current" aria-current="page">{agentKey}</span>
@@ -189,7 +180,7 @@
               class="view-tab"
               class:active={viewMode === t.key}
               title={t.desc}
-              onclick={() => navigate('/builds/:buildId/:view', { buildId: build.id, view: t.key })}
+              onclick={() => goto(`/builds/${build.id}/${t.key}`)}
             >
               {t.label}
             </button>
@@ -300,8 +291,8 @@
           <WavePipelineView
             mode="split"
             phases={livePhases}
-            onTaskClick={(taskId) => navigate('/builds/:buildId/phase/:phaseId/wave/stub/agent/stub/task/:taskId', { buildId: build.id, phaseId: phaseId ?? '', taskId })}
-            onGateClick={(pid, wid) => navigate('/builds/:buildId/phase/:phaseId', { buildId: build.id, phaseId: pid })}
+            onTaskClick={(taskId) => goto(`/builds/${build.id}/phase/${phaseId ?? ''}/wave/stub/agent/stub/task/${taskId}`)}
+            onGateClick={(pid, wid) => goto(`/builds/${build.id}/phase/${pid}`)}
           />
         </div>
       </div>

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ProjectGroup, Build } from '$lib/types';
   import { SIBLING_COLORS } from '$lib/design-tokens';
-  import { navigate } from '$lib/routes';
+  import { goto } from '$app/navigation';
   import { supervisorAlerts, findings } from '$lib/stores';
 
   interface Props {
@@ -161,7 +161,7 @@
     <!-- Action buttons -->
     <div class="px-3 py-2 flex flex-col gap-1 shrink-0 mt-auto">
       <button
-        onclick={() => { navigate('/builds'); onClose(); }}
+        onclick={() => { goto('/builds'); onClose(); }}
         class="w-full text-[9px] font-mono py-1 px-2 rounded border border-[#1e293b] text-[#94a3b8] hover:text-[#FFD700] hover:border-[#FFD700]/30 transition-colors text-left"
       >OPEN BUILD DETAIL</button>
       {#if displayBuild.branch}

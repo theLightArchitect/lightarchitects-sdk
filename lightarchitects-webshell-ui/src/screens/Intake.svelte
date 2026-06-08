@@ -15,14 +15,15 @@
   import MockBadge from '$lib/../components/MockBadge.svelte';
   import { isEnabled } from '$lib/featureFlags';
   import type { PreflightReport } from '$lib/types';
+  import { page } from '$app/state';
+  import { goto } from '$app/navigation';
 
   // Tutorial T1 — auto-fires on first visit; re-trigger via ?onboarding=t1.
   // Runs after a tick so the DOM is settled and Shepherd can attach to the
   // [data-onboarding="..."] target elements.
   onMount(() => {
-    // Read query params embedded in the hash (e.g. /intake?return=/builds&prefill=manifest)
-    const qs = window.location.hash.split('?')[1] ?? '';
-    const params = new URLSearchParams(qs);
+    // Read query params from the SvelteKit URL (e.g. /intake?return=/builds&prefill=manifest)
+    const params = page.url.searchParams;
     const prefill = params.get('prefill');
     const desc = params.get('desc');
     if (prefill === 'manifest') {
@@ -288,20 +289,18 @@
     forceCreate = false;
     submitting = false;
     // Navigate: use ?return= if present; fall back to the new build's detail page.
-    const qs = window.location.hash.split('?')[1] ?? '';
-    const params = new URLSearchParams(qs);
-    const returnTo = safeReturn(params.get('return'));
-    const prefill = params.get('prefill');
+    const returnTo = safeReturn(page.url.searchParams.get('return'));
+    const prefill = page.url.searchParams.get('prefill');
     if (newBuildId) {
       currentBuildId.set(newBuildId);
       // When returning to dispatch with a task prefill, carry the description back as ?task=
       if (prefill === 'task' && returnTo && submittedDesc) {
-        window.location.hash = `${returnTo}?task=${encodeURIComponent(submittedDesc)}`;
+        goto(`${returnTo}?task=${encodeURIComponent(submittedDesc)}`);
       } else {
-        window.location.hash = returnTo || `/builds/${newBuildId}/kanban`;
+        goto(returnTo || `/builds/${newBuildId}/kanban`);
       }
     } else {
-      window.location.hash = returnTo || '/';
+      goto(returnTo || '/');
     }
   }
 
@@ -443,12 +442,11 @@
       return;
     }
 
-    const qs = window.location.hash.split('?')[1] ?? '';
-    const returnTo = safeReturn(new URLSearchParams(qs).get('return')) ?? '/';
+    const returnTo = safeReturn(page.url.searchParams.get('return')) ?? '/';
 
     try {
       const resp = await api.createPlan(plan);
-      window.location.hash = returnTo;
+      goto(returnTo);
     } catch {
       // Backend may not have the endpoint yet — store locally
       const newBuild = {
@@ -467,7 +465,7 @@
       };
       builds.update(b => [...b, newBuild]);
       planBuilderDraft.set(plan);
-      window.location.hash = returnTo;
+      goto(returnTo);
     }
 
     submitting = false;
@@ -570,7 +568,7 @@
         body:       draft.text,
       });
       cancelEvaDraft();
-      window.location.hash = '/builds';
+      goto('/builds');
     } catch (err) {
       planDraftState.update(s => ({
         ...s,
@@ -597,7 +595,7 @@
 
   <!-- Header (#38 — fixed 56px band shared across all top-level screens) -->
   <header class="la-screen-header flex items-center gap-3 px-6 border-b border-[var(--la-hair-strong)]">
-    <button onclick={() => { window.location.hash = '/'; }} class="text-[var(--la-text-dim)] hover:text-white text-xs">
+    <button onclick={() => goto('/')} class="text-[var(--la-text-dim)] hover:text-white text-xs">
       Queue
     </button>
     <span class="text-[var(--la-hair-strong)]">/</span>
@@ -937,11 +935,11 @@
 
             <!-- ── Draft with EVA ────────────────────────────────────────── -->
             <div class="mt-4 border border-[var(--la-focus-ring)]/20 rounded-lg p-3 bg-[var(--la-bg-elev-1)]">
-              <h2 class="text-xs font-medium text-[var(--la-focus-ring)] mb-3">DRAFT WITH EVA</h2>
+              <h2 class="text-xs font-medium text-[var(--la-focus-ring)] mb-3">AI Draft</h2>
 
               <!-- Northstar anchor -->
               <div class="mb-3">
-                <label class="text-[10px] text-[var(--la-text-dim)] block mb-1">NORTHSTAR (optional)</label>
+                <label class="text-[10px] text-[var(--la-text-dim)] block mb-1">Goal (optional)</label>
                 <textarea
                   bind:value={evaAnchorNorthstar}
                   placeholder="Describe the ideal end-state this build achieves..."
@@ -957,7 +955,7 @@
                   bind:checked={evaIncludeResearch}
                   class="w-3.5 h-3.5 accent-[var(--la-focus-ring)]"
                 />
-                <span class="text-[10px] text-[var(--la-text-label)]">Include research phase (QUANTUM + SOUL prior-art)</span>
+                <span class="text-[10px] text-[var(--la-text-label)]">Include research phase (Research + Knowledge prior-art)</span>
               </label>
 
               <!-- Action buttons -->
@@ -971,7 +969,7 @@
                   disabled={evaDrafting}
                   data-testid="intake-draft-with-eva"
                 >
-                  {evaDrafting ? 'EVA drafting...' : 'Draft with EVA'}
+                  {evaDrafting ? 'Drafting…' : 'AI Draft'}
                 </button>
                 {#if draft.sessionId}
                   <button
@@ -1171,7 +1169,7 @@
                 <div class="flex gap-2 mt-2">
                   <button
                     class="px-3 py-1 text-[10px] rounded border border-[var(--la-agent-performance)]/40 text-[var(--la-agent-performance)] hover:bg-[var(--la-agent-performance)]/10 transition-colors"
-                    onclick={() => { window.location.hash = '/'; }}
+                    onclick={() => goto('/')}
                   >View existing</button>
                   <button
                     class="px-3 py-1 text-[10px] rounded border border-[var(--la-text-dim)]/40 text-[var(--la-text-dim)] hover:border-[var(--la-text-label)] hover:text-[var(--la-text-label)] transition-colors"
