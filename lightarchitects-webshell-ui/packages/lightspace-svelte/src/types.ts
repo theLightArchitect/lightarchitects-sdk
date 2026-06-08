@@ -75,6 +75,17 @@ export interface LightspaceGraduateEvent {
   file_id: string;
   content_uri: string;
   content_mime: string;
+  /** When true, the card transitions to 'detached' state rather than being removed. */
+  retain_tombstone: boolean;
+}
+export interface LightspaceContradictionResolutionEvent {
+  session_id: string;
+  winner_target_id: string;
+  loser_target_ids: string[];
+  seq: number;
+  depth_reached: number;
+  cycle_yielded: boolean;
+  contributing_seqs: number[];
 }
 export interface LightspaceMaterializeEvent {
   session_id: string;

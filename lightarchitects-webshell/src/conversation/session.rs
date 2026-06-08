@@ -93,6 +93,11 @@ pub enum ConvSSEEvent {
         /// Human-readable error message suitable for display.
         message: String,
     },
+    /// Subscriber fell behind — some events were dropped from the broadcast channel.
+    Lag {
+        /// Number of events dropped since the last successfully received event.
+        skipped: u64,
+    },
 }
 
 impl ConvSessionHandle {

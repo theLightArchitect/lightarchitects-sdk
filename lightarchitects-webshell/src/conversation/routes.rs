@@ -173,6 +173,40 @@ pub async fn interrupt_conversation(
     StatusCode::OK
 }
 
+/// Request body for `POST /api/conversation/{id}/resume`.
+#[derive(Deserialize)]
+pub struct ResumeRequest {
+    /// Single-use nonce issued in the `hitl_pause` SSE event.
+    pub nonce: String,
+}
+
+/// `POST /api/conversation/{id}/resume` — release a parked HITL turn.
+///
+/// The nonce must match an entry in the session's [`ResumeRegistry`]; expired,
+/// mismatched, or already-used nonces return `404 Not Found`.
+///
+/// Returns `200 OK` on success; the parked turn unblocks and resumes SSE
+/// emission. Returns `404` when the session or nonce is not found.
+///
+/// Authenticated via [`auth::AuthGuard`] (Bearer **or** `la_session` cookie).
+pub async fn resume_conversation(
+    _: auth::AuthGuard,
+    Path(session_id): Path<Uuid>,
+    State(state): State<AppState>,
+    Json(body): Json<ResumeRequest>,
+) -> impl IntoResponse {
+    let Some(handle) = state.conversation_store.get(&session_id) else {
+        return StatusCode::NOT_FOUND;
+    };
+    match handle
+        .resume_registry
+        .take(&body.nonce, &session_id.to_string())
+    {
+        Some(_) => StatusCode::OK,
+        None => StatusCode::NOT_FOUND,
+    }
+}
+
 /// `DELETE /api/conversation/{id}` — end a session and remove it from the store.
 ///
 /// Returns `204 No Content` on success, `404 Not Found` if the session does
@@ -217,7 +251,9 @@ async fn drive_conv_stream(
                     skipped = n,
                     "conversation SSE subscriber lagged — events dropped"
                 );
-                let payload = format!(r#"{{"type":"lag","skipped":{n}}}"#);
+                let lag = ConvSSEEvent::Lag { skipped: n };
+                let payload = serde_json::to_string(&lag)
+                    .unwrap_or_else(|_| format!(r#"{{"type":"lag","skipped":{n}}}"#));
                 return Some((Ok(Event::default().data(payload)), rx));
             }
             Err(RecvError::Closed) => return None,

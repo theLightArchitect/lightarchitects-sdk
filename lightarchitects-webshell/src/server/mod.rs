@@ -30,7 +30,7 @@ use axum::{
     extract::State,
     http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, header},
     response::IntoResponse,
-    routing::{delete, get, post, put},
+    routing::{delete, get, post},
 };
 use tokio::sync::{Mutex, RwLock, broadcast, oneshot};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -1104,6 +1104,11 @@ pub fn build_app(state: AppState) -> Router {
             post(crate::conversation::routes::interrupt_conversation)
                 .layer(axum::extract::DefaultBodyLimit::max(256)),
         )
+        .route(
+            "/api/conversation/{id}/resume",
+            post(crate::conversation::routes::resume_conversation)
+                .layer(axum::extract::DefaultBodyLimit::max(256)),
+        )
         .route("/api/terminal/ws", get(terminal::ws::ws_handler))
         .route(
             "/api/terminal/container/{id}",
@@ -1154,7 +1159,7 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/events/global", get(builds_handler::global_events_handler))
         .route(
             "/api/builds/plan/{codename}",
-            put(builds_handler::update_plan_handler),
+            get(builds_handler::get_plan_handler).put(builds_handler::update_plan_handler),
         )
         .route(
             "/api/builds/{id}",

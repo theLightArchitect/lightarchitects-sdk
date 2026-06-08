@@ -40,7 +40,9 @@ export type CockpitCardRole =
   // d3 cards — live in CockpitFile
   | 'd3-portal'
   | 'd3-strat'
-  | 'd3-context';
+  | 'd3-context'
+  // d2 phase ladder — plan view with per-phase gate status
+  | 'phase-ladder';
 
 /** Scope depths at which a card role is valid (0=platform, 1=project, 2=build, 3=file). */
 export type CardScopeDepth = 0 | 1 | 2 | 3;
@@ -78,6 +80,7 @@ export const COCKPIT_CARD_ROLES: Record<CockpitCardRole, CockpitCardRoleMeta> = 
   'd3-portal':           { description: 'navigation — symbol browser (fn/struct/trait/enum) extracted from file; click jumps to line',         scope: [3] },
   'd3-strat':            { description: 'status — per-file metrics (lines, symbol counts, kind breakdown)',                                     scope: [3] },
   'd3-context':          { description: 'status — domain gate scan rows ([A/S/Q/T/P/D/K/O]) for the open file',                               scope: [3] },
+  'phase-ladder':        { description: 'status — LASDLC phase ladder with per-phase exit gate criteria and evaluation status',                scope: [2] },
 };
 
 /** All card role keys, derived from the registry for exhaustiveness checks. */

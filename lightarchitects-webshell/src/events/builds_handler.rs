@@ -921,6 +921,52 @@ pub async fn create_plan_handler(
 }
 
 /// `PUT /api/builds/plan/{codename}` — update plan status, phase, or gate results.
+/// `GET /api/builds/plan/{codename}` — read a plan file from `~/.claude/plans/`.
+///
+/// Returns the raw Markdown body as `text/plain`, or `404` if the file does not
+/// exist.  Codename must match `[a-z0-9-]+`; anything else returns `422`.
+pub async fn get_plan_handler(
+    Path(codename): Path<String>,
+    _: crate::auth::AuthGuard,
+    State(_state): State<AppState>,
+) -> impl axum::response::IntoResponse {
+    use axum::http::StatusCode;
+
+    if !codename
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
+        return (StatusCode::UNPROCESSABLE_ENTITY, "invalid codename").into_response();
+    }
+    let plans_dir = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
+        .join(".claude")
+        .join("plans");
+    let plan_path = plans_dir.join(format!("{codename}.md"));
+    if !plan_path.starts_with(&plans_dir) {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid codename: path escapes plans directory",
+        )
+            .into_response();
+    }
+    match std::fs::read_to_string(&plan_path) {
+        Ok(body) => (
+            StatusCode::OK,
+            [(
+                axum::http::header::CONTENT_TYPE,
+                "text/plain; charset=utf-8",
+            )],
+            body,
+        )
+            .into_response(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => {
+            tracing::warn!(path=%plan_path.display(), error=%e, "get_plan_handler read failed");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
 ///
 /// Partial update — only provided fields are merged into the active.yaml entry.
 #[allow(clippy::missing_panics_doc)]

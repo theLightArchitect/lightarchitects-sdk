@@ -9,9 +9,13 @@ import { authHeaders } from '$lib/auth';
 
 export interface ConvSSEEvent {
   type: 'activity' | 'strategy_phase' | 'hitl_pause' | 'done' | 'error' | 'lag';
-  /** Present on `activity` — forwarded CopilotActivityEvent shape. */
+  /** Present on `activity` — forwarded CopilotActivityEvent shape (serde-flattened). */
   kind?: string;
   summary?: string;
+  build_id?: string;
+  raw?: string;
+  timestamp?: number;
+  loop_count?: number;
   /** Present on `strategy_phase`. */
   phase?: string;
   strategy?: string;
@@ -33,11 +37,11 @@ export interface ConvSSEEvent {
  * Returns the new session UUID.
  * Throws on network or HTTP error.
  */
-export async function createConversation(): Promise<string> {
+export async function createConversation(intent?: string): Promise<string> {
   const res = await fetch('/api/conversation', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: '{}',
+    body: JSON.stringify(intent ? { intent } : {}),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
@@ -74,6 +78,39 @@ export function endConversation(sessionId: string): void {
     method: 'DELETE',
     headers: authHeaders(),
   }).catch(() => {/* best-effort cleanup */});
+}
+
+/**
+ * POST /api/conversation/{id}/interrupt — signal the running turn to stop.
+ * Returns immediately; the turn emits an `error` event and halts.
+ * Best-effort idempotent — 200 even when no turn is active.
+ */
+export async function interruptConversation(sessionId: string): Promise<void> {
+  const res = await fetch(`/api/conversation/${sessionId}/interrupt`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(`Interrupt failed (${res.status}): ${text}`);
+  }
+}
+
+/**
+ * POST /api/conversation/{id}/resume — release a parked HITL turn.
+ * The nonce was issued in the `hitl_pause` SSE event.
+ * Returns 404 if the nonce is expired, mismatched, or already consumed.
+ */
+export async function resumeConversation(sessionId: string, nonce: string): Promise<void> {
+  const res = await fetch(`/api/conversation/${sessionId}/resume`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ nonce }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(`Resume failed (${res.status}): ${text}`);
+  }
 }
 
 // ── SSE subscription ──────────────────────────────────────────────────────────

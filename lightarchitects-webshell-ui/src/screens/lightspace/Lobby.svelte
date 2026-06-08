@@ -1,6 +1,5 @@
 <script lang="ts">
   import { ls } from '$lib/lightspace/state.svelte';
-  import { goto } from '$app/navigation';
   import {
     createConversation,
     sendTurn,
@@ -28,7 +27,7 @@
 
     try {
       // 1. Create the session — mints the UUID that identifies this conversation.
-      const sessionId = await createConversation();
+      const sessionId = await createConversation(message);
       ls.sessionId = sessionId;
 
       // 2. Subscribe to the SSE stream BEFORE dispatching the turn so no
@@ -51,6 +50,10 @@
           if (ev.type === 'error' && !materialized) {
             error = ev.message ?? 'An error occurred.';
             submitting = false;
+            cleanup();
+          }
+          // Cleanup EventSource on done — prevents leak after turn completes.
+          if (ev.type === 'done') {
             cleanup();
           }
         },
@@ -117,7 +120,7 @@
       <div class="la-lobby-recent">
         <div class="la-lobby-recent-h">Recent sessions · click to resume</div>
         {#each ls.recentSessions as sess}
-          <button class="la-lobby-recent-row" onclick={() => goto('/builds')}>
+          <button class="la-lobby-recent-row" onclick={() => { ls.sessionId = sess.id; ls.exitLobby(); }}>
             <span class="sid">{sess.id}</span>
             <span class="summ">{sess.summary}</span>
             <span class="ago">{sess.ago}</span>

@@ -13,6 +13,7 @@ import type {
   LightspaceGraduateEvent, LightspaceMaterializeEvent, LightspaceGatingEvent,
   LightspaceBranchLaneEvent, LightspaceConfidenceEvent,
   LightspaceDrawerFileEvent, LightspaceDrawerEventPayload, CanvasSnapshot,
+  LightspaceContradictionResolutionEvent,
 } from './types';
 
 type HeadersFn = () => Record<string, string>;
@@ -123,7 +124,11 @@ async function dispatch(
     }
     case 'v1.lightspace.canvas.graduate': {
       const ev = e as unknown as LightspaceGraduateEvent;
-      canvasDetachCard(ev.card_id);
+      if (ev.retain_tombstone) {
+        canvasUpdateCard(ev.card_id, Date.now(), 'replace', '/state', 'detached');
+      } else {
+        canvasDetachCard(ev.card_id);
+      }
       drawerAttachFile({ id: ev.file_id, mime_type: ev.content_mime, content_uri: ev.content_uri, size_bytes: 0, provenance: { agent: 'graduate', source: ev.card_id } });
       break;
     }
@@ -146,6 +151,23 @@ async function dispatch(
     case 'v1.lightspace.canvas.confidence': {
       const _ev = e as unknown as LightspaceConfidenceEvent;
       // Confidence info is rendered via ContradictionBadge on the target card.
+      break;
+    }
+    case 'v1.lightspace.canvas.contradiction_resolution': {
+      const ev = e as unknown as LightspaceContradictionResolutionEvent;
+      canvasUpdateCard(ev.winner_target_id, Date.now(), 'replace', '/badge', null);
+      ev.loser_target_ids.forEach(id =>
+        canvasUpdateCard(id, Date.now(), 'replace', '/badge', { kind: 'resolved', seq: ev.seq }),
+      );
+      break;
+    }
+    case 'ironclaw_hitl_escalation': {
+      const ev = e as unknown as { nonce: string; layer_failed?: number; escalation_question: string };
+      hitlEnqueue({ id: ev.nonce, gate: String(ev.layer_failed ?? ''), label: ev.escalation_question, inserted_at: Date.now() });
+      break;
+    }
+    case 'ironclaw_hitl_resolution': {
+      hitlDequeue((e as unknown as { nonce: string }).nonce);
       break;
     }
     case 'v1.lightspace.drawer.file': {
