@@ -9,7 +9,7 @@
 //!
 //! See `arch/lightspace-conversation-api/` for C2/C3/sequence/state-machine diagrams.
 
-// routes added in Phase 3
+pub mod routes;
 pub mod session;
 pub mod strategy_bridge;
 

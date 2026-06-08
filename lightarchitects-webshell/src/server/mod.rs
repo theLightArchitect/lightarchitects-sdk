@@ -1065,6 +1065,29 @@ pub fn build_app(state: AppState) -> Router {
             "/api/litellm/config",
             get(litellm_state::get_config).post(litellm_state::update_config),
         )
+        // ── Standalone conversation API ───────────────────────────────────────
+        // No buildId required — sessions keyed by UUID minted at creation.
+        // DefaultBodyLimit (F10) guards all write endpoints; GET stream has no body.
+        .route(
+            "/api/conversation",
+            post(crate::conversation::routes::create_conversation)
+                .layer(axum::extract::DefaultBodyLimit::max(256)),
+        )
+        .route(
+            "/api/conversation/{id}/stream",
+            get(crate::conversation::routes::stream_conversation),
+        )
+        .route(
+            "/api/conversation/{id}",
+            post(crate::conversation::routes::send_turn)
+                .layer(axum::extract::DefaultBodyLimit::max(32 * 1024))
+                .delete(crate::conversation::routes::end_conversation),
+        )
+        .route(
+            "/api/conversation/{id}/interrupt",
+            post(crate::conversation::routes::interrupt_conversation)
+                .layer(axum::extract::DefaultBodyLimit::max(256)),
+        )
         .route("/api/terminal/ws", get(terminal::ws::ws_handler))
         .route(
             "/api/terminal/container/{id}",
