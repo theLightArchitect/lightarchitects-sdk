@@ -32,6 +32,9 @@
   import { activityFeed, implCompleteEvents, mergeAgentEvents, ironclawHitlEscalation } from '$lib/stores';
   import { subscribeFleet } from '$lib/sse';
   import type { FleetEvent } from '$lib/types';
+  import { TimelineEngine } from '$lib/lightspace-timeline';
+  import { DEMO_TIMELINE } from '$lib/lightspace-demo-timeline';
+  import { canvasClear } from '$lib/lightspace-stores';
 
   import LightspaceHeader  from '$lib/../components/lightspace/LightspaceHeader.svelte';
   import LeftSidebar       from '$lib/../components/lightspace/LeftSidebar.svelte';
@@ -78,6 +81,22 @@
     // Phase 5: wire to POST /api/lightshell/runs in production mode
     // Phase 6: trigger TIMELINE engine in demo mode
   }
+
+  // ── Phase 6: Demo TIMELINE engine ────────────────────────────────────────
+  let timeline: TimelineEngine | null = null;
+
+  $effect(() => {
+    const mode = $lightspaceSessionStore.mode;
+    if (mode === 'demo') {
+      canvasClear();
+      timeline = new TimelineEngine(DEMO_TIMELINE);
+      timeline.play();
+    } else {
+      timeline?.pause();
+      timeline = null;
+    }
+    return () => { timeline?.pause(); timeline = null; };
+  });
 
   // ── Phase 5: SSE store subscriptions ─────────────────────────────────────
   // sse.ts already populates all these stores. Lightspace subscribes reactively
