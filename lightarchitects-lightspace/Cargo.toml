@@ -1,0 +1,21 @@
+[package]
+name = "lightarchitects-lightspace"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Pure reducer engine for Lightspace JIT-reactive canvas state"
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+uuid = { workspace = true, features = ["v7", "serde"] }
+chrono = { workspace = true, features = ["serde"] }
+indexmap = { workspace = true }
+thiserror = { workspace = true }
+json-patch = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+serde_json = { workspace = true }

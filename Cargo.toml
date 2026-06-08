@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "lightarchitects",                   # Unified SDK — all clients + advanced capabilities
+    "lightarchitects-lightspace",        # Pure reducer engine for Lightspace canvas state
     "lightarchitects-webshell",          # Binary: local web GUI (PTY + 3D helix panel)
     "lightarchitects-arch",              # Architecture intelligence — extract, verify, emit
     "lightarchitects-webshell-mcp-host", # Generic MCP host: spawn + handshake + HTTP surface
@@ -67,6 +68,7 @@ rand = "0.8"
 # ── Serialization ─────────────────────────────────────────────────────────────
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+json-patch = "3"
 toml = "0.8"
 
 # ── Error handling ────────────────────────────────────────────────────────────
@@ -100,6 +102,7 @@ cron = "0.15"
 notify = "6"
 dirs-next = "2.0"
 dashmap = "6"
+indexmap = { version = "2", features = ["serde"] }
 futures-util = "0.3"
 tokio-util = { version = "0.7", features = ["rt"] }
 tokio-tungstenite = "0.26"
