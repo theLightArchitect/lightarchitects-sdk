@@ -65,6 +65,7 @@ pub mod fleet_routes;
 pub mod git_routes;
 pub mod litellm_chat;
 pub mod litellm_state;
+pub mod loops_demo;
 pub mod mcp_routes;
 pub mod mosaic_routes;
 pub mod northstar_routes;
@@ -503,6 +504,12 @@ pub struct AppState {
     /// Guards against concurrent respawns (409) and exposes current state
     /// to health checks. Defaults to [`pty_respawn::PtyState::Idle`].
     pub pty_state: Arc<tokio::sync::RwLock<pty_respawn::PtyState>>,
+    /// Standalone conversation sessions — keyed by session UUID.
+    ///
+    /// Populated by `POST /api/conversation`; evicted after 1h of idle time or
+    /// `DELETE /api/conversation/{id}`. Does NOT require a [`BuildSession`] —
+    /// closes the lightspace cold-start gap (Northstar P1).
+    pub conversation_store: Arc<crate::conversation::session::ConvSessionStore>,
 }
 
 impl AppState {
@@ -829,6 +836,11 @@ impl AppState {
             program_run: program_routes::program_run_slot(),
             pty_child: Arc::new(tokio::sync::Mutex::new(None)),
             pty_state: Arc::new(tokio::sync::RwLock::new(pty_respawn::PtyState::default())),
+            conversation_store: {
+                let store = Arc::new(crate::conversation::session::ConvSessionStore::new());
+                crate::conversation::session::spawn_eviction_task(Arc::clone(&store));
+                store
+            },
         }
     }
 
@@ -973,6 +985,7 @@ impl AppState {
             program_run: program_routes::program_run_slot(),
             pty_child: Arc::new(tokio::sync::Mutex::new(None)),
             pty_state: Arc::new(tokio::sync::RwLock::new(pty_respawn::PtyState::default())),
+            conversation_store: Arc::new(crate::conversation::session::ConvSessionStore::new()),
         }
     }
 }
@@ -1052,6 +1065,29 @@ pub fn build_app(state: AppState) -> Router {
         .route(
             "/api/litellm/config",
             get(litellm_state::get_config).post(litellm_state::update_config),
+        )
+        // ── Standalone conversation API ───────────────────────────────────────
+        // No buildId required — sessions keyed by UUID minted at creation.
+        // DefaultBodyLimit (F10) guards all write endpoints; GET stream has no body.
+        .route(
+            "/api/conversation",
+            post(crate::conversation::routes::create_conversation)
+                .layer(axum::extract::DefaultBodyLimit::max(256)),
+        )
+        .route(
+            "/api/conversation/{id}/stream",
+            get(crate::conversation::routes::stream_conversation),
+        )
+        .route(
+            "/api/conversation/{id}",
+            post(crate::conversation::routes::send_turn)
+                .layer(axum::extract::DefaultBodyLimit::max(32 * 1024))
+                .delete(crate::conversation::routes::end_conversation),
+        )
+        .route(
+            "/api/conversation/{id}/interrupt",
+            post(crate::conversation::routes::interrupt_conversation)
+                .layer(axum::extract::DefaultBodyLimit::max(256)),
         )
         .route("/api/terminal/ws", get(terminal::ws::ws_handler))
         .route(
@@ -1487,6 +1523,10 @@ pub fn build_app(state: AppState) -> Router {
         )
         // ── LiteLLM polished chat panel (direct streaming, bypasses subprocess) ─
         .route("/api/litellm/chat", post(litellm_chat::chat_handler))
+        // ── Strategy loop demo (loops_demo.rs — registered Phase 5) ─────────
+        .route("/api/loops/demo", get(loops_demo::demo_dispatch_handler))
+        .route("/loops-demo", get(loops_demo::demo_page_handler))
+        .route("/loops-demo.js", get(loops_demo::demo_js_handler))
         // ── HITL inbox — GitHub PR review queue (webshell-hitl-inbox Phase 1) ─
         .route("/api/gitforest/hitl-search", get(hitl_search_handler))
         .route("/api/gitforest/pr-metadata", get(pr_metadata_handler))

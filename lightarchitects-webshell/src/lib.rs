@@ -26,6 +26,8 @@ pub mod arch_proxy;
 pub mod auth;
 pub mod config;
 pub mod container;
+/// Standalone multi-turn conversation API — operates without a BuildSession.
+pub mod conversation;
 /// Squad Comms — HTTP wrapper over the conductor task queue and soul-chat sessions.
 pub mod coordination;
 pub mod copilot;
