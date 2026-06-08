@@ -226,9 +226,46 @@ async fn drive_conv_stream(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::too_many_lines
+)]
 mod tests {
+    use std::{ffi::OsString, path::PathBuf};
+
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+    };
+    use tower::ServiceExt as _;
+
     use super::*;
+    use crate::server::build_app;
+
+    const TEST_TOKEN: &str = "conv-test-token-xyz";
+
+    fn test_state() -> crate::server::AppState {
+        crate::server::AppState::for_test(
+            crate::config::Config {
+                port: 0,
+                host_cmd: OsString::from("bash"),
+                cwd: PathBuf::from("/tmp"),
+                token: TEST_TOKEN.to_owned(),
+                token_source: crate::config::TokenSource::EnvVar,
+                agent: crate::config::AgentSession::default(),
+                claude_agent_template: None,
+                container_mode: crate::container::ContainerMode::Auto,
+                dev_mode: false,
+                max_context_prompts: 50,
+                litellm: crate::config::LiteLLMConfig::default(),
+                hermes_mcp: crate::config::HermesMcpConfig::default(),
+                resume_session_id: None,
+            },
+            crate::container::DockerCapability::Unavailable,
+        )
+    }
 
     #[test]
     fn create_response_serializes_session_id() {
@@ -237,5 +274,116 @@ mod tests {
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains(&id.to_string()));
         assert!(json.contains("session_id"));
+    }
+
+    #[tokio::test]
+    async fn create_conversation_returns_201_with_session_id() {
+        let app = build_app(test_state());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/conversation")
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {TEST_TOKEN}"))
+            .body(Body::from("{}"))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(
+            json["session_id"].as_str().is_some(),
+            "session_id must be present"
+        );
+        // Verify it parses as a valid UUID
+        let id_str = json["session_id"].as_str().unwrap();
+        assert!(
+            uuid::Uuid::parse_str(id_str).is_ok(),
+            "session_id must be a valid UUID"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_conversation_requires_auth() {
+        let app = build_app(test_state());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/conversation")
+            .header("content-type", "application/json")
+            .body(Body::from("{}"))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn stream_unknown_session_returns_404() {
+        let app = build_app(test_state());
+        let unknown_id = Uuid::new_v4();
+        let req = Request::builder()
+            .method("GET")
+            .uri(format!("/api/conversation/{unknown_id}/stream"))
+            .header("authorization", format!("Bearer {TEST_TOKEN}"))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn send_turn_unknown_session_returns_404() {
+        let app = build_app(test_state());
+        let unknown_id = Uuid::new_v4();
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/api/conversation/{unknown_id}"))
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {TEST_TOKEN}"))
+            .body(Body::from(r#"{"message":"hello"}"#))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn end_conversation_lifecycle() {
+        // Create → verify 201 → delete → verify 204 → delete again → verify 404
+        let state = test_state();
+        let app = build_app(state);
+
+        // Step 1: create
+        let create_req = Request::builder()
+            .method("POST")
+            .uri("/api/conversation")
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {TEST_TOKEN}"))
+            .body(Body::from("{}"))
+            .unwrap();
+        let create_resp = app.clone().oneshot(create_req).await.unwrap();
+        assert_eq!(create_resp.status(), StatusCode::CREATED);
+        let body = axum::body::to_bytes(create_resp.into_body(), 1024)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let session_id = json["session_id"].as_str().unwrap().to_owned();
+
+        // Step 2: delete → 204
+        let del_req = Request::builder()
+            .method("DELETE")
+            .uri(format!("/api/conversation/{session_id}"))
+            .header("authorization", format!("Bearer {TEST_TOKEN}"))
+            .body(Body::empty())
+            .unwrap();
+        let del_resp = app.clone().oneshot(del_req).await.unwrap();
+        assert_eq!(del_resp.status(), StatusCode::NO_CONTENT);
+
+        // Step 3: delete again → 404 (idempotent check — already removed)
+        let repeat_req = Request::builder()
+            .method("DELETE")
+            .uri(format!("/api/conversation/{session_id}"))
+            .header("authorization", format!("Bearer {TEST_TOKEN}"))
+            .body(Body::empty())
+            .unwrap();
+        let repeat_resp = app.oneshot(repeat_req).await.unwrap();
+        assert_eq!(repeat_resp.status(), StatusCode::NOT_FOUND);
     }
 }

@@ -43,7 +43,7 @@ use lightarchitects::agent::{AgentRequest, ChainContext, LlmAgentProvider, Provi
 struct DemoExec {
     provider: Arc<OpenAICompatProvider>,
     model: String,
-    /// SSE sender — every TextDelta event from the streaming provider becomes
+    /// SSE sender — every `TextDelta` event from the streaming provider becomes
     /// one `{"type":"delta","text":"…"}` frame so the browser can render
     /// token-by-token output without waiting for a phase to finish. `None`
     /// would mean "swallow chunks", but the demo always provides a channel.
@@ -174,7 +174,7 @@ impl BcraExecutor for DemoExec {
         let text = self
             .ask(&format!(
                 "One-sentence evidence for threat: {}",
-                threats.first().map(String::as_str).unwrap_or("unknown")
+                threats.first().map_or("unknown", String::as_str)
             ))
             .await?;
         Ok(vec![text])
@@ -386,8 +386,7 @@ impl CoVeExecutor for DemoExec {
         for (i, claim) in claims.iter().enumerate() {
             let q = questions
                 .get(i)
-                .map(|q| q.question.as_str())
-                .unwrap_or("no question");
+                .map_or("no question", |q| q.question.as_str());
             let answer = self.ask(&format!("Answer briefly: {q}")).await?;
             out.push(VerifiedClaim {
                 claim: claim.clone(),
@@ -444,7 +443,7 @@ impl RedTeamExecutor for DemoExec {
         let text = self
             .ask(&format!(
                 "Probe attack surface: {}",
-                surface.first().map(String::as_str).unwrap_or("none")
+                surface.first().map_or("none", String::as_str)
             ))
             .await?;
         Ok(vec![text])
@@ -580,6 +579,7 @@ impl IttExecutor for DemoExec {
 
 // ── Strategy runner helper ────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_lines)]
 async fn run_strategy_sse(
     name: &str,
     query: String,
@@ -851,11 +851,7 @@ async fn run_strategy_sse(
                             .await;
                         }
                         Outcome::Halt(ref out) => {
-                            let obs = out
-                                .steps
-                                .last()
-                                .map(|s| s.observation.as_str())
-                                .unwrap_or("done");
+                            let obs = out.steps.last().map_or("done", |s| s.observation.as_str());
                             send(
                                 &tx,
                                 done_msg!(format!(
@@ -1192,10 +1188,7 @@ async fn run_strategy_sse(
                             .await;
                         }
                         Outcome::Halt(ref tests) => {
-                            let top = tests
-                                .first()
-                                .map(|t| t.hypothesis.as_str())
-                                .unwrap_or("n/a");
+                            let top = tests.first().map_or("n/a", |t| t.hypothesis.as_str());
                             send(
                                 &tx,
                                 done_msg!(format!(
@@ -1238,8 +1231,7 @@ async fn run_strategy_sse(
                         Outcome::Halt(ref tree) => {
                             let top = tree
                                 .top_hypothesis()
-                                .map(|n| n.hypothesis.as_str())
-                                .unwrap_or("n/a");
+                                .map_or("n/a", |n| n.hypothesis.as_str());
                             send(
                                 &tx,
                                 done_msg!(format!(
@@ -1322,6 +1314,7 @@ async fn run_strategy_sse(
 // ── HTTP handlers ─────────────────────────────────────────────────────────────
 
 /// `GET /api/loops/demo?strategy=<name>&query=<text>` — SSE stream.
+#[allow(clippy::implicit_hasher)]
 pub async fn demo_dispatch_handler(
     State(state): State<AppState>,
     Query(params): Query<HashMap<String, String>>,
@@ -1345,7 +1338,10 @@ pub async fn demo_dispatch_handler(
 
     let strat = strategy.clone();
     tokio::spawn(async move {
-        run_strategy_sse(&strat, query, base_url, api_key, model, tx).await;
+        Box::pin(run_strategy_sse(
+            &strat, query, base_url, api_key, model, tx,
+        ))
+        .await;
     });
 
     let event_stream = stream::unfold(rx, |mut rx| async move {

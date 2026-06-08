@@ -65,6 +65,7 @@ pub mod fleet_routes;
 pub mod git_routes;
 pub mod litellm_chat;
 pub mod litellm_state;
+pub mod loops_demo;
 pub mod mcp_routes;
 pub mod mosaic_routes;
 pub mod northstar_routes;
@@ -1522,6 +1523,10 @@ pub fn build_app(state: AppState) -> Router {
         )
         // ── LiteLLM polished chat panel (direct streaming, bypasses subprocess) ─
         .route("/api/litellm/chat", post(litellm_chat::chat_handler))
+        // ── Strategy loop demo (loops_demo.rs — registered Phase 5) ─────────
+        .route("/api/loops/demo", get(loops_demo::demo_dispatch_handler))
+        .route("/loops-demo", get(loops_demo::demo_page_handler))
+        .route("/loops-demo.js", get(loops_demo::demo_js_handler))
         // ── HITL inbox — GitHub PR review queue (webshell-hitl-inbox Phase 1) ─
         .route("/api/gitforest/hitl-search", get(hitl_search_handler))
         .route("/api/gitforest/pr-metadata", get(pr_metadata_handler))
