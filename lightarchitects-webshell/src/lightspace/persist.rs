@@ -29,6 +29,7 @@ use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::Sha256;
+use tracing::instrument;
 use uuid::Uuid;
 
 use crate::events::WebEventV2;
@@ -57,6 +58,7 @@ struct LogLine {
 /// # Errors
 ///
 /// Returns an error string on I/O failure or JSON serialisation failure.
+#[instrument(name = "lightspace.persist.append", skip(seed, event), fields(session_id = %session_id, seq))]
 pub fn append(
     session_id: Uuid,
     seed: &HmacSeed,
@@ -104,6 +106,7 @@ pub fn append(
 /// # Errors
 ///
 /// Returns an error string on I/O or JSON parse failure.
+#[instrument(name = "lightspace.persist.read", fields(session_id = %session_id))]
 pub fn read_events(session_id: Uuid) -> Result<Vec<(u64, Value)>, String> {
     let path = log_path(session_id)?;
     if !path.exists() {
@@ -132,6 +135,7 @@ pub fn read_events(session_id: Uuid) -> Result<Vec<(u64, Value)>, String> {
 /// # Errors
 ///
 /// Returns an error string on I/O or JSON parse failure.
+#[instrument(name = "lightspace.persist.verify_chain", skip(seed), fields(session_id = %session_id))]
 pub fn verify_chain(session_id: Uuid, seed: &HmacSeed) -> Result<bool, String> {
     let path = log_path(session_id)?;
     if !path.exists() {

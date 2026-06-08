@@ -12,6 +12,7 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use lightarchitects_lightspace::Lightspace;
 use tokio::sync::{RwLock, broadcast};
+use tracing::instrument;
 use uuid::Uuid;
 
 use crate::events::WebEventV2;
@@ -59,6 +60,7 @@ impl LightspaceRegistry {
     /// The fresh [`Lightspace`] engine is initialised from [`empty_state`].
     ///
     /// [`empty_state`]: super::empty_state
+    #[instrument(name = "lightspace.session.get_or_create", skip(self), fields(session_id = %session_id))]
     #[must_use]
     pub fn get_or_create(&self, session_id: Uuid) -> Arc<SessionSlot> {
         // Fast path: session already exists.

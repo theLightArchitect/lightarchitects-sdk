@@ -30,7 +30,7 @@ use axum::{
 };
 use futures_util::stream;
 use tokio::sync::broadcast::error::RecvError;
-use tracing::warn;
+use tracing::{instrument, warn};
 use uuid::Uuid;
 
 use crate::{auth, server::AppState};
@@ -41,6 +41,7 @@ use crate::{auth, server::AppState};
 /// be held across `await` points without violating the `FnMut` borrow rules.
 ///
 /// [`Receiver`]: tokio::sync::broadcast::Receiver
+#[instrument(name = "lightspace.sse", skip_all, fields(session_id = %session_id))]
 pub async fn lightspace_sse_handler(
     Path(session_id): Path<Uuid>,
     State(state): State<AppState>,

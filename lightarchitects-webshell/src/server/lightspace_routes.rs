@@ -14,6 +14,7 @@ use axum::{
 };
 use lightarchitects_lightspace::CanvasEvent;
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 use uuid::Uuid;
 
 use crate::{auth, server::AppState};
@@ -22,6 +23,7 @@ use crate::{auth, server::AppState};
 ///
 /// Returns the current [`CanvasState`] as JSON.  Creates a fresh empty canvas
 /// if no session exists yet.
+#[instrument(name = "lightspace.snapshot", skip_all, fields(session_id = %session_id))]
 pub async fn snapshot_handler(
     Path(session_id): Path<Uuid>,
     State(state): State<AppState>,
@@ -51,6 +53,7 @@ pub struct ReplayEntry {
 /// `GET /api/lightspace/:session_id/replay`
 ///
 /// Returns the ordered event log for client-side replay and chain verification.
+#[instrument(name = "lightspace.replay", skip_all, fields(session_id = %session_id))]
 pub async fn replay_handler(
     Path(session_id): Path<Uuid>,
     State(state): State<AppState>,
@@ -90,6 +93,7 @@ pub struct ApplyEventRequest {
 ///
 /// Applies a [`CanvasEvent`] to the session's reducer.  Returns 204 on success,
 /// 422 when the reducer rejects the event.
+#[instrument(name = "lightspace.apply_event", skip_all, fields(session_id = %session_id))]
 pub async fn apply_event_handler(
     Path(session_id): Path<Uuid>,
     State(state): State<AppState>,

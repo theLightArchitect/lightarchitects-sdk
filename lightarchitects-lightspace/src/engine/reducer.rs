@@ -8,6 +8,7 @@ use super::tick;
 use crate::error::ReducerError;
 use crate::snapshot::Snapshot;
 use crate::types::{CanvasEvent, CanvasState};
+use tracing::instrument;
 use uuid::Uuid;
 
 /// The Lightspace canvas state machine.
@@ -45,6 +46,7 @@ impl Lightspace {
     ///
     /// Returns `ReducerError` if the event violates any invariant. The consumed
     /// `self` is not recoverable; restore from a prior snapshot if needed.
+    #[instrument(name = "lightspace.reduce", skip(self, event))]
     pub fn reduce(self, event: CanvasEvent) -> Result<Self, ReducerError> {
         let mut next = self.state;
         match event {
