@@ -7,15 +7,16 @@
 //! process lifetime (session memory is bounded by the reducer state size,
 //! ~8 KB per canvas, and the broadcast channel itself, 64-event ring).
 
-use std::sync::Arc;
+use std::sync::{Arc, atomic::AtomicU64};
 
 use dashmap::DashMap;
 use lightarchitects_lightspace::Lightspace;
-use tokio::sync::{RwLock, broadcast};
+use tokio::sync::{Mutex, RwLock, broadcast};
 use tracing::instrument;
 use uuid::Uuid;
 
 use crate::events::WebEventV2;
+use crate::lightspace::hmac_seed::{HmacSeed, new_seed};
 
 /// Per-session broadcast channel capacity (events before oldest is dropped).
 const SESSION_CHANNEL_CAP: usize = 64;
@@ -35,6 +36,20 @@ pub struct SessionSlot {
     pub broadcast_tx: broadcast::Sender<WebEventV2>,
     /// Monotonic creation instant for TTL / retention checks.
     pub created_at: std::time::Instant,
+    /// Per-session HMAC seed for the NDJSON event-log chain.
+    ///
+    /// Fixed at slot creation; never changes for the lifetime of the session.
+    pub hmac_seed: HmacSeed,
+    /// Monotonically-increasing event sequence counter.
+    ///
+    /// Incremented atomically on each `apply_event` call.
+    pub event_counter: AtomicU64,
+    /// Last HMAC chain value (`[0u8; 32]` for a fresh session).
+    ///
+    /// Protected by a `Mutex` so the read-update-write in `apply_event` is
+    /// atomic with respect to other concurrent `apply_event` callers on the
+    /// same session.  Held only for the duration of `persist::append`.
+    pub prev_chain: Mutex<[u8; 32]>,
 }
 
 /// Concurrent registry of all active Lightspace sessions.
@@ -74,6 +89,9 @@ impl LightspaceRegistry {
             engine: Arc::new(RwLock::new(super::empty_state::fresh(session_id))),
             broadcast_tx: tx,
             created_at: std::time::Instant::now(),
+            hmac_seed: new_seed(),
+            event_counter: AtomicU64::new(0),
+            prev_chain: Mutex::new([0u8; 32]),
         });
         // or_insert_with returns a RefMut pointing at whatever won the race —
         // either the slot we built or a concurrent thread's slot.  Clone

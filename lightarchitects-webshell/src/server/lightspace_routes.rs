@@ -6,6 +6,8 @@
 //!
 //! All routes require `Authorization: Bearer <token>`.
 
+use std::sync::atomic::Ordering;
+
 use axum::{
     Json,
     extract::{Path, State},
@@ -107,6 +109,13 @@ pub async fn apply_event_handler(
     let slot = state.lightspace_registry.get_or_create(session_id);
 
     // Apply the event to the reducer (exclusive write lock).
+    let event_json = match serde_json::to_value(&body.event) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(session_id = %session_id, error = %e, "lightspace apply: serialize event");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
     {
         let engine = slot.engine.read().await;
         let snapshot = engine.snapshot();
@@ -128,6 +137,26 @@ pub async fn apply_event_handler(
         };
 
         *slot.engine.write().await = new_engine;
+    }
+
+    // Persist + broadcast (best-effort; does not fail the 204 response).
+    let seq = slot.event_counter.fetch_add(1, Ordering::SeqCst);
+    {
+        let mut prev = slot.prev_chain.lock().await;
+        match crate::lightspace::persist::append(
+            session_id,
+            &slot.hmac_seed,
+            seq,
+            &prev,
+            &event_json,
+        ) {
+            Ok(new_chain) => {
+                *prev = new_chain;
+            }
+            Err(e) => {
+                tracing::warn!(session_id = %session_id, seq, error = %e, "lightspace persist: append failed");
+            }
+        }
     }
 
     StatusCode::NO_CONTENT.into_response()

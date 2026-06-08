@@ -32,8 +32,6 @@ use sha2::Sha256;
 use tracing::instrument;
 use uuid::Uuid;
 
-use crate::events::WebEventV2;
-
 use super::{hmac_seed::HmacSeed, path_safety::session_dir};
 
 type HmacSha256 = Hmac<Sha256>;
@@ -59,12 +57,12 @@ struct LogLine {
 ///
 /// Returns an error string on I/O failure or JSON serialisation failure.
 #[instrument(name = "lightspace.persist.append", skip(seed, event), fields(session_id = %session_id, seq))]
-pub fn append(
+pub fn append<T: Serialize>(
     session_id: Uuid,
     seed: &HmacSeed,
     seq: u64,
     prev_chain: &[u8; 32],
-    event: &WebEventV2,
+    event: &T,
 ) -> Result<[u8; 32], String> {
     let dir = session_dir(session_id).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
