@@ -1,6 +1,11 @@
 <script lang="ts">
   import { ls } from '$lib/lightspace/state.svelte';
   import { goto } from '$app/navigation';
+  import {
+    createConversation,
+    sendTurn,
+    subscribeConversation,
+  } from '$lib/lightspace/conversation.svelte';
 
   const greeting = $derived(() => {
     const h = new Date().getHours();
@@ -10,17 +15,63 @@
   });
 
   let focused = $state(false);
+  let submitting = $state(false);
+  let error = $state<string | null>(null);
 
-  function submit() {
-    if (!ls.lobbyInput.trim()) return;
-    ls.intentText = ls.lobbyInput;
-    ls.exitLobby();
-    const phases = ['begin', 'rail_collapsed', 'grid_revealed', 'drawer_revealed', 'cards_streaming', 'complete'] as const;
-    phases.forEach((p, i) => setTimeout(() => ls.setMatPhase(p), i * 200));
+  async function submit() {
+    if (!ls.lobbyInput.trim() || submitting) return;
+    submitting = true;
+    error = null;
+
+    const message = ls.lobbyInput;
+    ls.intentText = message;
+
+    try {
+      // 1. Create the session — mints the UUID that identifies this conversation.
+      const sessionId = await createConversation();
+      ls.sessionId = sessionId;
+
+      // 2. Subscribe to the SSE stream BEFORE dispatching the turn so no
+      //    events are missed between creation and dispatch.
+      let materialized = false;
+      const cleanup = subscribeConversation(
+        sessionId,
+        (ev) => {
+          // First event from the backend triggers workspace materialization.
+          if (!materialized) {
+            materialized = true;
+            ls.exitLobby();
+            const phases = [
+              'begin', 'rail_collapsed', 'grid_revealed',
+              'drawer_revealed', 'cards_streaming', 'complete',
+            ] as const;
+            phases.forEach((p, i) => setTimeout(() => ls.setMatPhase(p), i * 200));
+          }
+          // Forward error events as lobby toasts when not yet materialized.
+          if (ev.type === 'error' && !materialized) {
+            error = ev.message ?? 'An error occurred.';
+            submitting = false;
+            cleanup();
+          }
+        },
+        (errMsg) => {
+          if (!materialized) {
+            error = errMsg;
+            submitting = false;
+          }
+        },
+      );
+
+      // 3. Dispatch the first turn — events arrive on the stream above.
+      await sendTurn(sessionId, message);
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Could not reach the server.';
+      submitting = false;
+    }
   }
 
   function onKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void submit(); }
   }
 </script>
 
@@ -52,9 +103,15 @@
           <span class="la-lobby-hint"><kbd>↩</kbd> submit</span>
           <span class="la-lobby-hint"><kbd>⇧↩</kbd> newline</span>
         </div>
-        <button class="la-lobby-submit" onclick={submit}>Begin →</button>
+        <button class="la-lobby-submit" onclick={() => void submit()} disabled={submitting}>
+          {submitting ? 'Connecting…' : 'Begin →'}
+        </button>
       </div>
     </div>
+
+    {#if error}
+      <div class="la-lobby-error" role="alert">{error}</div>
+    {/if}
 
     {#if ls.recentSessions.length > 0}
       <div class="la-lobby-recent">
@@ -177,4 +234,21 @@
 .la-lobby-recent-row .summ { flex: 1; color: var(--la-text-base); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .la-lobby-recent-row:hover .summ { color: var(--la-text-bright); }
 .la-lobby-recent-row .ago { color: var(--la-text-mute); font-size: 9px; }
+
+.la-lobby-error {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 90, 90, 0.4);
+  background: rgba(255, 60, 60, 0.07);
+  border-radius: 3px;
+  font-family: var(--la-font-mono);
+  font-size: 11px;
+  color: #ff7a7a;
+  letter-spacing: var(--la-tk-tight);
+}
+
+.la-lobby-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 </style>
