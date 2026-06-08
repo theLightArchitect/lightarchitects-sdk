@@ -150,3 +150,34 @@ export function subscribeConversation(
 
   return () => es.close();
 }
+
+// ── Recent sessions ───────────────────────────────────────────────────────────
+
+interface RecentSessionEntry {
+  session_id: string;
+  title: string;
+  turn_count: number;
+  ago_secs: number;
+}
+
+/**
+ * GET /api/conversation/recent — list active sessions ordered by recency.
+ * Returns an empty array on network error or non-200 response.
+ */
+export async function fetchRecentSessions(): Promise<import('./types').RecentSession[]> {
+  const res = await fetch('/api/conversation/recent', { headers: authHeaders() });
+  if (!res.ok) return [];
+  const data = (await res.json()) as RecentSessionEntry[];
+  return data.map(d => ({
+    id: d.session_id,
+    summary: d.title,
+    ago: formatAgo(d.ago_secs),
+  }));
+}
+
+function formatAgo(secs: number): string {
+  if (secs < 60) return 'just now';
+  if (secs < 3600) return `${Math.floor(secs / 60)}m`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h`;
+  return `${Math.floor(secs / 86400)}d`;
+}

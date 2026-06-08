@@ -1090,6 +1090,10 @@ pub fn build_app(state: AppState) -> Router {
                 .layer(axum::extract::DefaultBodyLimit::max(256)),
         )
         .route(
+            "/api/conversation/recent",
+            get(crate::conversation::routes::list_recent_conversations),
+        )
+        .route(
             "/api/conversation/{id}/stream",
             get(crate::conversation::routes::stream_conversation),
         )

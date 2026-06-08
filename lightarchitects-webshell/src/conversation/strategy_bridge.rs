@@ -41,6 +41,7 @@ use super::session::{ConvSSEEvent, ConvSessionHandle};
 /// # Examples
 ///
 /// ```
+/// # use lightarchitects_webshell::conversation::strategy_bridge::should_route_to_strategy;
 /// assert_eq!(should_route_to_strategy("/build scaffold auth"), Some("build"));
 /// assert_eq!(should_route_to_strategy("/REACT audit"), Some("react"));
 /// assert_eq!(should_route_to_strategy("plain message"), None);
@@ -186,6 +187,9 @@ pub async fn dispatch_native_turn(
                 inner.memory.clear();
                 for t in updated_turns {
                     inner.memory.push(t.role, t.content);
+                }
+                if inner.turn_count == 0 {
+                    inner.title = Some(message.chars().take(80).collect());
                 }
                 inner.turn_count += 1;
                 inner.active_run = None;

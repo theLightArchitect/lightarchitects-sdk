@@ -1,10 +1,13 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { ls } from '$lib/lightspace/state.svelte';
   import {
     createConversation,
     sendTurn,
     subscribeConversation,
+    fetchRecentSessions,
   } from '$lib/lightspace/conversation.svelte';
+  import { sessionAddConvMessage, sessionAppendLastConvMessage } from '$lib/lightspace-stores';
 
   const greeting = $derived(() => {
     const h = new Date().getHours();
@@ -29,10 +32,15 @@
       // 1. Create the session — mints the UUID that identifies this conversation.
       const sessionId = await createConversation(message);
       ls.sessionId = sessionId;
+      localStorage.setItem('la_ls_session_id', sessionId);
+
+      // Add operator message to conversation history immediately.
+      sessionAddConvMessage({ id: crypto.randomUUID(), who: 'operator', text: message, ts: Date.now() });
 
       // 2. Subscribe to the SSE stream BEFORE dispatching the turn so no
       //    events are missed between creation and dispatch.
       let materialized = false;
+      let streamingId: string | null = null;
       const cleanup = subscribeConversation(
         sessionId,
         (ev) => {
@@ -46,14 +54,29 @@
             ] as const;
             phases.forEach((p, i) => setTimeout(() => ls.setMatPhase(p), i * 200));
           }
+          // Streaming text chunks: Activity { kind: "assistant", summary: chunk }.
+          if (ev.type === 'activity' && ev.kind === 'assistant' && ev.summary) {
+            if (streamingId === null) {
+              streamingId = crypto.randomUUID();
+              sessionAddConvMessage({ id: streamingId, who: 'copilot', text: ev.summary, ts: Date.now(), kind: 'assistant' });
+            } else {
+              sessionAppendLastConvMessage(ev.summary);
+            }
+          }
+          // Turn complete — reset streaming tracker.
+          if (ev.type === 'done') {
+            streamingId = null;
+            cleanup();
+          }
+          // Error in flight — add to conv and reset.
+          if (ev.type === 'error' && materialized && ev.message) {
+            sessionAddConvMessage({ id: crypto.randomUUID(), who: 'copilot', text: `Error: ${ev.message}`, ts: Date.now(), kind: 'error' });
+            streamingId = null;
+          }
           // Forward error events as lobby toasts when not yet materialized.
           if (ev.type === 'error' && !materialized) {
             error = ev.message ?? 'An error occurred.';
             submitting = false;
-            cleanup();
-          }
-          // Cleanup EventSource on done — prevents leak after turn completes.
-          if (ev.type === 'done') {
             cleanup();
           }
         },
@@ -76,6 +99,10 @@
   function onKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void submit(); }
   }
+
+  onMount(async () => {
+    ls.recentSessions = await fetchRecentSessions();
+  });
 </script>
 
 <div class="la-lobby">
@@ -120,7 +147,7 @@
       <div class="la-lobby-recent">
         <div class="la-lobby-recent-h">Recent sessions · click to resume</div>
         {#each ls.recentSessions as sess}
-          <button class="la-lobby-recent-row" onclick={() => { ls.sessionId = sess.id; ls.exitLobby(); }}>
+          <button class="la-lobby-recent-row" onclick={() => { ls.sessionId = sess.id; localStorage.setItem('la_ls_session_id', sess.id); ls.inLobby = false; ls.materializing = false; ls.wsState = 'materialised'; }}>
             <span class="sid">{sess.id}</span>
             <span class="summ">{sess.summary}</span>
             <span class="ago">{sess.ago}</span>

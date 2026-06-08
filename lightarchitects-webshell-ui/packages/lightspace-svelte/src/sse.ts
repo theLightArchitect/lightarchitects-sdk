@@ -27,6 +27,9 @@ type HeadersFn = () => Record<string, string>;
 export function subscribeSession(sessionId: string, getHeaders: HeadersFn): () => void {
   let stopped = false;
   const controller = new AbortController();
+  const INITIAL_DELAY = 1_000;
+  const MAX_BACKOFF   = 30_000;
+  let currentDelay    = INITIAL_DELAY;
 
   void (async () => {
     while (!stopped) {
@@ -36,13 +39,17 @@ export function subscribeSession(sessionId: string, getHeaders: HeadersFn): () =
           signal: controller.signal,
         });
         if (!res.ok || !res.body) {
-          await sleep(2000);
+          await sleep(currentDelay);
+          currentDelay = Math.min(currentDelay * 2, MAX_BACKOFF);
           continue;
         }
         await readStream(res.body, sessionId, getHeaders);
+        // Clean exit from readStream — reset backoff for next reconnect.
+        currentDelay = INITIAL_DELAY;
       } catch (e) {
         if (!stopped && !(e instanceof DOMException && e.name === 'AbortError')) {
-          await sleep(1500);
+          await sleep(currentDelay);
+          currentDelay = Math.min(currentDelay * 2, MAX_BACKOFF);
         }
       }
     }

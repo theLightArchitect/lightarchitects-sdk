@@ -18,6 +18,7 @@
   import '../styles/lightspace-tokens.css';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
+  import { ls } from '$lib/lightspace/state.svelte';
 
   import {
     lightspaceSessionStore,
@@ -260,6 +261,16 @@
   });
 
   onMount(() => {
+    // Restore session from localStorage — allows page refresh without losing session.
+    // Direct field assignment skips the materialize animation (no SSE events will fire it).
+    const savedSessionId = localStorage.getItem('la_ls_session_id');
+    if (savedSessionId) {
+      ls.sessionId = savedSessionId;
+      ls.inLobby = false;
+      ls.materializing = false;
+      ls.wsState = 'materialised';
+    }
+
     const handler = (e: Event) => { void handleLobbySubmit(e as CustomEvent<{ intent: string }>); };
     document.addEventListener('ls:lobby-submit', handler);
     return () => document.removeEventListener('ls:lobby-submit', handler);
