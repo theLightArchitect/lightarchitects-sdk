@@ -9,11 +9,10 @@ C4Container
   System_Boundary(lightspace, "Lightspace (lightarchitects-sdk)") {
     Container(webshell_ui, "lightarchitects-webshell-ui", "SvelteKit/Svelte 5", "Lightspace browser UI. Lobby.svelte: entry point. conversation.svelte.ts: typed API client + SSE subscriber.")
     Container(webshell, "lightarchitects-webshell", "Rust/Axum", "HTTP gateway. Hosts conversation/* routes (5 handlers), ConvSessionStore (DashMap), TTL eviction background task.")
-    Container(lightarchitects_lib, "lightarchitects crate", "Rust lib", "ConversationSession<P> + InMemoryConversationMemory + StrategyRegistry (19 profiles). Provides the turn execution engine.")
+    Container(lightarchitects_lib, "lightarchitects crate", "Rust lib", "ConversationSession<P> + InMemoryConversationMemory + StrategyRegistry (19 registered profiles: ReActStrategy, BuildStrategy, SecureStrategy, EnrichStrategy, etc.). Turn execution engine.")
   }
 
   System_Ext(litellm, "LiteLLM Proxy", "Provider-agnostic LLM gateway. Translates to Ollama / Anthropic / OpenAI.")
-  System_Ext(strategy_runner, "StrategyRunner", "Internal: ReActStrategy, BuildStrategy, SecureStrategy, EnrichStrategy, etc. — 19 registered profiles in StrategyRegistry.")
 
   Rel(operator, webshell_ui, "Opens lightspace, types intent, submits", "HTTPS")
   Rel(webshell_ui, webshell, "POST /api/conversation; GET /api/conversation/{id}/stream (SSE); POST /api/conversation/{id}", "HTTP/SSE")

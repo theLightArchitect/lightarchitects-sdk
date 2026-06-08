@@ -12,7 +12,7 @@ stateDiagram-v2
 
   idle --> evicted: TTL check — duration_since(last_active) > 1h\n(spawn_eviction_task retains false)
 
-  active --> active: POST /api/conversation/{id}/interrupt\n(interrupt.store(true) — clears active_run;\nnext POST starts fresh turn)
+  active --> idle: POST /api/conversation/{id}/interrupt\n(interrupt AtomicBool → true; active_run aborted;\nnext POST starts fresh turn from idle)
 
   created --> evicted: DELETE /api/conversation/{id}\n(explicit session end)
   idle --> evicted: DELETE /api/conversation/{id}
