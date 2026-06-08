@@ -37,7 +37,7 @@ pub async fn snapshot_handler(
     let slot = state.lightspace_registry.get_or_create(session_id);
     let engine = slot.engine.read().await;
     let snapshot = engine.snapshot();
-    Json(snapshot).into_response()
+    Json(snapshot.into_state()).into_response()
 }
 
 /// `GET /api/lightspace/:session_id/replay`

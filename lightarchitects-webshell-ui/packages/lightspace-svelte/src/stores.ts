@@ -52,6 +52,7 @@ export function canvasReset(snapshot: CanvasSnapshot): void {
   const files = new Map<string, DrawerFileData>(Object.entries(snapshot.drawer_files));
   canvasStore.set(cards);
   drawerStore.set(files);
+  hitlStore.set(new Map());
   const ph = snapshot.materialize_phase;
   if (ph !== null && ph !== undefined) {
     materializePhase.set(ph >= 255 ? 'complete' : 'canvas');

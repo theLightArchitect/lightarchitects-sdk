@@ -43,6 +43,8 @@ const ANNOTATED_SOURCES: Record<CockpitCardRole, string[]> = {
   'd3-portal':           ['src/screens/CockpitFile.svelte'],
   'd3-strat':            ['src/screens/CockpitFile.svelte'],
   'd3-context':          ['src/screens/CockpitFile.svelte'],
+  // d2 phase ladder
+  'phase-ladder':        ['src/screens/CockpitBuild.svelte'],
 };
 
 describe('Cockpit card-role registry', () => {
@@ -184,7 +186,7 @@ describe('Cockpit card-role registry', () => {
     }
   });
 
-  it('registry has exactly 25 roles — adding a card requires updating this test', () => {
-    expect(ALL_COCKPIT_CARD_ROLES).toHaveLength(25);
+  it('registry has exactly 26 roles — adding a card requires updating this test', () => {
+    expect(ALL_COCKPIT_CARD_ROLES).toHaveLength(26);
   });
 });

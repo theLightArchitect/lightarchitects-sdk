@@ -3,6 +3,8 @@
   import type { RouteScope } from '$lib/cockpit/stores/scope';
   import CockpitShell from '$lib/cockpit/shell/CockpitShell.svelte';
   import BuildHealthCard from '$lib/../components/Cockpit/BuildHealthCard.svelte';
+  import HitlModal from '$lib/../components/ironclaw/HitlModal.svelte';
+  import PlanView from '$lib/../components/PlanView.svelte';
   import HitlEscalationsCard from '$lib/../components/Cockpit/HitlEscalationsCard.svelte';
   import WaveComposer from '$lib/../components/Cockpit/WaveComposer.svelte';
   import PRMetadataBlock from '$lib/../components/Cockpit/PRMetadataBlock.svelte';
@@ -16,7 +18,7 @@
   import { api } from '$lib/api';
   import { authHeaders } from '$lib/auth';
   import { goto } from '$app/navigation';
-  import { activeBuild, workerSlots, conductorState, conductorTasks, gitStore, gitApi, gitforestTree } from '$lib/stores';
+  import { activeBuild, workerSlots, conductorState, conductorTasks, gitStore, gitApi, gitforestTree, ironclawHitlEscalation } from '$lib/stores';
   import { selectedTarget, selectedPreset, lastWaveId } from '$lib/cockpit/stores';
   import { select } from '$lib/cockpit/stores/selection';
   import type { WorktreeAssignment } from '$lib/gitforest';
@@ -70,7 +72,7 @@
 
   async function fetchTaskContainerCount() {
     try {
-      const res = await fetch('/api/container/active', { headers: { Authorization: `Bearer ${localStorage.getItem('la_token') ?? ''}` } });
+      const res = await fetch('/api/container/active', { headers: authHeaders() });
       if (!res.ok) return;
       const containers = (await res.json()) as Array<{ kind: { type: string } }>;
       taskContainerCount = containers.filter(c => c.kind.type === 'WorkerTask').length;
@@ -316,6 +318,16 @@
         <WaveComposer />
       </div>
 
+      <!-- ── BUILD HEALTH ─────────────────────────────────────────────── -->
+      <div class="card card-health" data-area="health" data-card-role="build-health">
+        <BuildHealthCard />
+      </div>
+
+      <!-- ── PHASE LADDER (PlanView) ───────────────────────────────────── -->
+      <div class="card card-plan" data-area="plan" data-card-role="phase-ladder">
+        <PlanView />
+      </div>
+
     </div><!-- /bento-d2 -->
 
     <!-- ── PR DETAIL PANEL ────────────────────────────────────────────── -->
@@ -343,6 +355,8 @@
       </div>
     {/if}
 
+  {#if $ironclawHitlEscalation}<HitlModal />{/if}
+
   </div><!-- /cockpit-build -->
 </CockpitShell>
 
@@ -361,7 +375,8 @@
       "portal portal hitl"
       "portal portal wave"
       "decisions decisions git"
-      "health health fleet";
+      "health health fleet"
+      "plan plan plan";
     gap: 12px;
     flex: 1;
     min-height: 0;

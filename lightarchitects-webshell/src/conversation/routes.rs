@@ -9,6 +9,7 @@
 //! | Method | Path | Handler | Body limit |
 //! |--------|------|---------|------------|
 //! | POST | `/api/conversation` | [`create_conversation`] | 256 B |
+//! | GET | `/api/conversation/recent` | [`list_recent_conversations`] | — |
 //! | GET | `/api/conversation/{id}/stream` | [`stream_conversation`] | — |
 //! | POST | `/api/conversation/{id}` | [`send_turn`] | 32 KB |
 //! | POST | `/api/conversation/{id}/interrupt` | [`interrupt_conversation`] | 256 B |
@@ -59,6 +60,27 @@ pub struct TurnRequest {
     pub message: String,
 }
 
+/// Entry in the `GET /api/conversation/recent` response.
+#[derive(Serialize)]
+struct RecentSessionEntry {
+    session_id: Uuid,
+    title: String,
+    turn_count: usize,
+    /// Seconds elapsed since session creation (monotonic, not wall-clock).
+    ago_secs: u64,
+}
+
+/// Query parameters for `GET /api/conversation/recent`.
+#[derive(Deserialize)]
+pub struct RecentQuery {
+    #[serde(default = "default_recent_limit")]
+    limit: usize,
+}
+
+fn default_recent_limit() -> usize {
+    20
+}
+
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
 /// `POST /api/conversation` — create a new standalone conversation session.
@@ -78,6 +100,44 @@ pub async fn create_conversation(
         StatusCode::CREATED,
         Json(CreateConversationResponse { session_id }),
     )
+}
+
+/// `GET /api/conversation/recent` — list active sessions ordered by recency.
+///
+/// Iterates the in-memory session store (O(n), bounded by TTL=3600s eviction).
+/// Returns at most `limit` entries (default 20, cap 100), sorted with the most
+/// recently created session first.
+///
+/// Authenticated via [`auth::AuthGuard`] (Bearer **or** `la_session` cookie).
+pub async fn list_recent_conversations(
+    _: auth::AuthGuard,
+    State(state): State<AppState>,
+    axum::extract::Query(params): axum::extract::Query<RecentQuery>,
+) -> impl IntoResponse {
+    let limit = params.limit.min(100);
+    let mut entries: Vec<RecentSessionEntry> = state
+        .conversation_store
+        .iter()
+        .map(|entry| {
+            let h = entry.value();
+            let inner = h
+                .inner
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            RecentSessionEntry {
+                session_id: h.session_id,
+                title: inner
+                    .title
+                    .clone()
+                    .unwrap_or_else(|| format!("{} turns", inner.turn_count)),
+                turn_count: inner.turn_count,
+                ago_secs: h.created_at.elapsed().as_secs(),
+            }
+        })
+        .collect();
+    entries.sort_by_key(|e| e.ago_secs);
+    entries.truncate(limit);
+    Json(entries)
 }
 
 /// `GET /api/conversation/{id}/stream` — subscribe to the SSE event stream.
@@ -173,6 +233,40 @@ pub async fn interrupt_conversation(
     StatusCode::OK
 }
 
+/// Request body for `POST /api/conversation/{id}/resume`.
+#[derive(Deserialize)]
+pub struct ResumeRequest {
+    /// Single-use nonce issued in the `hitl_pause` SSE event.
+    pub nonce: String,
+}
+
+/// `POST /api/conversation/{id}/resume` — release a parked HITL turn.
+///
+/// The nonce must match an entry in the session's [`ResumeRegistry`]; expired,
+/// mismatched, or already-used nonces return `404 Not Found`.
+///
+/// Returns `200 OK` on success; the parked turn unblocks and resumes SSE
+/// emission. Returns `404` when the session or nonce is not found.
+///
+/// Authenticated via [`auth::AuthGuard`] (Bearer **or** `la_session` cookie).
+pub async fn resume_conversation(
+    _: auth::AuthGuard,
+    Path(session_id): Path<Uuid>,
+    State(state): State<AppState>,
+    Json(body): Json<ResumeRequest>,
+) -> impl IntoResponse {
+    let Some(handle) = state.conversation_store.get(&session_id) else {
+        return StatusCode::NOT_FOUND;
+    };
+    match handle
+        .resume_registry
+        .take(&body.nonce, &session_id.to_string())
+    {
+        Some(_) => StatusCode::OK,
+        None => StatusCode::NOT_FOUND,
+    }
+}
+
 /// `DELETE /api/conversation/{id}` — end a session and remove it from the store.
 ///
 /// Returns `204 No Content` on success, `404 Not Found` if the session does
@@ -217,7 +311,9 @@ async fn drive_conv_stream(
                     skipped = n,
                     "conversation SSE subscriber lagged — events dropped"
                 );
-                let payload = format!(r#"{{"type":"lag","skipped":{n}}}"#);
+                let lag = ConvSSEEvent::Lag { skipped: n };
+                let payload = serde_json::to_string(&lag)
+                    .unwrap_or_else(|_| format!(r#"{{"type":"lag","skipped":{n}}}"#));
                 return Some((Ok(Event::default().data(payload)), rx));
             }
             Err(RecvError::Closed) => return None,

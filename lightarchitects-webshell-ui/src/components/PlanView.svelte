@@ -90,11 +90,36 @@
   async function runAutomatedGate(phaseId: number) {
     if (!draft) return;
     try {
-      await api.evaluateGate(draft.codename, phaseId, true);
-    } catch {
-      // Backend may not have endpoint — mark criteria as passed locally for demo
+      const result = await api.evaluateGate(draft.codename, phaseId, true);
+      if (result?.criteria?.length) {
+        planBuilderDraft.update(d => {
+          if (!d) return d;
+          const resultMap = new Map(
+            (result.criteria as Array<{ id: string; passed: boolean; evidence?: string }>).map(c => [c.id, c]),
+          );
+          return {
+            ...d,
+            phase_detail: d.phase_detail.map(p => {
+              if (p.id !== phaseId) return p;
+              return {
+                ...p,
+                exit_gate: {
+                  ...p.exit_gate,
+                  criteria: p.exit_gate.criteria.map(c => {
+                    const r = resultMap.get(c.id);
+                    return r ? { ...c, passed: r.passed, evidence: r.evidence } : c;
+                  }),
+                },
+              };
+            }),
+          };
+        });
+      }
+    } catch (e) {
+      // Mark automated criteria as FAILED with diagnostic evidence — never silently pass on error.
       planBuilderDraft.update(d => {
         if (!d) return d;
+        const msg = `Backend unavailable: ${e instanceof Error ? e.message : String(e)}`;
         return {
           ...d,
           phase_detail: d.phase_detail.map(p => {
@@ -104,7 +129,7 @@
               exit_gate: {
                 ...p.exit_gate,
                 criteria: p.exit_gate.criteria.map(c =>
-                  c.type === 'automated' ? { ...c, passed: true } : c,
+                  c.type === 'automated' ? { ...c, passed: false, evidence: msg } : c,
                 ),
               },
             };

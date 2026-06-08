@@ -138,6 +138,19 @@ export function sessionAddConvMessage(msg: ConvMessage): void {
   lightspaceSessionStore.update(s => ({ ...s, conv: [...s.conv, msg] }));
 }
 
+/** Append a streaming chunk to the last conv message (for in-flight assistant turns). */
+export function sessionAppendLastConvMessage(chunk: string): void {
+  lightspaceSessionStore.update(s => {
+    if (s.conv.length === 0) return s;
+    const updated = s.conv.slice();
+    updated[updated.length - 1] = {
+      ...updated[updated.length - 1],
+      text: updated[updated.length - 1].text + chunk,
+    };
+    return { ...s, conv: updated };
+  });
+}
+
 export function sessionSetMaterializePhase(phase: MaterializePhase): void {
   lightspaceSessionStore.update(s => ({ ...s, materializePhase: phase }));
 }

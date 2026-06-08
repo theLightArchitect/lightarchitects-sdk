@@ -55,6 +55,8 @@ pub struct ConvSessionInner {
     pub memory: Box<dyn ConversationMemory + Send>,
     /// Active dispatch handle — `Some` while a turn is executing, `None` when idle.
     pub active_run: Option<tokio::task::JoinHandle<()>>,
+    /// Title derived from the first user message (chars 0..80). `None` until first turn.
+    pub title: Option<String>,
 }
 
 /// Session store — keyed by session UUID.
@@ -93,6 +95,11 @@ pub enum ConvSSEEvent {
         /// Human-readable error message suitable for display.
         message: String,
     },
+    /// Subscriber fell behind — some events were dropped from the broadcast channel.
+    Lag {
+        /// Number of events dropped since the last successfully received event.
+        skipped: u64,
+    },
 }
 
 impl ConvSessionHandle {
@@ -112,6 +119,7 @@ impl ConvSessionHandle {
                 turn_count: 0,
                 memory: Box::new(InMemoryConversationMemory::new()),
                 active_run: None,
+                title: None,
             })),
         }
     }

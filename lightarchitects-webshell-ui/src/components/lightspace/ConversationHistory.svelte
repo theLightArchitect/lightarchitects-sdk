@@ -9,16 +9,30 @@
 <script lang="ts">
   import { lightspaceSessionStore } from '$lib/lightspace-stores';
 
+  const WINDOW = 50;
+  let windowStart = $state(0);
   let listEl: HTMLElement | null = null;
 
   $effect(() => {
-    const _ = $lightspaceSessionStore.conv.length;
-    if (listEl) listEl.scrollTop = listEl.scrollHeight;
+    const len = $lightspaceSessionStore.conv.length;
+    // Auto-advance window when new messages push beyond the visible range.
+    if (len > windowStart + WINDOW) {
+      windowStart = len - WINDOW;
+    }
+    // Scroll to bottom on new messages.
+    if (listEl) requestAnimationFrame(() => { if (listEl) listEl.scrollTop = listEl.scrollHeight; });
   });
 </script>
 
 <div class="ls-conv" bind:this={listEl}>
-  {#each $lightspaceSessionStore.conv as msg (msg.id)}
+  {#if windowStart > 0}
+    <button class="ls-conv-load-earlier"
+      onclick={() => { windowStart = Math.max(0, windowStart - WINDOW); }}>
+      ↑ Load {Math.min(windowStart, WINDOW)} earlier messages
+    </button>
+  {/if}
+
+  {#each $lightspaceSessionStore.conv.slice(windowStart) as msg (msg.id)}
     <div class="ls-conv-msg ls-conv-{msg.who}">
       <div class="ls-conv-meta">
         <span class="ls-conv-who">{msg.who}</span>
@@ -76,4 +90,12 @@
   text-align: center;
   padding: 20px 0;
 }
+
+.ls-conv-load-earlier {
+  align-self: center; margin: 4px 0 8px;
+  font-family: var(--ls-font-mono); font-size: 9px;
+  color: var(--ls-text-mute); background: none; border: none;
+  cursor: pointer; text-transform: uppercase; letter-spacing: var(--ls-tk-mid);
+}
+.ls-conv-load-earlier:hover { color: var(--ls-acc); }
 </style>

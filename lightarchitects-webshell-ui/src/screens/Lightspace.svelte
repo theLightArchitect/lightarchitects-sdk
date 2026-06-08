@@ -18,6 +18,7 @@
   import '../styles/lightspace-tokens.css';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
+  import { ls } from '$lib/lightspace/state.svelte';
 
   import {
     lightspaceSessionStore,
@@ -50,15 +51,18 @@
   // Per-session Lightspace UUID. In production, this comes from the server response.
   // In demo mode it is generated client-side so the SSE stream can be exercised locally.
   let lightspaceSessionId = $state<string | null>(null);
+  // Conversation session UUID (production mode only) — separate from the canvas session.
+  let convSessionId = $state<string | null>(null);
 
   $effect(() => {
     if (!lightspaceSessionId) return;
     return subscribeSession(lightspaceSessionId, authHeaders);
   });
 
-  // ── HITL modal (Phase 4) — reuse existing ironclaw HitlModal ────────────
-  // Phase 5 wires the ironclawHitlEscalation store; placeholder here.
-  // import HitlModal from '$lib/../components/ironclaw/HitlModal.svelte';
+  import HitlModal from '$lib/../components/ironclaw/HitlModal.svelte';
+  import {
+    createConversation, sendTurn, subscribeConversation,
+  } from '$lib/lightspace/conversation.svelte';
 
   // ── Route context ─────────────────────────────────────────────────────────
   const buildId = $derived(page.params.buildId ?? null);
@@ -85,14 +89,22 @@
   }
 
   // ── Lobby submit handler (dispatched by LobbyInput) ───────────────────────
-  function handleLobbySubmit(e: CustomEvent<{ intent: string }>) {
+  async function handleLobbySubmit(e: CustomEvent<{ intent: string }>) {
     const intent = e.detail.intent.trim();
     if (!intent) return;
     lightspaceSessionStore.update(s => ({
       ...s, intent, runStatus: 'connecting', materializePhase: 'begin',
     }));
-    // Phase 5: wire to POST /api/lightshell/runs in production mode
-    // Phase 6: trigger TIMELINE engine in demo mode
+    if ($lightspaceSessionStore.mode !== 'production') return;
+    try {
+      const sessionId = await createConversation(intent);
+      await sendTurn(sessionId, intent);
+      convSessionId = sessionId;
+      lightspaceSessionStore.update(s => ({ ...s, runStatus: 'running' }));
+    } catch (err) {
+      lightspaceSessionStore.update(s => ({ ...s, runStatus: 'error' }));
+      console.error('[conv] lobby submit failed:', err);
+    }
   }
 
   // ── Phase 6: Demo TIMELINE engine ────────────────────────────────────────
@@ -176,11 +188,52 @@
     }
   });
 
+  // ── Conversation SSE subscription (production mode only) ─────────────────
   $effect(() => {
-    if ($ironclawHitlEscalation) {
-      // Phase 4.5: HitlModal is imported in Phase 5 full integration.
-      // For now just log — HitlModal will open reactively via ironclawHitlEscalation store.
-    }
+    const sessionId = convSessionId;
+    const mode = $lightspaceSessionStore.mode;
+    if (!sessionId || mode !== 'production') return;
+    return subscribeConversation(
+      sessionId,
+      (ev) => {
+        switch (ev.type) {
+          case 'activity':
+            sessionAddConvMessage({ id: crypto.randomUUID(), who: 'copilot', text: ev.summary ?? '', ts: Date.now() });
+            break;
+          case 'strategy_phase':
+            canvasUpsertCard({
+              id: 'strategy-phase', kind: 'branchlane', span: 'span-12',
+              title: `Phase: ${ev.phase}`, ts: Date.now(),
+              data: { phase: ev.phase, strategy: ev.strategy },
+            });
+            break;
+          case 'hitl_pause':
+            ironclawHitlEscalation.set({
+              type: 'ironclaw_hitl_escalation',
+              build_id: $lightspaceSessionStore.buildId ?? sessionId,
+              task_id: sessionId,
+              decision_topic: 'conversation_hitl',
+              layer_failed: 0,
+              escalation_question: ev.prompt ?? '',
+              nonce: ev.nonce ?? '',
+            });
+            break;
+          case 'done':
+            lightspaceSessionStore.update(s => ({ ...s, runStatus: 'complete' }));
+            break;
+          case 'error':
+            lightspaceSessionStore.update(s => ({ ...s, runStatus: 'error' }));
+            break;
+          case 'lag':
+            console.warn(`[conv-sse] lag: ${ev.skipped ?? 0} events dropped`);
+            break;
+        }
+      },
+      (errMsg) => {
+        console.error('[conv-sse] stream error:', errMsg);
+        lightspaceSessionStore.update(s => ({ ...s, runStatus: 'error' }));
+      },
+    );
   });
 
   // Fleet subscription (production mode only)
@@ -208,8 +261,19 @@
   });
 
   onMount(() => {
-    document.addEventListener('ls:lobby-submit', handleLobbySubmit as EventListener);
-    return () => document.removeEventListener('ls:lobby-submit', handleLobbySubmit as EventListener);
+    // Restore session from localStorage — allows page refresh without losing session.
+    // Direct field assignment skips the materialize animation (no SSE events will fire it).
+    const savedSessionId = localStorage.getItem('la_ls_session_id');
+    if (savedSessionId) {
+      ls.sessionId = savedSessionId;
+      ls.inLobby = false;
+      ls.materializing = false;
+      ls.wsState = 'materialised';
+    }
+
+    const handler = (e: Event) => { void handleLobbySubmit(e as CustomEvent<{ intent: string }>); };
+    document.addEventListener('ls:lobby-submit', handler);
+    return () => document.removeEventListener('ls:lobby-submit', handler);
   });
 </script>
 
@@ -231,8 +295,7 @@
   <FileHeroOverlay />
   <TombHeroOverlay />
 
-  <!-- Phase 5: HitlModal (ironclawHitlEscalation store wired) -->
-  <!-- Phase 6: LightspaceTimeline (demo TIMELINE engine) -->
+  {#if $ironclawHitlEscalation}<HitlModal />{/if}
 
 </div>
 
