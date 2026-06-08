@@ -41,6 +41,7 @@ pub mod gitforest;
 pub mod github_proxy;
 pub mod github_token_store;
 pub mod init;
+pub mod lightspace;
 pub mod mcp_config;
 pub mod memory;
 pub mod polytope_data;

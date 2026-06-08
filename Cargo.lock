@@ -3064,6 +3064,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "json-patch"
+version = "3.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "863726d7afb6bc2590eeff7135d923545e5e964f004c2ccf8716c25e70a86f08"
+dependencies = [
+ "jsonptr",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "jsonptr"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5dea2b27dd239b2556ed7a25ba842fe47fd602e7fc7433c2a8d6106d4d9edd70"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "jsonschema"
 version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3305,6 +3327,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightarchitects-lightspace"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "indexmap 2.14.0",
+ "json-patch",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "lightarchitects-webshell"
 version = "0.2.0"
 dependencies = [
@@ -3328,6 +3365,7 @@ dependencies = [
  "keyring",
  "lightarchitects",
  "lightarchitects-arch",
+ "lightarchitects-lightspace",
  "lightarchitects-webshell-mcp-host",
  "moka",
  "nix 0.29.0",

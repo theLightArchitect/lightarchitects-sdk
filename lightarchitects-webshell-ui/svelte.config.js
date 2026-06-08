@@ -20,6 +20,8 @@ const config = {
     alias: {
       // '@' → 'src' — used throughout the codebase alongside '$lib' → 'src/lib'.
       '@': 'src',
+      // Internal workspace package — resolves without pnpm install (Phase 4.5 formalises linkage).
+      '@lightarchitects/lightspace-svelte': 'packages/lightspace-svelte/src',
     },
     files: {
       assets: 'static',

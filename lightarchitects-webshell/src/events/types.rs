@@ -7,6 +7,9 @@
 use crate::gitforest::BranchNode;
 use crate::memory::types::PromotionEvent;
 use chrono::{DateTime, Utc};
+use lightarchitects_lightspace::types::{
+    Actor, CardData, CardTransition, DrawerFileAction, DrawerFileData, EvidenceTier, UpdateMode,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -304,6 +307,70 @@ pub enum WebEvent {
     /// the new child is installed in `AppState`. Frontend uses this to trigger
     /// a WS reconnect and update the backend-picker affordance.
     PtyRespawned(PtyRespawnedEvent),
+
+    // ── lightarchitects-lightspace (Phase 3 Wave 2a) ─────────────────────────
+    /// A new card was proposed for the Lightspace canvas.
+    ///
+    /// Wire tag: `"lightspace_card"`. Topic: `v1.lightspace.canvas.card`.
+    /// Reducer rejects cards missing `provenance.{agent, source}`
+    /// (`E_CANVAS_CARD_PROVENANCE_MISSING` per G6).
+    LightspaceCard(LightspaceCardEvent),
+
+    /// A card's lifecycle state changed on the canvas.
+    ///
+    /// Wire tag: `"lightspace_lifecycle"`. Topic: `v1.lightspace.canvas.lifecycle`.
+    /// `ghost = true` + `transition = Detach` leaves a tombstone for history rendering.
+    LightspaceLifecycle(LightspaceLifecycleEvent),
+
+    /// Card content was updated via replace, append, or RFC 6902 patch.
+    ///
+    /// Wire tag: `"lightspace_update"`. Topic: `v1.lightspace.canvas.update`.
+    /// Reducer enforces monotonic `seq` — out-of-order updates trigger a snapshot
+    /// fallback per G8.
+    LightspaceUpdate(LightspaceUpdateEvent),
+
+    /// A card graduated to a persistent drawer file.
+    ///
+    /// Wire tag: `"lightspace_graduate"`. Topic: `v1.lightspace.canvas.graduate`.
+    /// File I/O is performed by the SSE handler after the reducer stages the graduation.
+    LightspaceGraduate(LightspaceGraduateEvent),
+
+    /// Workspace materialization choreography advanced to a new phase.
+    ///
+    /// Wire tag: `"lightspace_materialize"`. Topic: `v1.lightspace.workspace.materialize`.
+    /// `phase = 255` signals choreography complete (triggers the ≤1500ms SLO assertion
+    /// in E2E per G5).
+    LightspaceMaterialize(LightspaceMaterializeEvent),
+
+    /// A gating precondition was evaluated for a canvas card.
+    ///
+    /// Wire tag: `"lightspace_gating"`. Topic: `v1.lightspace.canvas.gating`.
+    /// Fail-closed: instrument cards remain disabled until `satisfied = true` (G7 + CWE-754).
+    LightspaceGating(LightspaceGatingEvent),
+
+    /// A `BranchLane` card received a lanes update.
+    ///
+    /// Wire tag: `"lightspace_branch_lane"`. Topic: `v1.lightspace.canvas.branch_lane`.
+    /// `committed_lane_id` highlights the winning lane within ≤200ms.
+    LightspaceBranchLane(LightspaceBranchLaneEvent),
+
+    /// A confidence record was set for a canvas target.
+    ///
+    /// Wire tag: `"lightspace_confidence"`. Topic: `v1.lightspace.canvas.confidence`.
+    /// `contradicts` drives `ContradictionBadge` rendering on the referenced targets.
+    LightspaceConfidence(LightspaceConfidenceEvent),
+
+    /// A file was attached to the session drawer.
+    ///
+    /// Wire tag: `"lightspace_drawer_file"`. Topic: `v1.lightspace.drawer.file`.
+    /// `content_uri` has been ACL-validated before emission (CWE-22).
+    LightspaceDrawerFile(LightspaceDrawerFileEvent),
+
+    /// An action was performed on an existing drawer file.
+    ///
+    /// Wire tag: `"lightspace_drawer_event"`. Topic: `v1.lightspace.drawer.event`.
+    /// Covers Detach and Update actions.
+    LightspaceDrawerEvent(LightspaceDrawerEventPayload),
 }
 
 /// Single A2A task lifecycle envelope emitted into the `GlobalEventStore`.
@@ -1390,6 +1457,185 @@ pub struct GateEvalEvent {
     pub timestamp: DateTime<Utc>,
 }
 
+// ── lightarchitects-lightspace payload types (Phase 3 Wave 2a) ──────────────
+
+/// Payload for [`WebEvent::LightspaceCard`].
+///
+/// Emitted when the copilot proposes a new card. Provenance is enforced at the
+/// reducer (`E_CANVAS_CARD_PROVENANCE_MISSING` per G6).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LightspaceCardEvent {
+    /// Session this card belongs to (`UUIDv7`).
+    pub session_id: Uuid,
+    /// The card data to attach to the canvas.
+    pub card: CardData,
+}
+
+/// Payload for [`WebEvent::LightspaceLifecycle`].
+///
+/// Emitted on every card lifecycle transition (attach / detach / graduate).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LightspaceLifecycleEvent {
+    /// Session this event belongs to.
+    pub session_id: Uuid,
+    /// Target card identifier.
+    pub card_id: String,
+    /// Transition to perform.
+    pub transition: CardTransition,
+    /// Who initiated the transition.
+    pub actor: Actor,
+    /// If `true` and transition is `Detach`, retain a tombstone ghost.
+    pub ghost: bool,
+    /// Optional attribution label for provenance display.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attribution: Option<String>,
+}
+
+/// Payload for [`WebEvent::LightspaceUpdate`].
+///
+/// Reducer enforces monotonic `seq` — out-of-order updates trigger a snapshot
+/// fallback per G8 (`lightspace.event.update.v1`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LightspaceUpdateEvent {
+    /// Session this event belongs to.
+    pub session_id: Uuid,
+    /// Target card identifier.
+    pub card_id: String,
+    /// Monotonic sequence number (must be > last seen for this card).
+    pub seq: u64,
+    /// How to apply the payload (replace / append / patch).
+    pub mode: UpdateMode,
+    /// RFC 6901 JSON pointer — required for `Append` and `Patch` modes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// Content to apply (bounded to ≤64 KiB per CWE-770 safeguard in D6).
+    pub payload: serde_json::Value,
+}
+
+/// Payload for [`WebEvent::LightspaceGraduate`].
+///
+/// File I/O is performed by the SSE handler outside the reducer after the
+/// reducer stages the graduation in `pending_graduations`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LightspaceGraduateEvent {
+    /// Session this event belongs to.
+    pub session_id: Uuid,
+    /// Card being graduated to a drawer file.
+    pub card_id: String,
+    /// Target drawer file identifier.
+    pub file_id: String,
+    /// Destination URI (CWE-22 validated by the SSE handler before I/O).
+    pub content_uri: String,
+    /// MIME type of the graduated content.
+    pub content_mime: String,
+    /// Whether to retain a tombstone ghost after graduation.
+    pub retain_tombstone: bool,
+}
+
+/// Payload for [`WebEvent::LightspaceMaterialize`].
+///
+/// `phase = 255` signals choreography complete — triggers the ≤1500ms SLO
+/// assertion in E2E tests per G5.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LightspaceMaterializeEvent {
+    /// Session this event belongs to.
+    pub session_id: Uuid,
+    /// Choreography phase index. `255` = `phase=complete`.
+    pub phase: u32,
+}
+
+/// Payload for [`WebEvent::LightspaceGating`].
+///
+/// Fail-closed: instrument cards remain disabled until `satisfied = true`
+/// (G7 + CWE-754). Gate auto-re-evaluation closes CWE-367 TOCTOU (G13).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LightspaceGatingEvent {
+    /// Session this event belongs to.
+    pub session_id: Uuid,
+    /// Target card whose gate was evaluated.
+    pub card_id: String,
+    /// Gate identifier matching the card's `gating_preconditions` field.
+    pub gate: String,
+    /// Whether the gate precondition is currently satisfied.
+    pub satisfied: bool,
+    /// Optional human-readable reason for the current state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// Payload for [`WebEvent::LightspaceBranchLane`].
+///
+/// `committed_lane_id` highlights the winning lane within ≤200ms per S4 soft
+/// guarantee.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LightspaceBranchLaneEvent {
+    /// Session this event belongs to.
+    pub session_id: Uuid,
+    /// Target `BranchLane` card identifier.
+    pub card_id: String,
+    /// Updated lanes payload (stored in `card.content`).
+    pub lanes: serde_json::Value,
+    /// AYIN fork span ID for lineage tracing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fork_span_id: Option<String>,
+    /// ID of the committed (winning) lane, set after a lane is selected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub committed_lane_id: Option<String>,
+}
+
+/// Payload for [`WebEvent::LightspaceConfidence`].
+///
+/// `contradicts` drives `ContradictionBadge` rendering; when two or more sources
+/// contradict each other the reducer synthesizes a `PendingResolution`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LightspaceConfidenceEvent {
+    /// Session this event belongs to.
+    pub session_id: Uuid,
+    /// Target card or drawer file identifier.
+    pub target_id: String,
+    /// Kind of the target (card kind name or `"drawer_file"`).
+    pub target_kind: String,
+    /// Confidence score in `0.0..=1.0`.
+    pub value: f64,
+    /// Non-trivial basis statement (min 5 chars, enforced by reducer).
+    pub basis: String,
+    /// Target IDs that this confidence record contradicts.
+    pub contradicts: Vec<String>,
+    /// Evidence quality tier.
+    pub evidence_tier: EvidenceTier,
+}
+
+/// Payload for [`WebEvent::LightspaceDrawerFile`].
+///
+/// `content_uri` must pass the URI scheme ACL before emission (helix://, file://,
+/// https://, ayin://, memory:// — enforced by `uri_scheme_acl` in Wave 2b).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LightspaceDrawerFileEvent {
+    /// Session this event belongs to.
+    pub session_id: Uuid,
+    /// The drawer file to attach.
+    pub file: DrawerFileData,
+}
+
+/// Payload for [`WebEvent::LightspaceDrawerEvent`].
+///
+/// Covers `Detach` and `Update` actions on existing drawer files.
+/// `new_content_uri` is CWE-22 validated before the event is emitted.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LightspaceDrawerEventPayload {
+    /// Session this event belongs to.
+    pub session_id: Uuid,
+    /// Target drawer file identifier.
+    pub file_id: String,
+    /// Action being performed.
+    pub action: DrawerFileAction,
+    /// Who initiated the action.
+    pub actor: Actor,
+    /// New content URI (only for `Update` action; CWE-22 validated).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_content_uri: Option<String>,
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -1566,6 +1812,8 @@ mod tests {
     #[allow(clippy::too_many_lines)]
     #[test]
     fn sse_contract_all_web_event_variants_have_known_type_tags() {
+        use lightarchitects_lightspace::types::{CardKind, CardState, Provenance};
+
         // Helper: extract the `type` field from a serialised WebEvent.
         fn type_tag(event: &WebEvent) -> String {
             let json = serde_json::to_string(event).unwrap();
@@ -1739,6 +1987,128 @@ mod tests {
                     spec_compliance_claim: None,
                     confidence: 0.97,
                     timestamp: chrono::Utc::now(),
+                }),
+            ),
+            // lightarchitects-lightspace Phase 3 Wave 2a
+            (
+                "lightspace_card",
+                WebEvent::LightspaceCard(LightspaceCardEvent {
+                    session_id: uuid::Uuid::nil(),
+                    card: CardData {
+                        id: "card-001".to_owned(),
+                        kind: CardKind::Research,
+                        title: "Test card".to_owned(),
+                        content: serde_json::Value::Null,
+                        provenance: Provenance {
+                            agent: "corso".to_owned(),
+                            source_uri: "helix://analytical/entries/test.md".to_owned(),
+                            span_id: None,
+                            ts: chrono::Utc::now(),
+                        },
+                        state: CardState::Attached,
+                        attribution: None,
+                    },
+                }),
+            ),
+            (
+                "lightspace_lifecycle",
+                WebEvent::LightspaceLifecycle(LightspaceLifecycleEvent {
+                    session_id: uuid::Uuid::nil(),
+                    card_id: "card-001".to_owned(),
+                    transition: CardTransition::Detach,
+                    actor: Actor::Copilot,
+                    ghost: true,
+                    attribution: None,
+                }),
+            ),
+            (
+                "lightspace_update",
+                WebEvent::LightspaceUpdate(LightspaceUpdateEvent {
+                    session_id: uuid::Uuid::nil(),
+                    card_id: "card-001".to_owned(),
+                    seq: 1,
+                    mode: UpdateMode::Replace,
+                    path: None,
+                    payload: serde_json::json!({"lines": []}),
+                }),
+            ),
+            (
+                "lightspace_graduate",
+                WebEvent::LightspaceGraduate(LightspaceGraduateEvent {
+                    session_id: uuid::Uuid::nil(),
+                    card_id: "card-001".to_owned(),
+                    file_id: "file-001".to_owned(),
+                    content_uri: "file:///Users/kft/.lightarchitects/lightspace/test.md".to_owned(),
+                    content_mime: "text/markdown".to_owned(),
+                    retain_tombstone: true,
+                }),
+            ),
+            (
+                "lightspace_materialize",
+                WebEvent::LightspaceMaterialize(LightspaceMaterializeEvent {
+                    session_id: uuid::Uuid::nil(),
+                    phase: 255,
+                }),
+            ),
+            (
+                "lightspace_gating",
+                WebEvent::LightspaceGating(LightspaceGatingEvent {
+                    session_id: uuid::Uuid::nil(),
+                    card_id: "card-001".to_owned(),
+                    gate: "SANDBOX-STATUS".to_owned(),
+                    satisfied: false,
+                    reason: Some("referent monitor not yet reporting".to_owned()),
+                }),
+            ),
+            (
+                "lightspace_branch_lane",
+                WebEvent::LightspaceBranchLane(LightspaceBranchLaneEvent {
+                    session_id: uuid::Uuid::nil(),
+                    card_id: "card-001".to_owned(),
+                    lanes: serde_json::json!([]),
+                    fork_span_id: None,
+                    committed_lane_id: None,
+                }),
+            ),
+            (
+                "lightspace_confidence",
+                WebEvent::LightspaceConfidence(LightspaceConfidenceEvent {
+                    session_id: uuid::Uuid::nil(),
+                    target_id: "card-001".to_owned(),
+                    target_kind: "research".to_owned(),
+                    value: 0.85,
+                    basis: "Three independent sources confirm the claim".to_owned(),
+                    contradicts: vec![],
+                    evidence_tier: EvidenceTier::High,
+                }),
+            ),
+            (
+                "lightspace_drawer_file",
+                WebEvent::LightspaceDrawerFile(LightspaceDrawerFileEvent {
+                    session_id: uuid::Uuid::nil(),
+                    file: DrawerFileData {
+                        id: "file-001".to_owned(),
+                        mime_type: "text/markdown".to_owned(),
+                        content_uri: "file:///Users/kft/.lightarchitects/lightspace/test.md"
+                            .to_owned(),
+                        size_bytes: 1024,
+                        provenance: Provenance {
+                            agent: "corso".to_owned(),
+                            source_uri: "helix://analytical/entries/test.md".to_owned(),
+                            span_id: None,
+                            ts: chrono::Utc::now(),
+                        },
+                    },
+                }),
+            ),
+            (
+                "lightspace_drawer_event",
+                WebEvent::LightspaceDrawerEvent(LightspaceDrawerEventPayload {
+                    session_id: uuid::Uuid::nil(),
+                    file_id: "file-001".to_owned(),
+                    action: DrawerFileAction::Detach,
+                    actor: Actor::Operator,
+                    new_content_uri: None,
                 }),
             ),
         ];

@@ -17,6 +17,8 @@ path = "src/main.rs"
 lightarchitects-webshell-mcp-host = { path = "../lightarchitects-webshell-mcp-host" }
 # Hardened path resolution — canonicalize_and_check (TOCTOU + symlink guard)
 lightarchitects-arch = { path = "../lightarchitects-arch" }
+# Pure reducer engine + canvas types for Lightspace (Phase 3 Wave 2a)
+lightarchitects-lightspace = { path = "../lightarchitects-lightspace" }
 # Canonical path resolution (unified-forging-vault Phase 1 helper)
 lightarchitects = { path = "../lightarchitects", features = [
     "chat",

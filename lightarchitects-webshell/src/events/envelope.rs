@@ -190,6 +190,18 @@ fn topic_for(event: &WebEvent) -> String {
 
         // ── PTY hot-respawn (webshell-pty-hot-respawn Phase 3) ───────────────
         WebEvent::PtyRespawned(_) => "v1.pty.respawned",
+
+        // ── lightarchitects-lightspace (Phase 3 Wave 2a) ─────────────────────
+        WebEvent::LightspaceCard(_) => "v1.lightspace.canvas.card",
+        WebEvent::LightspaceLifecycle(_) => "v1.lightspace.canvas.lifecycle",
+        WebEvent::LightspaceUpdate(_) => "v1.lightspace.canvas.update",
+        WebEvent::LightspaceGraduate(_) => "v1.lightspace.canvas.graduate",
+        WebEvent::LightspaceMaterialize(_) => "v1.lightspace.workspace.materialize",
+        WebEvent::LightspaceGating(_) => "v1.lightspace.canvas.gating",
+        WebEvent::LightspaceBranchLane(_) => "v1.lightspace.canvas.branch_lane",
+        WebEvent::LightspaceConfidence(_) => "v1.lightspace.canvas.confidence",
+        WebEvent::LightspaceDrawerFile(_) => "v1.lightspace.drawer.file",
+        WebEvent::LightspaceDrawerEvent(_) => "v1.lightspace.drawer.event",
     }
     .to_owned()
 }
@@ -477,6 +489,97 @@ mod tests {
                 model: None,
                 conversation_continuity: "resumed".into(),
                 old_agent_kind: crate::config::AgentKind::Lightarchitects,
+            }),
+            // lightarchitects-lightspace Phase 3 Wave 2a — 10 canvas/drawer variants
+            WebEvent::LightspaceCard(crate::events::types::LightspaceCardEvent {
+                session_id: uuid::Uuid::nil(),
+                card: lightarchitects_lightspace::types::CardData {
+                    id: "c1".into(),
+                    kind: lightarchitects_lightspace::types::CardKind::Research,
+                    title: "t".into(),
+                    content: serde_json::Value::Null,
+                    provenance: lightarchitects_lightspace::types::Provenance {
+                        agent: "corso".into(),
+                        source_uri: "helix://analytical/test.md".into(),
+                        span_id: None,
+                        ts: Utc::now(),
+                    },
+                    state: lightarchitects_lightspace::types::CardState::Attached,
+                    attribution: None,
+                },
+            }),
+            WebEvent::LightspaceLifecycle(crate::events::types::LightspaceLifecycleEvent {
+                session_id: uuid::Uuid::nil(),
+                card_id: "c1".into(),
+                transition: lightarchitects_lightspace::types::CardTransition::Detach,
+                actor: lightarchitects_lightspace::types::Actor::Copilot,
+                ghost: false,
+                attribution: None,
+            }),
+            WebEvent::LightspaceUpdate(crate::events::types::LightspaceUpdateEvent {
+                session_id: uuid::Uuid::nil(),
+                card_id: "c1".into(),
+                seq: 1,
+                mode: lightarchitects_lightspace::types::UpdateMode::Replace,
+                path: None,
+                payload: serde_json::Value::Null,
+            }),
+            WebEvent::LightspaceGraduate(crate::events::types::LightspaceGraduateEvent {
+                session_id: uuid::Uuid::nil(),
+                card_id: "c1".into(),
+                file_id: "f1".into(),
+                content_uri: "file:///tmp/test.md".into(),
+                content_mime: "text/markdown".into(),
+                retain_tombstone: false,
+            }),
+            WebEvent::LightspaceMaterialize(crate::events::types::LightspaceMaterializeEvent {
+                session_id: uuid::Uuid::nil(),
+                phase: 255,
+            }),
+            WebEvent::LightspaceGating(crate::events::types::LightspaceGatingEvent {
+                session_id: uuid::Uuid::nil(),
+                card_id: "c1".into(),
+                gate: "SANDBOX-STATUS".into(),
+                satisfied: false,
+                reason: None,
+            }),
+            WebEvent::LightspaceBranchLane(crate::events::types::LightspaceBranchLaneEvent {
+                session_id: uuid::Uuid::nil(),
+                card_id: "c1".into(),
+                lanes: serde_json::Value::Null,
+                fork_span_id: None,
+                committed_lane_id: None,
+            }),
+            WebEvent::LightspaceConfidence(crate::events::types::LightspaceConfidenceEvent {
+                session_id: uuid::Uuid::nil(),
+                target_id: "c1".into(),
+                target_kind: "research".into(),
+                value: 0.9,
+                basis: "Three independent sources".into(),
+                contradicts: vec![],
+                evidence_tier: lightarchitects_lightspace::types::EvidenceTier::High,
+            }),
+            WebEvent::LightspaceDrawerFile(crate::events::types::LightspaceDrawerFileEvent {
+                session_id: uuid::Uuid::nil(),
+                file: lightarchitects_lightspace::types::DrawerFileData {
+                    id: "f1".into(),
+                    mime_type: "text/markdown".into(),
+                    content_uri: "file:///tmp/test.md".into(),
+                    size_bytes: 0,
+                    provenance: lightarchitects_lightspace::types::Provenance {
+                        agent: "corso".into(),
+                        source_uri: "helix://analytical/test.md".into(),
+                        span_id: None,
+                        ts: Utc::now(),
+                    },
+                },
+            }),
+            WebEvent::LightspaceDrawerEvent(crate::events::types::LightspaceDrawerEventPayload {
+                session_id: uuid::Uuid::nil(),
+                file_id: "f1".into(),
+                action: lightarchitects_lightspace::types::DrawerFileAction::Detach,
+                actor: lightarchitects_lightspace::types::Actor::Operator,
+                new_content_uri: None,
             }),
         ];
 

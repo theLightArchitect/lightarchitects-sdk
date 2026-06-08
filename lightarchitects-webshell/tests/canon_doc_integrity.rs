@@ -14,18 +14,26 @@
 //! When §1.2 of `webshell-api-surface-v1.md` is updated, adjust the constant below.
 
 use lightarchitects::fleet::FleetSnapshot;
+use lightarchitects_lightspace::types::{
+    Actor, CardData, CardKind, CardState, CardTransition, DrawerFileAction, DrawerFileData,
+    EvidenceTier, Provenance, UpdateMode,
+};
 use lightarchitects_webshell::events::types::{
     A2aEnvelopeEvent, A2aEnvelopeType, AyinStatus, BudgetExhaustedEvent, BudgetWarningEvent,
     ConductorTickEvent, EscalationEvent, FixAgentIterationEvent, GateEvalEvent, GateVerdictKind,
     HitlResolution, IronclawHitlEscalationEvent, IronclawHitlResolutionEvent,
-    MergeAgentStatusEvent, ProjectUpdateKind, ProjectUpdatePayload, PtyRespawnedEvent,
-    QuestionAnsweredEvent, QuestionHeadlessPolicy, QuestionItem, QuestionOptionItem,
-    QuestionPromptEvent, WebEvent, WorkerSlotGaugeEvent,
+    LightspaceBranchLaneEvent, LightspaceCardEvent, LightspaceConfidenceEvent,
+    LightspaceDrawerEventPayload, LightspaceDrawerFileEvent, LightspaceGatingEvent,
+    LightspaceGraduateEvent, LightspaceLifecycleEvent, LightspaceMaterializeEvent,
+    LightspaceUpdateEvent, MergeAgentStatusEvent, ProjectUpdateKind, ProjectUpdatePayload,
+    PtyRespawnedEvent, QuestionAnsweredEvent, QuestionHeadlessPolicy, QuestionItem,
+    QuestionOptionItem, QuestionPromptEvent, WebEvent, WorkerSlotGaugeEvent,
 };
 
 /// Total expected `WebEvent` variant count.  Update alongside the §1.2 table
 /// in `webshell-api-surface-v1.md` whenever variants are added or removed.
-const EXPECTED_VARIANT_COUNT: usize = 35;
+/// Phase 3 Wave 2a added 10 lightspace variants: 35 → 45.
+const EXPECTED_VARIANT_COUNT: usize = 45;
 
 /// Exhaustive match acting as a compiler-enforced variant count ratchet.
 ///
@@ -80,6 +88,17 @@ fn all_variants_matched(event: &WebEvent) {
         WebEvent::A2aEnvelope(_) => {}
         // ── webshell-pty-hot-respawn ──────────────────────────────────────────
         WebEvent::PtyRespawned(_) => {}
+        // ── lightarchitects-lightspace (Phase 3 Wave 2a) ─────────────────────
+        WebEvent::LightspaceCard(_) => {}
+        WebEvent::LightspaceLifecycle(_) => {}
+        WebEvent::LightspaceUpdate(_) => {}
+        WebEvent::LightspaceGraduate(_) => {}
+        WebEvent::LightspaceMaterialize(_) => {}
+        WebEvent::LightspaceGating(_) => {}
+        WebEvent::LightspaceBranchLane(_) => {}
+        WebEvent::LightspaceConfidence(_) => {}
+        WebEvent::LightspaceDrawerFile(_) => {}
+        WebEvent::LightspaceDrawerEvent(_) => {}
     }
 }
 
@@ -233,9 +252,103 @@ fn web_event_variant_count_matches_canon_doc() {
     });
     all_variants_matched(&pty_respawned);
 
+    // ── lightarchitects-lightspace Phase 3 Wave 2a ────────────────────────────
+    let prov = Provenance {
+        agent: "corso".to_owned(),
+        source_uri: "helix://analytical/test.md".to_owned(),
+        span_id: None,
+        ts: chrono::Utc::now(),
+    };
+    let card = LightspaceCardEvent {
+        session_id: nil,
+        card: CardData {
+            id: "c1".to_owned(),
+            kind: CardKind::Research,
+            title: "t".to_owned(),
+            content: serde_json::Value::Null,
+            provenance: prov.clone(),
+            state: CardState::Attached,
+            attribution: None,
+        },
+    };
+    all_variants_matched(&WebEvent::LightspaceCard(card));
+
+    all_variants_matched(&WebEvent::LightspaceLifecycle(LightspaceLifecycleEvent {
+        session_id: nil,
+        card_id: "c1".to_owned(),
+        transition: CardTransition::Detach,
+        actor: Actor::Copilot,
+        ghost: false,
+        attribution: None,
+    }));
+    all_variants_matched(&WebEvent::LightspaceUpdate(LightspaceUpdateEvent {
+        session_id: nil,
+        card_id: "c1".to_owned(),
+        seq: 1,
+        mode: UpdateMode::Replace,
+        path: None,
+        payload: serde_json::Value::Null,
+    }));
+    all_variants_matched(&WebEvent::LightspaceGraduate(LightspaceGraduateEvent {
+        session_id: nil,
+        card_id: "c1".to_owned(),
+        file_id: "f1".to_owned(),
+        content_uri: "file:///tmp/test.md".to_owned(),
+        content_mime: "text/markdown".to_owned(),
+        retain_tombstone: false,
+    }));
+    all_variants_matched(&WebEvent::LightspaceMaterialize(
+        LightspaceMaterializeEvent {
+            session_id: nil,
+            phase: 255,
+        },
+    ));
+    all_variants_matched(&WebEvent::LightspaceGating(LightspaceGatingEvent {
+        session_id: nil,
+        card_id: "c1".to_owned(),
+        gate: "SANDBOX-STATUS".to_owned(),
+        satisfied: false,
+        reason: None,
+    }));
+    all_variants_matched(&WebEvent::LightspaceBranchLane(LightspaceBranchLaneEvent {
+        session_id: nil,
+        card_id: "c1".to_owned(),
+        lanes: serde_json::Value::Null,
+        fork_span_id: None,
+        committed_lane_id: None,
+    }));
+    all_variants_matched(&WebEvent::LightspaceConfidence(LightspaceConfidenceEvent {
+        session_id: nil,
+        target_id: "c1".to_owned(),
+        target_kind: "research".to_owned(),
+        value: 0.9,
+        basis: "Three independent sources confirm".to_owned(),
+        contradicts: vec![],
+        evidence_tier: EvidenceTier::High,
+    }));
+    all_variants_matched(&WebEvent::LightspaceDrawerFile(LightspaceDrawerFileEvent {
+        session_id: nil,
+        file: DrawerFileData {
+            id: "f1".to_owned(),
+            mime_type: "text/markdown".to_owned(),
+            content_uri: "file:///tmp/test.md".to_owned(),
+            size_bytes: 0,
+            provenance: prov,
+        },
+    }));
+    all_variants_matched(&WebEvent::LightspaceDrawerEvent(
+        LightspaceDrawerEventPayload {
+            session_id: nil,
+            file_id: "f1".to_owned(),
+            action: DrawerFileAction::Detach,
+            actor: Actor::Operator,
+            new_content_uri: None,
+        },
+    ));
+
     assert_eq!(
-        EXPECTED_VARIANT_COUNT, 35,
-        "EXPECTED_VARIANT_COUNT must equal the actual WebEvent variant count (35)"
+        EXPECTED_VARIANT_COUNT, 45,
+        "EXPECTED_VARIANT_COUNT must equal the actual WebEvent variant count (45)"
     );
 }
 

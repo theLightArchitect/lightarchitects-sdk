@@ -26,6 +26,7 @@ pub mod global_events;
 pub mod helix_decision_writer;
 pub mod helix_watcher;
 pub mod hitl_relay;
+pub mod lightspace_sse;
 pub mod lightsquad_bridge;
 pub mod notify;
 pub mod soul; // task #51 split target — see events/soul/mod.rs
