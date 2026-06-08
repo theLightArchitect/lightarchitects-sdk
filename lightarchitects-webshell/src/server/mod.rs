@@ -503,6 +503,12 @@ pub struct AppState {
     /// Guards against concurrent respawns (409) and exposes current state
     /// to health checks. Defaults to [`pty_respawn::PtyState::Idle`].
     pub pty_state: Arc<tokio::sync::RwLock<pty_respawn::PtyState>>,
+    /// Standalone conversation sessions — keyed by session UUID.
+    ///
+    /// Populated by `POST /api/conversation`; evicted after 1h of idle time or
+    /// `DELETE /api/conversation/{id}`. Does NOT require a [`BuildSession`] —
+    /// closes the lightspace cold-start gap (Northstar P1).
+    pub conversation_store: Arc<crate::conversation::session::ConvSessionStore>,
 }
 
 impl AppState {
@@ -829,6 +835,11 @@ impl AppState {
             program_run: program_routes::program_run_slot(),
             pty_child: Arc::new(tokio::sync::Mutex::new(None)),
             pty_state: Arc::new(tokio::sync::RwLock::new(pty_respawn::PtyState::default())),
+            conversation_store: {
+                let store = Arc::new(crate::conversation::session::ConvSessionStore::new());
+                crate::conversation::session::spawn_eviction_task(Arc::clone(&store));
+                store
+            },
         }
     }
 
@@ -973,6 +984,7 @@ impl AppState {
             program_run: program_routes::program_run_slot(),
             pty_child: Arc::new(tokio::sync::Mutex::new(None)),
             pty_state: Arc::new(tokio::sync::RwLock::new(pty_respawn::PtyState::default())),
+            conversation_store: Arc::new(crate::conversation::session::ConvSessionStore::new()),
         }
     }
 }
