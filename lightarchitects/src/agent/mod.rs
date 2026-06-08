@@ -205,3 +205,8 @@ pub mod skills;
 // `crate::agent::cache::{SoulCache, CacheKey, ...}` directly.
 #[cfg(feature = "soul-cache")]
 pub mod cache;
+
+/// LightSquad Mesh-Aware Offload — wraps an [`LlmAgentProvider`] and routes
+/// pattern-matched, no-tool-use requests through a cheap-tier specialist model
+/// (e.g. `glm-5.1:cloud` via LiteLLM). See the plan for full design rationale.
+pub mod offload;
