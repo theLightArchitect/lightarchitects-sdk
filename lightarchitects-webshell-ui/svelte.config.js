@@ -6,16 +6,21 @@ const config = {
   preprocess: vitePreprocess({ script: true }),
   kit: {
     adapter: adapter({
-      // SPA mode: Rust gateway serves this file for all non-/api paths.
-      // Name it 200.html so standard SPA hosts (Nginx, Caddy, CF Pages) pick it up.
-      fallback: '200.html',
+      // Output to dist/ — matches lightarchitects-webshell/src/static_assets.rs
+      // which uses rust-embed with #[folder = "../lightarchitects-webshell-ui/dist/"].
+      // The Rust binary embeds these files at compile time; changing the output
+      // directory would require updating the rust-embed folder attribute.
+      pages: 'dist',
+      assets: 'dist',
+      // SPA fallback: served for all non-asset paths by the Rust handler at
+      // lightarchitects-webshell/src/static_assets.rs::serve() which falls back
+      // to Assets::get("index.html") — must match this filename.
+      fallback: 'index.html',
     }),
     alias: {
-      // '@' → 'src' — codebase uses this alongside SvelteKit's automatic '$lib' → 'src/lib'.
-      // Declared here (not tsconfig paths) to avoid interference with SvelteKit's generated tsconfig.
+      // '@' → 'src' — used throughout the codebase alongside '$lib' → 'src/lib'.
       '@': 'src',
     },
-    // SvelteKit's generated tsconfig.json extends this; tsconfig.json must NOT duplicate paths.
     files: {
       assets: 'static',
     },
