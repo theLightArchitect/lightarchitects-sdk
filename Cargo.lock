@@ -3364,6 +3364,7 @@ dependencies = [
  "keyring",
  "lightarchitects",
  "lightarchitects-arch",
+ "lightarchitects-lightspace",
  "lightarchitects-webshell-mcp-host",
  "moka",
  "nix 0.29.0",

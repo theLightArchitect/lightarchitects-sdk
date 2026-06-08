@@ -63,6 +63,7 @@ pub mod container_relay;
 pub mod exec_routes;
 pub mod fleet_routes;
 pub mod git_routes;
+pub mod lightspace_routes;
 pub mod litellm_chat;
 pub mod litellm_state;
 pub mod loops_demo;
@@ -510,6 +511,14 @@ pub struct AppState {
     /// `DELETE /api/conversation/{id}`. Does NOT require a [`BuildSession`] —
     /// closes the lightspace cold-start gap (Northstar P1).
     pub conversation_store: Arc<crate::conversation::session::ConvSessionStore>,
+    /// Per-session Lightspace canvas registry — JIT-reactive workspace state.
+    ///
+    /// Each session gets its own [`Lightspace`] reducer + broadcast channel.
+    /// Created on first access via `get_or_create`; survives for the process
+    /// lifetime. Retention enforcement runs after each event append.
+    ///
+    /// [`Lightspace`]: lightarchitects_lightspace::Lightspace
+    pub lightspace_registry: Arc<crate::lightspace::session_registry::LightspaceRegistry>,
 }
 
 impl AppState {
@@ -841,6 +850,9 @@ impl AppState {
                 crate::conversation::session::spawn_eviction_task(Arc::clone(&store));
                 store
             },
+            lightspace_registry: Arc::new(
+                crate::lightspace::session_registry::LightspaceRegistry::new(),
+            ),
         }
     }
 
@@ -986,6 +998,9 @@ impl AppState {
             pty_child: Arc::new(tokio::sync::Mutex::new(None)),
             pty_state: Arc::new(tokio::sync::RwLock::new(pty_respawn::PtyState::default())),
             conversation_store: Arc::new(crate::conversation::session::ConvSessionStore::new()),
+            lightspace_registry: Arc::new(
+                crate::lightspace::session_registry::LightspaceRegistry::new(),
+            ),
         }
     }
 }
@@ -1557,6 +1572,23 @@ pub fn build_app(state: AppState) -> Router {
             "/api/question/{id}/answer",
             post(question_routes::question_answer_handler)
                 .layer(axum::extract::DefaultBodyLimit::max(32 * 1024)),
+        )
+        // ── Lightspace JIT-reactive canvas (lightarchitects-lightspace) ─────────
+        .route(
+            "/api/lightspace/{session_id}/events",
+            get(events::lightspace_sse::lightspace_sse_handler),
+        )
+        .route(
+            "/api/lightspace/{session_id}/snapshot",
+            get(lightspace_routes::snapshot_handler),
+        )
+        .route(
+            "/api/lightspace/{session_id}/replay",
+            get(lightspace_routes::replay_handler),
+        )
+        .route(
+            "/api/lightspace/{session_id}/event",
+            post(lightspace_routes::apply_event_handler),
         )
         // ── CSP violation reports (SEC-3b, Enforce phase) ────────────────────
         .route("/api/csp-report", post(csp::csp_report_handler))
