@@ -43,6 +43,19 @@
   import FileHeroOverlay   from '$lib/../components/lightspace/FileHeroOverlay.svelte';
   import TombHeroOverlay   from '$lib/../components/lightspace/TombHeroOverlay.svelte';
 
+  // @lightarchitects/lightspace-svelte — per-session typed canvas (Wave 3)
+  import { subscribeSession } from '@lightarchitects/lightspace-svelte';
+  import { authHeaders } from '$lib/auth';
+
+  // Per-session Lightspace UUID. In production, this comes from the server response.
+  // In demo mode it is generated client-side so the SSE stream can be exercised locally.
+  let lightspaceSessionId = $state<string | null>(null);
+
+  $effect(() => {
+    if (!lightspaceSessionId) return;
+    return subscribeSession(lightspaceSessionId, authHeaders);
+  });
+
   // ── HITL modal (Phase 4) — reuse existing ironclaw HitlModal ────────────
   // Phase 5 wires the ironclawHitlEscalation store; placeholder here.
   // import HitlModal from '$lib/../components/ironclaw/HitlModal.svelte';
@@ -84,6 +97,13 @@
 
   // ── Phase 6: Demo TIMELINE engine ────────────────────────────────────────
   let timeline: TimelineEngine | null = null;
+
+  $effect(() => {
+    const mode = $lightspaceSessionStore.mode;
+    if (mode === 'demo' && !lightspaceSessionId) {
+      lightspaceSessionId = crypto.randomUUID();
+    }
+  });
 
   $effect(() => {
     const mode = $lightspaceSessionStore.mode;

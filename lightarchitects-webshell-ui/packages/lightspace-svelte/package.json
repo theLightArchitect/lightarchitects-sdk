@@ -1,0 +1,15 @@
+{
+  "name": "@lightarchitects/lightspace-svelte",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*.svelte": "./src/*.svelte",
+    "./cards/*.svelte": "./src/cards/*.svelte",
+    "./components/*.svelte": "./src/components/*.svelte"
+  },
+  "peerDependencies": {
+    "svelte": "^5.0.0"
+  }
+}

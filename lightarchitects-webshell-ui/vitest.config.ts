@@ -18,7 +18,7 @@ export default mergeConfig(viteConfig, {
           name: 'unit',
           environment: 'jsdom',
           globals: true,
-          include: ['src/**/*.test.ts'],
+          include: ['src/**/*.test.ts', 'packages/**/*.test.ts'],
           exclude: ['src/**/*.svelte.test.ts'],
           coverage: {
             provider: 'v8',
