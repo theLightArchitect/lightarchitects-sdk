@@ -50,7 +50,7 @@ impl std::fmt::Display for Backend {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LauncherConfig {
     /// If true, `lightarchitects` (no args) starts the webshell instead of
-    /// execing `lightarchitects-cli`.
+    /// execing `lightshell`.
     #[serde(default)]
     pub always_webshell: bool,
     /// If true, sets `LA_CONTAINER_MODE=1` for the webshell container probe.

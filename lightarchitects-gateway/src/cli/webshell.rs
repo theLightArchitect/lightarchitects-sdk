@@ -123,11 +123,11 @@ impl Default for StartOptions<'_> {
 fn start_server(config: &GatewayConfig, options: StartOptions<'_>) -> Result<(), GatewayError> {
     let binary = config.agents.get("webshell").map_or_else(
         || {
-            let home = std::env::var_os("HOME").unwrap_or_default();
-            let home_path = PathBuf::from(&home);
-            home_path
-                .join("lightarchitects")
-                .join("webshell")
+            let home = std::env::var_os("HOME")
+                .or_else(|| std::env::var_os("USERPROFILE"))
+                .unwrap_or_default();
+            PathBuf::from(home)
+                .join(".lightarchitects")
                 .join("bin")
                 .join("lightarchitects-webshell")
         },

@@ -1,5 +1,5 @@
 ---
-agent: lightarchitects-cli
+agent: lightshell
 type: identity
 role: meta-orchestrator and canon keeper
 significance: 8.5

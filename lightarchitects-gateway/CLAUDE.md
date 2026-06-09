@@ -11,10 +11,10 @@ Three modes in one binary (`src/main.rs`):
 
 | Mode | Invocation | Purpose |
 |------|-----------|---------|
-| **MCP** (default) | `lightarchitects` | Stdio JSON-RPC server — Claude Code's MCP endpoint |
-| **Arena** | `lightarchitects serve [--agent <name>]` | HTTP API + scheduler + autonomous heartbeat agents at `:8742` |
-| **Conductor** | `lightarchitects conductor <cmd>` | Autonomous task execution queue |
-| **Platform** | `lightarchitects platform [--port 8080]` | Private REST API (`/v1/platform/*`) backed by local Neo4j |
+| **MCP** (default) | `lightshell` | Stdio JSON-RPC server — Claude Code's MCP endpoint |
+| **Arena** | `lightshell serve [--agent <name>]` | HTTP API + scheduler + autonomous heartbeat agents at `:8742` |
+| **Conductor** | `lightshell conductor <cmd>` | Autonomous task execution queue |
+| **Platform** | `lightshell platform [--port 8080]` | Private REST API (`/v1/platform/*`) backed by local Neo4j |
 | **Stream events** | `--stream-events` (with any mode) | NDJSON agent bridge for webshell copilot |
 
 CLI subcommands: `soul`, `corso`, `eva`, `quantum`, `seraph`, `status`, `config`, `builds list|show`, `setup`, `webshell start|control|status`, `canon list|check`, `initialize`, `routes`.
@@ -121,9 +121,9 @@ lsof target/.cargo-lock 2>/dev/null && echo "BLOCKED"
 # Recovery: pkill -9 -f "cargo test" across all windows
 ```
 
-**`current_exe()` trap**: In integration tests, `std::env::current_exe()` resolves to the test runner binary. Set `LIGHTARCHITECTS_BIN` env var to `target/release/lightarchitects` for any E2E test that spawns subprocesses.
+**`current_exe()` trap**: In integration tests, `std::env::current_exe()` resolves to the test runner binary. Set `LIGHTARCHITECTS_BIN` env var to `target/release/lightshell` for any E2E test that spawns subprocesses.
 
-**Codesign**: Manual binary copies require `codesign -s - ~/.lightarchitects/bin/lightarchitects` or macOS Gatekeeper will SIGKILL (exit 137) on first run. `make deploy` handles this automatically.
+**Codesign**: Manual binary copies require `codesign -s - ~/.lightarchitects/bin/lightshell` or macOS Gatekeeper will SIGKILL (exit 137) on first run. `make deploy` handles this automatically.
 
 ---
 ## Key Patterns
@@ -225,7 +225,7 @@ cd lightarchitects-gateway && cargo test --features inline-all
 cargo test --test handler_dispatch_contract
 
 # E2E tests require binary path override:
-LIGHTARCHITECTS_BIN=target/release/lightarchitects cargo test --test handler_dispatch_contract
+LIGHTARCHITECTS_BIN=target/release/lightshell cargo test --test handler_dispatch_contract
 
 # Single test by name (filters by test function name, not file name):
 cargo test --test handler_dispatch_contract test_name_substring

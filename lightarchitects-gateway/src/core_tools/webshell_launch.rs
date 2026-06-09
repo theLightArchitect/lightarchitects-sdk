@@ -98,6 +98,7 @@ const PORT_SCAN_WINDOW: u16 = 10;
 /// Returns [`GatewayError::SpawnFailed`] if the binary cannot be spawned,
 /// [`GatewayError::Internal`] if the webshell does not respond within
 /// [`STARTUP_MAX_WAIT`] after spawn.
+#[allow(clippy::too_many_lines)]
 pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, GatewayError> {
     // Track whether the caller pinned a specific port. If they did, we
     // honor it exactly — including returning session_mismatch on collision.

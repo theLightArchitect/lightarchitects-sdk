@@ -45,6 +45,9 @@ pub mod handlers;
 /// Platform HTTP mode — private REST API backed by local Neo4j (`/v1/platform/*`).
 #[allow(missing_docs, clippy::pedantic)]
 pub mod http;
+/// LightSquad task dispatch — single-shot LLM delegation via LiteLLM, offloading
+/// Claude Code subagent work to cheaper providers (Ollama Cloud, etc.).
+pub mod lightsquad_task;
 /// Shared LLM client — Ollama, OpenAI-compatible, Anthropic.
 pub mod llm;
 /// LLM provider implementations for the agentic loop.

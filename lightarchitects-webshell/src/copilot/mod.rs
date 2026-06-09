@@ -843,7 +843,7 @@ fn extract_codex_activity_summary(val: &serde_json::Value) -> Option<String> {
             match item_type {
                 "agent_message" => {
                     let t = val["item"]["text"].as_str().unwrap_or("");
-                    Some(format!("Agent: {}", &t[..t.len().min(200)]))
+                    Some(format!("Agent: {}", truncate_str(t, 200)))
                 }
                 "tool_call" => {
                     let name = val["item"]["name"].as_str().unwrap_or("unknown");
@@ -962,7 +962,7 @@ async fn run_codex_turn(
             let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) else {
                 tracing::warn!(
                     build_id = %build_id,
-                    raw = %&line[..line.len().min(256)],
+                    raw = %truncate_str(&line, 256),
                     "run_codex_turn: NDJSON parse error — skipping line"
                 );
                 continue;
@@ -1086,7 +1086,7 @@ async fn run_vibe_turn(message: &str, session: &BuildSession) -> Result<String, 
         tracing::warn!(
             target: "webshell",
             status = %output.status,
-            stderr = %&stderr[..stderr.len().min(512)],
+            stderr = %truncate_str(&stderr, 512),
             "vibe subprocess exited non-zero"
         );
         return Err("vibe_subprocess_error".to_owned());
@@ -1162,6 +1162,23 @@ pub(super) async fn call_subprocess(
             .and_then(|p| p.session_id.as_deref())
             .map(ToOwned::to_owned);
 
+        // WHY: pin session_span_id before the blocking subprocess call so callers
+        // can observe it even when run_print_turn returns Err (e.g. no claude binary
+        // in CI). The span was emitted above; the proc state should reflect that
+        // immediately, not only on the success path.
+        match &mut *guard {
+            Some(proc) => {
+                proc.session_span_id
+                    .get_or_insert_with(|| session_span_id.clone());
+            }
+            None => {
+                *guard = Some(CopilotProcess {
+                    session_id: None,
+                    session_span_id: Some(session_span_id.clone()),
+                });
+            }
+        }
+
         let turn_result = run_print_turn(
             message,
             session,
@@ -1189,9 +1206,6 @@ pub(super) async fn call_subprocess(
 
         if let Some(ref mut proc) = *guard {
             proc.session_id = new_session_id;
-            // Backfill for guards seeded via seed_from_session_id (session_span_id: None).
-            proc.session_span_id
-                .get_or_insert_with(|| session_span_id.clone());
         } else {
             *guard = Some(CopilotProcess {
                 session_id: new_session_id,
@@ -1313,7 +1327,7 @@ pub(super) async fn call_ollama(
             base_url,
             model,
             status = code,
-            body = %&body[..body.len().min(512)],
+            body = %truncate_str(&body, 512),
             "call_ollama: non-2xx response"
         );
         return Err("ollama_upstream_error".to_owned());
@@ -1363,6 +1377,15 @@ fn emit_disk_span(
         ctx = ctx.parent(pid);
     }
     emit_span_background(ctx);
+}
+
+/// Truncate `s` to at most `max_bytes` bytes, respecting UTF-8 char boundaries.
+fn truncate_str(s: &str, max_bytes: usize) -> &str {
+    let end = (0..=max_bytes.min(s.len()))
+        .rev()
+        .find(|&i| s.is_char_boundary(i))
+        .unwrap_or(0);
+    &s[..end]
 }
 
 /// Emit a session-root AYIN span for a new copilot session and return its ID.
@@ -1421,7 +1444,7 @@ fn emit_turn_start_span(
             duration_ms: 0,
             outcome: serde_json::json!("pending"),
             metadata: serde_json::json!({
-                "message_preview": &message[..message.len().min(200)],
+                "message_preview": truncate_str(message, 200),
                 "build_id": session.build_id.to_string(),
             }),
             strand_activations: Vec::new(),
@@ -1434,7 +1457,7 @@ fn emit_turn_start_span(
         "user",
         "user.message",
         serde_json::json!({
-            "message_preview": &message[..message.len().min(200)],
+            "message_preview": truncate_str(message, 200),
             "build_id": session.build_id.to_string(),
         }),
         lightarchitects::ayin::TraceOutcome::Continue,
@@ -1470,7 +1493,7 @@ fn emit_assistant_response_span(
             metadata: serde_json::json!({
                 "build_id": session.build_id.to_string(),
                 "duration_s": format!("{:.1}", elapsed.as_secs_f64()),
-                "response_preview": &response_preview[..response_preview.len().min(200)],
+                "response_preview": truncate_str(response_preview, 200),
             }),
             strand_activations: Vec::new(),
             session_id: None,
@@ -1484,7 +1507,7 @@ fn emit_assistant_response_span(
         serde_json::json!({
             "build_id": session.build_id.to_string(),
             "duration_s": format!("{:.1}", elapsed.as_secs_f64()),
-            "response_preview": &response_preview[..response_preview.len().min(200)],
+            "response_preview": truncate_str(response_preview, 200),
         }),
         if outcome == "error" {
             lightarchitects::ayin::TraceOutcome::Block

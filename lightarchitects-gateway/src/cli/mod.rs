@@ -1,6 +1,6 @@
 //! CLI subcommands for the `lightarchitects` gateway binary.
 //!
-//! Merged from `lightarchitects-cli` — provides typed access to all MCP siblings
+//! Merged from `lightshell` (formerly `lightarchitects-cli`) — provides typed access to all MCP siblings
 //! plus utility commands (status, config, builds, setup, webshell).
 //!
 //! # Commands
@@ -21,6 +21,7 @@ pub mod init;
 pub mod launcher;
 pub mod loops;
 pub mod output;
+pub mod serve_webshell;
 pub mod setup;
 pub mod skill_trust;
 pub mod skills;

@@ -807,8 +807,8 @@ fn agent_session_from_save(req: &SaveRequest) -> Option<crate::config::AgentSess
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 /// Read the `[llm] model` key from the CLI's TOML config, if it exists.
-fn lightarchitects_cli_model_from_toml() -> Option<String> {
-    let path = crate::config::lightarchitects_cli_config_path()?;
+fn lightshell_model_from_toml() -> Option<String> {
+    let path = crate::config::lightshell_config_path()?;
     let content = match std::fs::read_to_string(&path) {
         Ok(c) => c,
         Err(e) => {
@@ -834,11 +834,11 @@ fn lightarchitects_cli_model_from_toml() -> Option<String> {
 ///
 /// Uses atomic rename via a tempfile to avoid TOCTOU races (CWE-59) and
 /// sets `0o600` permissions to match the rest of the codebase (CWE-732).
-fn lightarchitects_cli_model_to_toml(model: &str) -> Result<(), std::io::Error> {
-    let Some(path) = crate::config::lightarchitects_cli_config_path() else {
+fn lightshell_model_to_toml(model: &str) -> Result<(), std::io::Error> {
+    let Some(path) = crate::config::lightshell_config_path() else {
         return Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
-            "lightarchitects-cli config path unavailable",
+            "lightshell config path unavailable",
         ));
     };
     let content = match std::fs::read_to_string(&path) {
@@ -896,7 +896,7 @@ pub async fn setup_info(State(state): State<AppState>) -> impl IntoResponse {
             config = Some(SetupConfig {
                 agent: AgentKind::LightArchitect,
                 backend: "lightarchitects".to_owned(),
-                model: lightarchitects_cli_model_from_toml(),
+                model: lightshell_model_from_toml(),
                 ollama_base_url: None,
                 api_key_stored: false,
             });
@@ -972,7 +972,7 @@ pub async fn setup_save(
                 tracing::warn!(target: "setup", "Rejecting empty model for native CLI");
                 return StatusCode::BAD_REQUEST.into_response();
             }
-            if let Err(e) = lightarchitects_cli_model_to_toml(model) {
+            if let Err(e) = lightshell_model_to_toml(model) {
                 tracing::error!(target: "setup", "Failed to write CLI TOML config: {e}");
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }

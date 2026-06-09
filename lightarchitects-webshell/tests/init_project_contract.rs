@@ -3,7 +3,7 @@
 //! Uses the REAL `~/Projects/` directory so the test validates against
 //! projects that actually exist on disk:
 //!   - `lightarchitects-sdk`  — git repo; verifies remote detection
-//!   - `lightarchitects-cli`  — git repo; verifies remote detection
+//!   - `lightshell`  — git repo; verifies remote detection
 //!
 //! Each test uses a RAII cleanup guard so `.lightarchitects/` is removed
 //! on drop even if the test panics.
@@ -146,7 +146,7 @@ async fn success_returns_201_sdk() {
 #[tokio::test]
 async fn emits_project_update_event_cli() {
     let _guard = home_lock().lock().await;
-    let project_dir = skip_if_missing("lightarchitects-cli");
+    let project_dir = skip_if_missing("lightshell");
     if project_dir == PathBuf::new() || already_inited(&project_dir) {
         return;
     }
@@ -157,7 +157,7 @@ async fn emits_project_update_event_cli() {
 
     init_project(
         InitBody {
-            slug: "lightarchitects-cli".to_owned(),
+            slug: "lightshell".to_owned(),
             name: None,
             kind: None,
             agents: lightarchitects_webshell::projects::types::ProjectAgents::default(),
@@ -238,7 +238,7 @@ async fn appends_decisions_row_sdk() {
 #[tokio::test]
 async fn writes_helix_entry_significance_7_cli() {
     let _guard = home_lock().lock().await;
-    let project_dir = skip_if_missing("lightarchitects-cli");
+    let project_dir = skip_if_missing("lightshell");
     if project_dir == PathBuf::new() || already_inited(&project_dir) {
         return;
     }
@@ -247,7 +247,7 @@ async fn writes_helix_entry_significance_7_cli() {
     let tx = make_event_tx();
     let resp = init_project(
         InitBody {
-            slug: "lightarchitects-cli".to_owned(),
+            slug: "lightshell".to_owned(),
             name: None,
             kind: None,
             agents: lightarchitects_webshell::projects::types::ProjectAgents::default(),
@@ -266,7 +266,7 @@ async fn writes_helix_entry_significance_7_cli() {
         "helix entry must declare significance: 7.0, got: {content}"
     );
     assert!(
-        content.contains("lightarchitects-cli"),
+        content.contains("lightshell"),
         "helix entry must reference the slug"
     );
     assert!(

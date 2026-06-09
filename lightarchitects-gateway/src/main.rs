@@ -357,6 +357,10 @@ async fn cli_dispatch(
         Some("webshell") => {
             lightarchitects_gateway::cli::webshell::execute(config, &args[1..]).await
         }
+        Some("serve-webshell") => {
+            lightarchitects_gateway::cli::serve_webshell::execute(config, &args[1..])?;
+            Ok(())
+        }
 
         // Platform HTTP mode — private REST API on localhost:8080.
         Some("platform") => cli_platform(&args[1..]).await,

@@ -535,7 +535,7 @@ async fn native_turn_task(
     let duration_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
     tracing::info!(build_id = %build_id, model = %model, duration_ms, "native_turn: completed");
     emit_disk_span(
-        "lightarchitects-cli",
+        "lightshell",
         "assistant.response",
         serde_json::json!({
             "build_id": build_id.to_string(),

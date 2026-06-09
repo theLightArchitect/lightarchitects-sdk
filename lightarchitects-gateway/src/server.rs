@@ -9,6 +9,7 @@ use tracing::instrument;
 use crate::config::GatewayConfig;
 use crate::core_tools;
 use crate::error::GatewayError;
+use crate::lightsquad_task;
 use crate::span_context::{
     GatewaySpanContext, current_span_ctx, span_dir, spawn_with_span_context, with_span_context,
     write_span_to_disk,
@@ -37,6 +38,7 @@ pub fn all_tool_definitions() -> Vec<Value> {
     tools.extend(file_tool_defs());
     tools.extend(platform_tool_defs());
     tools.extend(squad_tool_defs());
+    tools.extend(lightsquad_tool_defs());
     tools.extend(exec_tool_defs());
     tools.extend(code_tool_defs());
     tools.extend(git_tool_defs());
@@ -164,6 +166,54 @@ fn squad_tool_defs() -> Vec<Value> {
         json!({"name": "lightarchitects_arch_emit", "description": "Extract from project_root and emit all diagram formats (mermaid, d2, likec4, markdown, html) in a single call. Large outputs are truncated in the MCP response; use the HTTP route for full output.", "inputSchema": {"type": "object", "properties": {"project_root": {"type": "string", "description": "Absolute path to the project root."}, "sibling_id": {"type": "string", "description": "Calling sibling identity."}, "allowed_roots": {"type": "array", "items": {"type": "string"}}}, "required": ["project_root"]}}),
     ]);
     tools
+}
+
+/// `LightSquad` task dispatch — single MCP action that delegates LLM work to
+/// `LiteLLM`-routed providers (Ollama Cloud, etc.) for Claude Code subagent
+/// offload. See `lightsquad_task.rs` for the handler and schema details.
+fn lightsquad_tool_defs() -> Vec<Value> {
+    vec![json!({
+        "name": "lightarchitects_lightsquad_dispatch_task",
+        "description": "Dispatch a single bounded LLM task through the LiteLLM proxy (default: Ollama Cloud). Use this to offload Claude Code subagent work — code search, surface mapping, mechanical refactoring, test generation, doc generation — to cheaper providers. Returns a TaskResult with output + duration. Bounded by max_budget_usd (default 0.10, max 1.0). Optional workflow_id propagates as ChainContext.origin for cross-call AYIN correlation.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "description": "Discriminator for observability (e.g. 'code_search', 'surface_map', 'refactor', 'test_gen', 'doc_gen', 'generic'). 1-64 chars, allowlist [a-zA-Z0-9_-]."
+                },
+                "prompt": {
+                    "type": "string",
+                    "description": "Prompt sent to the downstream LLM. Non-empty, ≤ 64 KB."
+                },
+                "context_tiers": {
+                    "type": "array",
+                    "description": "Optional T1/T2/T3 context bundle. Sum of token_estimate ≤ 15K (Builders Cookbook §66).",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "tier": {"type": "string", "enum": ["T1", "T2", "T3"]},
+                            "label": {"type": "string"},
+                            "files": {"type": "array", "items": {"type": "string"}},
+                            "token_estimate": {"type": "integer", "minimum": 0}
+                        },
+                        "required": ["tier", "label", "files", "token_estimate"]
+                    }
+                },
+                "max_budget_usd": {
+                    "type": "number",
+                    "description": "Per-task USD budget cap. Bounded (0.0, 1.0]. Default 0.10 when omitted.",
+                    "exclusiveMinimum": 0.0,
+                    "maximum": 1.0
+                },
+                "workflow_id": {
+                    "type": "string",
+                    "description": "Optional cross-call correlation key propagated via ChainContext.origin into AYIN spans."
+                }
+            },
+            "required": ["kind", "prompt"]
+        }
+    })]
 }
 
 /// Git operation tool definitions: `git.*` — EEF Wave E3 (git-and-pr).
@@ -437,6 +487,10 @@ async fn dispatch(
         "lightarchitects_squad_comms_claim_task" => squad_comms::claim_task(params, config).await,
         "lightarchitects_squad_comms_task_logs" => squad_comms::task_logs(params, config).await,
         "lightarchitects_squad_comms_chat_inject" => squad_comms::chat_inject(params, config).await,
+        // LightSquad task dispatch — single-shot LLM delegation via LiteLLM.
+        "lightarchitects_lightsquad_dispatch_task" => {
+            lightsquad_task::dispatch_task(params, config).await
+        }
         // Process execution tools — EEF Wave E2 (shell-and-output).
         "lightarchitects_exec_run_command" => core_tools::exec_comms::run_run_command(params).await,
         "lightarchitects_exec_list_processes" => {
@@ -500,13 +554,30 @@ mod tests {
     }
 
     #[test]
-    fn all_tool_definitions_has_forty_five_entries() {
-        // 1 meta + 6 file + 4 platform (+ question) + 15 squad + 4 exec + 6 code + 8 git
-        // + 2 litellm (config + chat) added by unified-litellm-router
-        // + 2 hermes = 48; wait — recount: 1+6+4+15+4+6+8+2+2 = 48? Let me count per function:
-        // meta_tool_def=1, file_tool_defs=6, platform_tool_defs=4, squad_tool_defs=15,
-        // exec_tool_defs=4, code_tool_defs=6, git_tool_defs=8, hermes_tool_defs=2 → 46
-        assert_eq!(all_tool_definitions().len(), 46);
+    fn all_tool_definitions_has_forty_seven_entries() {
+        // Per-function count: meta_tool_def=1, file_tool_defs=6, platform_tool_defs=4,
+        // squad_tool_defs=15, lightsquad_tool_defs=1, exec_tool_defs=4, code_tool_defs=6,
+        // git_tool_defs=8, hermes_tool_defs=2 → 47
+        assert_eq!(all_tool_definitions().len(), 47);
+    }
+
+    #[test]
+    fn lightsquad_dispatch_task_tool_is_registered() {
+        let tools = all_tool_definitions();
+        let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
+        assert!(names.contains(&"lightarchitects_lightsquad_dispatch_task"));
+    }
+
+    #[test]
+    fn lightsquad_dispatch_task_schema_requires_kind_and_prompt() {
+        let tools = all_tool_definitions();
+        let tool = tools
+            .iter()
+            .find(|t| t["name"] == "lightarchitects_lightsquad_dispatch_task")
+            .unwrap();
+        let required = tool["inputSchema"]["required"].as_array().unwrap();
+        assert!(required.iter().any(|r| r == "kind"));
+        assert!(required.iter().any(|r| r == "prompt"));
     }
 
     #[test]

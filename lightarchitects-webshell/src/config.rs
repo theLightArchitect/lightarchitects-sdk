@@ -43,7 +43,7 @@ pub enum AgentKind {
     Lightarchitects,
     /// `OpenAI` Codex CLI (binary: `codex`).
     Codex,
-    /// lÆx0 native binary (`lightarchitects-cli`).
+    /// lÆx0 native binary (`lightshell`).
     LightArchitect,
     /// Mistral Vibe coding agent (binary: `vibe`, ACP bridge: `vibe-acp`).
     MistralVibe,
@@ -309,11 +309,11 @@ impl Default for CodexConfig {
 /// Spawns `lightarchitects --stream-events --cwd <session.cwd>` as a persistent
 /// subprocess. The gateway runs `agent_stream::run_ndjson` and routes turns
 /// through the in-binary LLM loop with all gateway `core_tools` available.
-/// Replaces the legacy `lightarchitects-cli` (lÆx0) binary which no longer ships.
+/// Replaces the legacy `lightshell` (lÆx0) binary which no longer ships.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LightArchitectConfig {
-    /// Path to the `lightarchitects` gateway binary. Default: `"lightarchitects"` (assumes on `$PATH`).
-    #[serde(default = "default_lightarchitects_cli_binary")]
+    /// Path to the `lightshell` binary (default: `lightshell`, assumes on `$PATH`).
+    #[serde(default = "default_lightshell_binary")]
     pub binary: String,
     /// Selected model ID (e.g. `"nemotron-3-super:cloud"`, `"qwen3-coder:480b-cloud"`).
     /// The gateway reads this from `LA_MODEL` env or its own TOML config; this field is for UI introspection.
@@ -321,14 +321,14 @@ pub struct LightArchitectConfig {
     pub model: Option<String>,
 }
 
-fn default_lightarchitects_cli_binary() -> String {
-    "lightarchitects".to_owned()
+fn default_lightshell_binary() -> String {
+    "lightshell".to_owned()
 }
 
 impl Default for LightArchitectConfig {
     fn default() -> Self {
         Self {
-            binary: default_lightarchitects_cli_binary(),
+            binary: default_lightshell_binary(),
             model: None,
         }
     }
@@ -356,7 +356,7 @@ pub enum AgentSession {
     Lightarchitects(ClaudeBackend),
     /// `OpenAI` Codex CLI (`codex` binary).
     Codex(CodexConfig),
-    /// lÆx0 native binary (`lightarchitects-cli`).
+    /// lÆx0 native binary (`lightshell`).
     LightArchitect(LightArchitectConfig),
     /// Mistral Vibe CLI (`vibe` binary, ACP bridge: `vibe-acp`).
     MistralVibe(MistralVibeConfig),
@@ -438,10 +438,10 @@ pub struct Cli {
     #[arg(long)]
     pub claude_agent: Option<String>,
 
-    /// Path to the `lightarchitects-cli` binary (default: `lightarchitects-cli`, assumes on `$PATH`).
+    /// Path to the `lightshell` binary (default: `lightshell`, assumes on `$PATH`).
     /// Only used when `--agent=light-architect`.
     #[arg(long)]
-    pub lightarchitects_cli_binary: Option<String>,
+    pub lightshell_binary: Option<String>,
 
     /// Enable local frontend development mode.
     ///
@@ -485,7 +485,7 @@ impl Default for Cli {
             ollama_model: None,
             ollama_key: None,
             claude_agent: None,
-            lightarchitects_cli_binary: None,
+            lightshell_binary: None,
             dev_mode: false,
             resume_session: None,
         }
@@ -577,16 +577,16 @@ fn ollama_config_path() -> Option<PathBuf> {
     lightarchitects::core::paths::root().map(|root| root.join("webshell").join("ollama.json"))
 }
 
-/// Returns the canonical lightarchitects-cli config path:
-/// `~/lightarchitects/soul/config/lightarchitects-cli.toml`.
-pub(crate) fn lightarchitects_cli_config_path() -> Option<PathBuf> {
+/// Returns the canonical lightshell config path:
+/// `~/lightarchitects/soul/config/lightshell.toml`.
+pub(crate) fn lightshell_config_path() -> Option<PathBuf> {
     std::env::var_os("HOME")
         .map(std::path::PathBuf::from)
         .map(|h| {
             h.join("lightarchitects")
                 .join("soul")
                 .join("config")
-                .join("lightarchitects-cli.toml")
+                .join("lightshell.toml")
         })
 }
 
@@ -695,9 +695,9 @@ fn resolve_mistral_vibe_config(cli: &Cli) -> MistralVibeConfig {
 fn resolve_light_architect_config(cli: &Cli) -> LightArchitectConfig {
     LightArchitectConfig {
         binary: cli
-            .lightarchitects_cli_binary
+            .lightshell_binary
             .clone()
-            .unwrap_or_else(default_lightarchitects_cli_binary),
+            .unwrap_or_else(default_lightshell_binary),
         model: None,
     }
 }
@@ -1079,7 +1079,7 @@ mod tests {
             ollama_model: None,
             ollama_key: None,
             claude_agent: None,
-            lightarchitects_cli_binary: None,
+            lightshell_binary: None,
             dev_mode: false,
             resume_session: None,
         }
@@ -1096,7 +1096,7 @@ mod tests {
     fn resolve_preserves_host_cmd_and_cwd() {
         let cli = Cli {
             port: 8733,
-            host_cmd: OsString::from("/custom/lightarchitects-cli"),
+            host_cmd: OsString::from("/custom/lightshell"),
             cwd: Some(PathBuf::from("/tmp/session")),
             agent: AgentKind::LightArchitect,
             backend: ClaudeBackendKind::Anthropic,
@@ -1104,12 +1104,12 @@ mod tests {
             ollama_model: None,
             ollama_key: None,
             claude_agent: None,
-            lightarchitects_cli_binary: None,
+            lightshell_binary: None,
             dev_mode: true,
             resume_session: None,
         };
         let cfg = Config::resolve(cli).unwrap();
-        assert_eq!(cfg.host_cmd, OsString::from("/custom/lightarchitects-cli"));
+        assert_eq!(cfg.host_cmd, OsString::from("/custom/lightshell"));
         assert_eq!(cfg.cwd, PathBuf::from("/tmp/session"));
         assert!(cfg.dev_mode);
     }
@@ -1241,9 +1241,9 @@ mod tests {
     }
 
     #[test]
-    fn lightarchitects_cli_native_config_defaults_to_lightarchitects_cli_binary() {
+    fn lightshell_native_config_defaults_to_lightshell_binary() {
         let cfg = LightArchitectConfig::default();
-        assert_eq!(cfg.binary, "lightarchitects");
+        assert_eq!(cfg.binary, "lightshell");
     }
 
     #[test]

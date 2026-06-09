@@ -11,7 +11,7 @@
 //!   → on bridge drop: SIGKILL child, close channels
 //! ```
 //!
-//! ## NDJSON line format (lightarchitects-cli → bridge)
+//! ## NDJSON line format (lightshell → bridge)
 //!
 //! The CLI emits its own format; `translate_cli_line` maps it to `AgentEvent`.
 //! Final turn result arrives as `{"type":"result","subtype":"success","result":"..."}`;
@@ -133,7 +133,7 @@ pub async fn spawn_bridge(
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
-            warn!(error = %e, "failed to spawn lightarchitects-cli bridge");
+            warn!(error = %e, "failed to spawn lightshell bridge");
             let _ = event_tx.send(AgentEvent::Error {
                 message: "bridge_spawn_failed".to_owned(),
                 recoverable: Some(false),
@@ -437,7 +437,7 @@ async fn drive_stdin(stdin: ChildStdin, mut control_rx: mpsc::Receiver<ControlMe
 
 /// Fallback single-shot bridge for when the CLI does not support streaming.
 ///
-/// Spawns `lightarchitects-cli run <message>` per `SendMessage` control and
+/// Spawns `lightshell run <message>` per `SendMessage` control and
 /// emits the response as `Text` + `Complete`.  Runs in the caller's task
 /// (not background) so it can be swapped in when streaming is unavailable.
 ///
