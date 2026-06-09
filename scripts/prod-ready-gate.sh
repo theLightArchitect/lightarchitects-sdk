@@ -166,7 +166,7 @@ fi
 
 # ── 7. Northstar E2E (full-stack operator workflow) ──────────────────────────
 section "Northstar E2E"
-if [ -d "lightarchitects-webshell-ui" ] && [ -f "$HOME/.lightarchitects/bin/lightarchitects-webshell" ]; then
+if [ -d "lightarchitects-webshell-ui" ] && [ -f "$HOME/.lightarchitects/bin/lightspace" ]; then
     cd lightarchitects-webshell-ui
     if pnpm exec playwright test e2e/northstar.spec.ts 2>&1 | tail -5 | grep -q "passed"; then
         pass "Northstar E2E — operator workflow"

@@ -768,10 +768,12 @@ fn extract_activity_summary(val: &serde_json::Value) -> Option<String> {
                 blocks.iter().find_map(|b| {
                     if b["type"].as_str() == Some("thinking") {
                         let t = b["thinking"].as_str().unwrap_or("");
-                        Some(format!("Thinking: {}", &t[..t.len().min(500)]))
+                        let end = t.floor_char_boundary(500);
+                        Some(format!("Thinking: {}", &t[..end]))
                     } else if b["type"].as_str() == Some("text") {
                         let t = b["text"].as_str().unwrap_or("");
-                        Some(format!("Text: {}", &t[..t.len().min(500)]))
+                        let end = t.floor_char_boundary(500);
+                        Some(format!("Text: {}", &t[..end]))
                     } else {
                         None
                     }
