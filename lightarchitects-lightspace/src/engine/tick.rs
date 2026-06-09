@@ -16,8 +16,10 @@ use crate::types::{
 
 const MAX_PAYLOAD_BYTES: usize = 65_536; // 64 KiB (CWE-770)
 const MIN_BASIS_LEN: usize = 5;
+/// Hard cap on canvas cards — prevents O(n) snapshot clone DoS (CWE-770).
+pub const MAX_CARDS: usize = 500;
 
-/// Insert a new card. Validates provenance and ID uniqueness.
+/// Insert a new card. Validates provenance, ID uniqueness, and canvas size cap.
 pub fn apply_card(state: &mut CanvasState, mut card: CardData) -> Result<(), ReducerError> {
     if card.provenance.agent.is_empty() || card.provenance.source_uri.is_empty() {
         return Err(ReducerError::EmptyProvenance);
@@ -25,6 +27,9 @@ pub fn apply_card(state: &mut CanvasState, mut card: CardData) -> Result<(), Red
     validate_provenance_source_scheme(&card.provenance.source_uri)?;
     if state.cards.contains_key(&card.id) {
         return Err(ReducerError::CardIdCollision(card.id));
+    }
+    if state.cards.len() >= MAX_CARDS {
+        return Err(ReducerError::TooManyCards(MAX_CARDS));
     }
     card.state = CardState::Attached;
     state.cards.insert(card.id.clone(), card);

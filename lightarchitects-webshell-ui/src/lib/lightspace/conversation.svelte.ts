@@ -125,14 +125,19 @@ export async function resumeConversation(sessionId: string, nonce: string): Prom
  * Auth note: EventSource cannot set custom headers — authentication relies
  * on the `la_session` HttpOnly cookie set by `/api/auth/exchange`.
  */
+/** Maximum consecutive onerror callbacks before treating the connection as permanently lost. */
+const CONV_MAX_ERRORS = 12;
+
 export function subscribeConversation(
   sessionId: string,
   onEvent: (event: ConvSSEEvent) => void,
   onError: (message: string) => void,
 ): () => void {
   const es = new EventSource(`/api/conversation/${sessionId}/stream`);
+  let errorCount = 0;
 
   es.onmessage = (ev) => {
+    errorCount = 0; // reset on any successful message
     try {
       const parsed = JSON.parse(ev.data as string) as ConvSSEEvent;
       onEvent(parsed);
@@ -142,10 +147,16 @@ export function subscribeConversation(
   };
 
   es.onerror = () => {
+    errorCount += 1;
+    if (errorCount >= CONV_MAX_ERRORS) {
+      es.close();
+      onError('Connection permanently lost after repeated failures — refresh to reconnect.');
+      return;
+    }
     if (es.readyState === EventSource.CLOSED) {
       onError('Connection to server lost — session may have ended.');
     }
-    // CONNECTING state is a temporary network hiccup; EventSource retries automatically.
+    // CONNECTING state: browser retries automatically; count tracks persistent failures.
   };
 
   return () => es.close();

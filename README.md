@@ -11,7 +11,49 @@ Neo4j knowledge-graph backend.
 
 ---
 
-## Quick Start
+## What is LightSpace?
+
+**LightSpace** is the browser-based workspace where you plan and build software using the
+**LASDLC** (Light Architects Software Development Lifecycle) framework. Describe your intent,
+dispatch an autonomous squad of domain agents, and watch the canvas materialize around your work.
+
+**LightSquad** (Squad Dispatch) is the entry surface: pick agents, type a task, hit `⌘↵`.
+Every dispatch runs through 7 quality gates enforced by your agent squad:
+
+| Gate | Dimension | Primary agent |
+|------|-----------|---------------|
+| **[A]** | Architecture — correctness, API design, complexity ≤10 | Engineer |
+| **[S]** | Security — threat surface, vulns, supply chain | Security |
+| **[Q]** | Quality — standards, linting, cyclomatic complexity | Quality |
+| **[T]** | Testing — 6-suite pyramid, ≥90% coverage | Testing |
+| **[P]** | Performance — latency, throughput, O(n) bounds | Ops |
+| **[K]** | Knowledge — enrichment, citations, prior decisions | Knowledge |
+| **[O]** | Operations — deploy pipeline, CI/CD, rollback | Ops |
+
+### Run LightSpace locally
+
+```bash
+# 1. Copy env template and set your token
+cp .env.example .env
+# Edit .env: set LIGHTARCHITECTS_WEBSHELL_TOKEN (openssl rand -hex 32)
+
+# 2. Build and deploy the webshell binary
+cd lightarchitects-webshell
+make deploy          # builds + installs to ~/.lightarchitects/bin/
+
+# 3. Start the server
+LIGHTARCHITECTS_WEBSHELL_TOKEN=<your-token> \
+  ~/.lightarchitects/bin/lightarchitects-webshell
+
+# 4. Open http://localhost:8733 — type your first intent in the lobby
+```
+
+See [`lightarchitects-webshell/README.md`](lightarchitects-webshell/README.md) for the full
+setup guide including Ollama, Anthropic, and LiteLLM backend options.
+
+---
+
+## SDK Quick Start
 
 ```toml
 [dependencies]

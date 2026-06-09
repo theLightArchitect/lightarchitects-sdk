@@ -1597,7 +1597,8 @@ pub fn build_app(state: AppState) -> Router {
         )
         .route(
             "/api/lightspace/{session_id}/event",
-            post(lightspace_routes::apply_event_handler),
+            post(lightspace_routes::apply_event_handler)
+                .layer(axum::extract::DefaultBodyLimit::max(16 * 1024)),
         )
         // ── CSP violation reports (SEC-3b, Enforce phase) ────────────────────
         .route("/api/csp-report", post(csp::csp_report_handler))

@@ -20,6 +20,10 @@ pub enum ReducerError {
         got: u64,
     },
 
+    /// Canvas has reached the maximum card capacity (CWE-770).
+    #[error("canvas card limit exceeded (max {0} cards)")]
+    TooManyCards(usize),
+
     /// An update payload exceeded 64 KiB (CWE-770).
     #[error("update payload too large for card {0} (max 64 KiB)")]
     PayloadTooLarge(String),

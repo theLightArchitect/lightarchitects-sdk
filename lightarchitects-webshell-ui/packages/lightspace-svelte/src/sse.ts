@@ -24,12 +24,20 @@ type HeadersFn = () => Record<string, string>;
  * @param getHeaders Function returning auth headers (e.g. `authHeaders` from $lib/auth).
  * @returns          Cleanup function — call on component destroy to stop the stream.
  */
-export function subscribeSession(sessionId: string, getHeaders: HeadersFn): () => void {
+/** Maximum consecutive reconnect attempts before giving up (≈5 minutes at MAX_BACKOFF). */
+const MAX_ATTEMPTS = 12;
+
+export function subscribeSession(
+  sessionId: string,
+  getHeaders: HeadersFn,
+  onPermanentFailure?: () => void,
+): () => void {
   let stopped = false;
   const controller = new AbortController();
   const INITIAL_DELAY = 1_000;
   const MAX_BACKOFF   = 30_000;
   let currentDelay    = INITIAL_DELAY;
+  let attempts        = 0;
 
   void (async () => {
     while (!stopped) {
@@ -39,18 +47,30 @@ export function subscribeSession(sessionId: string, getHeaders: HeadersFn): () =
           signal: controller.signal,
         });
         if (!res.ok || !res.body) {
+          attempts += 1;
+          if (attempts >= MAX_ATTEMPTS) {
+            stopped = true;
+            onPermanentFailure?.();
+            return;
+          }
           await sleep(currentDelay);
           currentDelay = Math.min(currentDelay * 2, MAX_BACKOFF);
           continue;
         }
-        await readStream(res.body, sessionId, getHeaders);
-        // Clean exit from readStream — reset backoff for next reconnect.
+        // Successful stream connection resets the attempt counter.
+        attempts = 0;
         currentDelay = INITIAL_DELAY;
+        await readStream(res.body, sessionId, getHeaders);
       } catch (e) {
-        if (!stopped && !(e instanceof DOMException && e.name === 'AbortError')) {
-          await sleep(currentDelay);
-          currentDelay = Math.min(currentDelay * 2, MAX_BACKOFF);
+        if (stopped || (e instanceof DOMException && e.name === 'AbortError')) return;
+        attempts += 1;
+        if (attempts >= MAX_ATTEMPTS) {
+          stopped = true;
+          onPermanentFailure?.();
+          return;
         }
+        await sleep(currentDelay);
+        currentDelay = Math.min(currentDelay * 2, MAX_BACKOFF);
       }
     }
   })();
