@@ -327,6 +327,29 @@ export function addToHistory(
   return [entry, ...existing].slice(0, MAX_HISTORY);
 }
 
+// ── LASDLC phase hint (client-side heuristic) ────────────────────────────────
+
+export type LasdlcPhase = 'PLAN' | 'BUILD' | 'VERIFY' | 'RELEASE';
+
+export interface PhaseHint {
+  phase: LasdlcPhase;
+  /** Short one-line tip shown below the classify rationale. */
+  tip: string;
+}
+
+const PLAN_PATTERNS    = /\b(plan|design|architect|spec|blueprint|research|scope|strategy|outline|propose|draft|review)\b/i;
+const VERIFY_PATTERNS  = /\b(test|verify|check|audit|validate|coverage|scan|lint|quality gate|security review|code review)\b/i;
+const RELEASE_PATTERNS = /\b(deploy|release|ship|publish|rollout|cut release|tag|prod|production|merge to main)\b/i;
+
+/** Derive a LASDLC phase hint from task text. Returns null when confidence is low. */
+export function derivePhaseHint(task: string): PhaseHint | null {
+  if (!task.trim()) return null;
+  if (RELEASE_PATTERNS.test(task)) return { phase: 'RELEASE', tip: 'Release phase — Ops [O] + Quality [Q] gates are critical.' };
+  if (VERIFY_PATTERNS.test(task))  return { phase: 'VERIFY',  tip: 'Verify phase — Testing [T] + Security [S] + Quality [Q] gates.' };
+  if (PLAN_PATTERNS.test(task))    return { phase: 'PLAN',    tip: 'Plan phase — Architecture [A] + Research [R] gates first.' };
+  return { phase: 'BUILD', tip: 'Build phase — Engineer [A][Q] + Testing [T] gates apply.' };
+}
+
 // ── Event helpers ─────────────────────────────────────────────────────────────
 
 export function isComplete(e: DispatchEvent): e is CompleteEvent {

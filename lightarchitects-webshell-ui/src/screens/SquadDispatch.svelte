@@ -12,6 +12,7 @@
     isTerminal,
     isComplete,
     isError,
+    derivePhaseHint,
     DOMAIN_AGENT_LABELS,
     DOMAIN_AGENT_COLORS,
     type DomainAgent,
@@ -25,6 +26,7 @@
 
   import DispatchInput from '$lib/../components/dispatch/DispatchInput.svelte';
   import AgentSelector from '$lib/../components/dispatch/AgentSelector.svelte';
+  import LightSquadIntro from '$lib/../components/dispatch/LightSquadIntro.svelte';
   import TaskDAG from '$lib/../components/dispatch/TaskDAG.svelte';
   import LiveAgentGrid from '$lib/../components/dispatch/LiveAgentGrid.svelte';
   import AgentDetail from '$lib/../components/dispatch/AgentDetail.svelte';
@@ -341,6 +343,7 @@
 
   const isLive = $derived(phase === 'streaming');
   const isTerminalPhase = $derived(phase === 'complete' || phase === 'error');
+  const phaseHint = $derived(derivePhaseHint(task));
 
   // Cinematic dispatch flash — briefly true when dispatch fires.
   let dispatchFlash = $state(false);
@@ -365,6 +368,8 @@
 {#if dispatchFlash}
   <div class="dispatch-flash" aria-hidden="true"></div>
 {/if}
+
+<LightSquadIntro />
 
 <div class="ops-frame" data-dispatching={isLive}>
 
@@ -456,6 +461,12 @@
               {classification.rationale.length > 80
                 ? classification.rationale.slice(0, 80) + '…'
                 : classification.rationale}
+            </span>
+          {/if}
+          {#if phaseHint}
+            <span class="phase-hint" data-phase={phaseHint.phase} data-testid="dispatch-phase-hint">
+              <span class="phase-hint-badge">{phaseHint.phase}</span>
+              {phaseHint.tip}
             </span>
           {/if}
         </div>
@@ -835,6 +846,32 @@
     width: 100%;
     margin: 0;
   }
+
+  .phase-hint {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 9px;
+    color: var(--la-text-mute);
+    line-height: 1.4;
+    width: 100%;
+    padding-top: 3px;
+    border-top: 1px solid var(--la-hair-base);
+  }
+
+  .phase-hint-badge {
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    padding: 1px 5px;
+    border: 1px solid currentColor;
+    flex-shrink: 0;
+  }
+
+  .phase-hint[data-phase="PLAN"]    .phase-hint-badge { color: var(--la-agent-researcher, #4dffe6); }
+  .phase-hint[data-phase="BUILD"]   .phase-hint-badge { color: var(--la-agent-engineer, #4d8eff); }
+  .phase-hint[data-phase="VERIFY"]  .phase-hint-badge { color: var(--la-agent-testing, #4dff8e); }
+  .phase-hint[data-phase="RELEASE"] .phase-hint-badge { color: var(--la-agent-ops, #ff8e3c); }
 
   .agent-selector-wrap { flex: 1; min-height: 0; }
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { ls } from '$lib/lightspace/state.svelte';
   import {
     createConversation,
@@ -8,6 +8,13 @@
     fetchRecentSessions,
   } from '$lib/lightspace/conversation.svelte';
   import { sessionAddConvMessage, sessionAppendLastConvMessage } from '$lib/lightspace-stores';
+
+  // Holds the active SSE cleanup function. Called in onDestroy to prevent a
+  // subscription leak when the parent unmounts this component mid-flight
+  // (e.g. Lightspace.svelte sets ls.inLobby = false via session restore).
+  let activeCleanup: (() => void) | null = null;
+
+  onDestroy(() => { activeCleanup?.(); activeCleanup = null; });
 
   const greeting = $derived(() => {
     const h = new Date().getHours();
@@ -41,7 +48,7 @@
       //    events are missed between creation and dispatch.
       let materialized = false;
       let streamingId: string | null = null;
-      const cleanup = subscribeConversation(
+      const cleanup = activeCleanup = subscribeConversation(
         sessionId,
         (ev) => {
           // First event from the backend triggers workspace materialization.
@@ -66,6 +73,7 @@
           // Turn complete — reset streaming tracker.
           if (ev.type === 'done') {
             streamingId = null;
+            activeCleanup = null;
             cleanup();
           }
           // Error in flight — add to conv and reset.
@@ -77,6 +85,7 @@
           if (ev.type === 'error' && !materialized) {
             error = ev.message ?? 'An error occurred.';
             submitting = false;
+            activeCleanup = null;
             cleanup();
           }
         },

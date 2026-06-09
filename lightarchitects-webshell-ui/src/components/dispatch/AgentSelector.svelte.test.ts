@@ -8,21 +8,21 @@ describe('AgentSelector (browser)', () => {
     const { getByTestId } = render(AgentSelector, {});
 
     const expected = [
-      { id: 'engineer',   code: 'ENG', gate: 'A',  perm: 'W' },
-      { id: 'quality',    code: 'QLT', gate: 'Q',  perm: 'W' },
-      { id: 'security',   code: 'SEC', gate: 'S',  perm: 'R' },
-      { id: 'ops',        code: 'OPS', gate: 'O',  perm: 'W' },
-      { id: 'researcher', code: 'RES', gate: 'R',  perm: 'R' },
-      { id: 'knowledge',  code: 'KNW', gate: 'K',  perm: 'R' },
-      { id: 'testing',    code: 'TST', gate: 'T',  perm: 'W' },
-      { id: 'squad',      code: 'SQD', gate: 'SQ', perm: 'R' },
+      { id: 'engineer',   code: 'ENG', gateLabel: '[A] ARCH', perm: 'W' },
+      { id: 'quality',    code: 'QLT', gateLabel: '[Q] QUAL', perm: 'W' },
+      { id: 'security',   code: 'SEC', gateLabel: '[S] SEC',  perm: 'R' },
+      { id: 'ops',        code: 'OPS', gateLabel: '[O] OPS',  perm: 'W' },
+      { id: 'researcher', code: 'RES', gateLabel: '[R] RISK', perm: 'R' },
+      { id: 'knowledge',  code: 'KNW', gateLabel: '[K] KNOW', perm: 'R' },
+      { id: 'testing',    code: 'TST', gateLabel: '[T] TEST', perm: 'W' },
+      { id: 'squad',      code: 'SQD', gateLabel: '[SQ] FULL', perm: 'R' },
     ];
 
-    for (const { id, code, gate, perm } of expected) {
+    for (const { id, code, gateLabel, perm } of expected) {
       const chip = getByTestId(`agent-btn-${id}`);
       await expect.element(chip).toBeInTheDocument();
       await expect.element(chip).toHaveTextContent(code);
-      await expect.element(chip).toHaveTextContent(`GATE · ${gate}`);
+      await expect.element(chip).toHaveTextContent(gateLabel);
       await expect.element(chip).toHaveAttribute('data-perm', perm);
     }
   });

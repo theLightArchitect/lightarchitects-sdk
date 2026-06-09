@@ -46,6 +46,7 @@ export interface FsMutationPendingEvent extends FsMutationPending {
 export async function approveMutation(
   dispatchId: string,
   mutationId: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   const res = await fetch(
     `/api/dispatch/${encodeURIComponent(dispatchId)}/fs-approve`,
@@ -53,6 +54,7 @@ export async function approveMutation(
       method: 'POST',
       headers: { 'content-type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ mutation_id: mutationId }),
+      signal,
     },
   );
   if (!res.ok) {
@@ -65,6 +67,7 @@ export async function rejectMutation(
   dispatchId: string,
   mutationId: string,
   reason?: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   const res = await fetch(
     `/api/dispatch/${encodeURIComponent(dispatchId)}/fs-reject`,
@@ -72,6 +75,7 @@ export async function rejectMutation(
       method: 'POST',
       headers: { 'content-type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ mutation_id: mutationId, reason: reason ?? '' }),
+      signal,
     },
   );
   if (!res.ok) {

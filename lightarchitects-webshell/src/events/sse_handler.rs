@@ -217,7 +217,7 @@ async fn drive_stream(
             }
             Err(RecvError::Lagged(n)) => {
                 warn!(skipped = n, "SSE subscriber lagged — events dropped");
-                let payload = format!(r#"{{"type":"lag","skipped":{n}}}"#);
+                let payload = serde_json::json!({"type": "lag", "skipped": n}).to_string();
                 return Some((
                     Ok(Event::default().data(payload)),
                     (rx, token, filter, role),
@@ -277,7 +277,7 @@ async fn drive_multiplex_stream(
             }
             Err(RecvError::Lagged(n)) => {
                 warn!(skipped = n, "per-build SSE lagged");
-                let payload = format!(r#"{{"type":"lag","skipped":{n}}}"#);
+                let payload = serde_json::json!({"type": "lag", "skipped": n}).to_string();
                 return Some((
                     Ok(Event::default().data(payload)),
                     (session_rx, global_rx, token, filter, role),

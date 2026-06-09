@@ -7,15 +7,15 @@
     type Classification,
   } from '$lib/dispatch';
 
-  const AGENT_META: Record<DomainAgent, { code: string; gate: string; perm: 'W' | 'R' }> = {
-    engineer:   { code: 'ENG', gate: 'A', perm: 'W' },
-    quality:    { code: 'QLT', gate: 'Q', perm: 'W' },
-    security:   { code: 'SEC', gate: 'S', perm: 'R' },
-    ops:        { code: 'OPS', gate: 'O', perm: 'W' },
-    researcher: { code: 'RES', gate: 'R', perm: 'R' },
-    knowledge:  { code: 'KNW', gate: 'K', perm: 'R' },
-    testing:    { code: 'TST', gate: 'T', perm: 'W' },
-    squad:      { code: 'SQD', gate: 'SQ', perm: 'R' },
+  const AGENT_META: Record<DomainAgent, { code: string; gate: string; gateLabel: string; gateDesc: string; perm: 'W' | 'R' }> = {
+    engineer:   { code: 'ENG', gate: 'A',   gateLabel: '[A] ARCH',  gateDesc: 'Architecture, correctness, API design, complexity ≤10',      perm: 'W' },
+    quality:    { code: 'QLT', gate: 'Q',   gateLabel: '[Q] QUAL',  gateDesc: 'Standards, clippy, fmt, cyclomatic complexity ≤10',          perm: 'W' },
+    security:   { code: 'SEC', gate: 'S',   gateLabel: '[S] SEC',   gateDesc: 'Threat surface, vulns, supply chain, secrets',               perm: 'R' },
+    ops:        { code: 'OPS', gate: 'O',   gateLabel: '[O] OPS',   gateDesc: 'Deploy pipeline, CI/CD, rollback, infra',                    perm: 'W' },
+    researcher: { code: 'RES', gate: 'R',   gateLabel: '[R] RISK',  gateDesc: 'Prior art, dependency audit, risk scoring',                  perm: 'R' },
+    knowledge:  { code: 'KNW', gate: 'K+D', gateLabel: '[K] KNOW',  gateDesc: 'Helix enrichment, citations, docs, prior decisions',         perm: 'R' },
+    testing:    { code: 'TST', gate: 'T',   gateLabel: '[T] TEST',  gateDesc: 'Test pyramid (unit/integration/E2E/property), ≥90% coverage', perm: 'W' },
+    squad:      { code: 'SQD', gate: 'SQ',  gateLabel: '[SQ] FULL',   gateDesc: 'All 7 LASDLC gates — full compliance sweep',               perm: 'R' },
   };
 
   interface Props {
@@ -98,10 +98,11 @@
         data-testid="agent-btn-{agent.toLowerCase()}"
         aria-pressed={isSelected}
         style="--cc: {color}"
+        title="{DOMAIN_AGENT_LABELS[agent]} — {meta.gateDesc}"
       >
         <span class="chip-code">{meta.code}</span>
         <span class="chip-name">{DOMAIN_AGENT_LABELS[agent]}</span>
-        <span class="chip-gate">GATE · {meta.gate}</span>
+        <span class="chip-gate">{meta.gateLabel}</span>
         <span class="chip-perm">{meta.perm}</span>
       </button>
     {/each}

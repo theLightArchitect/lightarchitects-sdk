@@ -43,6 +43,7 @@
   import SchematicPanel    from '$lib/../components/lightspace/SchematicPanel.svelte';
   import FileHeroOverlay   from '$lib/../components/lightspace/FileHeroOverlay.svelte';
   import TombHeroOverlay   from '$lib/../components/lightspace/TombHeroOverlay.svelte';
+  import Lobby             from './lightspace/Lobby.svelte';
 
   // @lightarchitects/lightspace-svelte — per-session typed canvas (Wave 3)
   import { subscribeSession } from '@lightarchitects/lightspace-svelte';
@@ -296,6 +297,8 @@
   <TombHeroOverlay />
 
   {#if $ironclawHitlEscalation}<HitlModal />{/if}
+
+  {#if ls.inLobby}<Lobby />{/if}
 
 </div>
 

@@ -3,6 +3,7 @@
   import DOMPurify from 'dompurify';
   import { authHeaders } from '$lib/auth';
   import CodeEditor from '$lib/../components/editor/CodeEditor.svelte';
+  import DiffPreview from '$lib/../components/dispatch/DiffPreview.svelte';
 
   interface ArtifactRow {
     name: string;
@@ -79,6 +80,7 @@
 </script>
 
 <!-- dispatch-artifacts contract: ui_locator SQD-DISPATCH Results tab -->
+<DiffPreview />
 <div class="results-tab" data-testid="results-tab-panel">
   <div class="rt-header">
     <span class="rt-title">
