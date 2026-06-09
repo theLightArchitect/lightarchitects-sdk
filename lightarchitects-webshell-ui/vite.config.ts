@@ -42,4 +42,8 @@ export default defineConfig({
       '/ws':  { target: BACKEND_URL, changeOrigin: true, ws: true },
     },
   },
+  // @xterm/xterm and monaco are CJS bundles that crash SSR — exclude from SSR transform.
+  ssr: {
+    noExternal: ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-web-links', 'monaco-editor'],
+  },
 });

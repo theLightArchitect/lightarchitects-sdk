@@ -22,12 +22,12 @@ export const scope = writable<RouteScope | null>(null);
 /** Convert a RouteScope to its canonical hash path. */
 export function toScopeUrl(s: RouteScope): string {
   switch (s.kind) {
-    case 'platform': return '/cockpit/platform';
-    case 'project':  return `/cockpit/project/${encodeURIComponent(s.project_id)}`;
-    case 'build':    return `/cockpit/build/${encodeURIComponent(s.codename)}`;
+    case 'platform': return '/command-center/platform';
+    case 'project':  return `/command-center/project/${encodeURIComponent(s.project_id)}`;
+    case 'build':    return `/command-center/build/${encodeURIComponent(s.codename)}`;
     case 'file': {
       const segments = s.file_path.split('/').map(encodeURIComponent).join('/');
-      return `/cockpit/file/${encodeURIComponent(s.codename)}/${segments}`;
+      return `/command-center/file/${encodeURIComponent(s.codename)}/${segments}`;
     }
   }
 }

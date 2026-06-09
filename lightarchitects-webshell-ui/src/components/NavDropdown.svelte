@@ -20,7 +20,7 @@
       icon: '⬡',
       items: [
         { label: 'Overview',        hash: '/dashboard',     hint: 'Mission control — live agent activity, alerts, squad health' },
-        { label: 'Cockpit',         hash: '/activity',      hint: 'Build cockpit — live health, escalations, fleet and decisions' },
+        { label: 'Command Center',   hash: '/command-center/platform', hint: 'Command Center — recursive operator workspace, build drill-down, HITL' },
         { label: 'Observability',   hash: '/observability', hint: 'AYIN observability dashboard — traces, waterfall, lineage circuit' },
         { label: 'Security',        hash: '/security',      hint: 'Container spawn policy — iso-mode, network policy, resource caps' },
       ],
@@ -30,7 +30,7 @@
       icon: '◈',
       items: [
         { label: 'Build Studio',    hash: '/builds',    hint: 'All builds — past, in-flight, and queued' },
-        { label: 'Dispatch',        hash: '/run',       hint: 'Dispatch agents by domain — Engineer, Security, Ops (Cmd+K)' },
+        { label: 'Dispatch',        hash: '/dispatch',       hint: 'Dispatch agents by domain — Engineer, Security, Ops (Cmd+K)' },
         { label: 'Intake',          hash: '/intake',    hint: 'Author plans and submit new builds' },
         { label: 'Editor',          hash: '/editor',    hint: 'Embedded code editor with agent copilot' },
         { label: 'Git',             hash: '/git',       hint: 'Git history, worktree state, branch operations' },
@@ -66,9 +66,9 @@
 
   function isActive(hash: string): boolean {
     if (hash === '/dashboard') return activeRoute.startsWith('/dashboard') || activeRoute.startsWith('/monitor') || activeRoute.startsWith('/ops');
-    if (hash === '/run')       return activeRoute === '/' || activeRoute === '' || activeRoute.startsWith('/run') || activeRoute.startsWith('/dispatch');
+    if (hash === '/dispatch')  return activeRoute === '/' || activeRoute === '' || activeRoute.startsWith('/dispatch') || activeRoute.startsWith('/run');
     if (hash === '/builds')    return activeRoute.startsWith('/builds') || activeRoute.startsWith('/manage');
-    if (hash === '/activity')  return activeRoute.startsWith('/activity') || activeRoute.startsWith('/comms');
+    if (hash === '/command-center/platform') return activeRoute.startsWith('/command-center');
     if (hash === '/diagrams')  return (activeRoute.startsWith('/diagrams') || activeRoute.startsWith('/arch')) && !activeRoute.includes('/library');
     if (hash === '/library')   return activeRoute.startsWith('/library') || activeRoute.startsWith('/diagrams/library');
     if (hash === '/helix')     return activeRoute.startsWith('/helix') || activeRoute.startsWith('/knowledge') || activeRoute.startsWith('/memory');

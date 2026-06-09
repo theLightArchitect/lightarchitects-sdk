@@ -32,7 +32,7 @@ describe('SvelteKit route structure — screen pages', () => {
   it('/security → Security', () => expect(exists('security/+page.svelte')).toBe(true));
   it('/tools → Tools', () => expect(exists('tools/+page.svelte')).toBe(true));
   it('/chat → Chat', () => expect(exists('chat/+page.svelte')).toBe(true));
-  it('/cockpit/platform → CockpitPlatform', () => expect(exists('cockpit/platform/+page.svelte')).toBe(true));
+  it('/command-center/platform → CockpitPlatform', () => expect(exists('command-center/platform/+page.svelte')).toBe(true));
 });
 
 // ── Parameterized routes ─────────────────────────────────────────────────────
@@ -52,10 +52,10 @@ describe('SvelteKit route structure — parameterized routes', () => {
   it('/project/[projectId] exists', () => expect(exists('project/[projectId]/+page.svelte')).toBe(true));
   it('/pr/[number] exists', () => expect(exists('pr/[number]/+page.svelte')).toBe(true));
   it('/pr/new exists', () => expect(exists('pr/new/+page.svelte')).toBe(true));
-  it('/cockpit/project/[projectId] exists', () => expect(exists('cockpit/project/[projectId]/+page.svelte')).toBe(true));
-  it('/cockpit/build/[codename] exists', () => expect(exists('cockpit/build/[codename]/+page.svelte')).toBe(true));
-  it('/cockpit/file/[codename]/[...filePath] exists', () =>
-    expect(exists('cockpit/file/[codename]/[...filePath]/+page.svelte')).toBe(true));
+  it('/command-center/project/[projectId] exists', () => expect(exists('command-center/project/[projectId]/+page.svelte')).toBe(true));
+  it('/command-center/build/[codename] exists', () => expect(exists('command-center/build/[codename]/+page.svelte')).toBe(true));
+  it('/command-center/file/[codename]/[...filePath] exists', () =>
+    expect(exists('command-center/file/[codename]/[...filePath]/+page.svelte')).toBe(true));
   it('/editor/[...filepath] exists', () => expect(exists('editor/[...filepath]/+page.svelte')).toBe(true));
   it('/diagrams/[...project] exists', () => expect(exists('diagrams/[...project]/+page.svelte')).toBe(true));
 });
@@ -65,7 +65,7 @@ describe('SvelteKit route structure — redirect pages', () => {
   it('/ops → /dashboard redirect exists', () => expect(exists('ops/+page.ts')).toBe(true));
   it('/monitor → /dashboard redirect exists', () => expect(exists('monitor/+page.ts')).toBe(true));
   it('/workspace/[...path] → /builds redirect exists', () => expect(exists('workspace/[...path]/+page.ts')).toBe(true));
-  it('/cockpit → /cockpit/platform redirect exists', () => expect(exists('cockpit/+page.ts')).toBe(true));
+  it('/cockpit → /command-center/platform redirect exists', () => expect(exists('command-center/+page.ts')).toBe(true));
   it('/ayin → /observability redirect exists', () => expect(exists('ayin/+page.ts')).toBe(true));
   it('/manage → /builds redirect exists', () => expect(exists('manage/+page.ts')).toBe(true));
   it('/arch/[...project] → /diagrams redirect exists', () => expect(exists('arch/[...project]/+page.ts')).toBe(true));

@@ -100,7 +100,7 @@
               {@const bs = buildsByProject.get(p.name)}
               <button
                 class="proj-tile"
-                onclick={() => goto('/cockpit/platform')}
+                onclick={() => goto('/command-center/platform')}
                 title={p.path}
               >
                 <div class="pt-top">

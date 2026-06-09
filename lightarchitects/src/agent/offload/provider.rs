@@ -8,9 +8,10 @@
 //! 1. Tool-using turn (`request().tool_definitions` non-empty) → fallthrough
 //!    to inner.
 //! 2. No `model_hint` set, or hint not in catalog → fallthrough.
-//! 3. Pattern declares `starts_with_anchor: true` (e.g. P3) → fallthrough.
-//!    `Day 9-10` limitation; `Day 11` `prompt_builder` will extract the rendered
-//!    anchor.
+//! 3. Pattern declares `starts_with_anchor: true` (e.g. P3) and the
+//!    configured [`ArgResolver`] returns an empty map → fallthrough.
+//!    Wire an arg resolver via [`OffloadAwareProvider::new_with_arg_resolver`]
+//!    to enable anchor-bearing patterns.
 //! 4. Unknown sibling identity → fallthrough.
 //! 5. Catalog pattern + charter resolved → offload pipeline runs.
 //!
@@ -19,8 +20,8 @@
 //! 1. Resolve declared `context_sources` (helix/canon/baseline) via the
 //!    registered [`ContextResolver`]s. Any resolver failure is logged-and-
 //!    skipped; partial context is OK.
-//! 2. Assemble enriched prompt: `{persona}\n\n{charter}\n\n{context_blocks}\n\n{user_prompt}`.
-//!    Day 9-10 uses inline concatenation; Day 11 enforces token budgets.
+//! 2. Assemble enriched prompt: `{persona}\n\n{charter}\n\n{context_blocks}\n\n{user_prompt}`
+//!    via [`prompt_builder::assemble`], enforcing per-component token budgets.
 //! 3. Dispatch via [`OffloadDispatcher::dispatch`] → raw model output.
 //! 4. Shape-validate via [`ShapeValidator`]; on failure with `pattern.refinement`
 //!    set, one refined retry; on second failure → fallthrough.

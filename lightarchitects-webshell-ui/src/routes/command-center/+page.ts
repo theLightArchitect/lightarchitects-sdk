@@ -1,4 +1,4 @@
 import { redirect } from '@sveltejs/kit';
 export function load() {
-  throw redirect(301, '/cockpit/platform');
+  throw redirect(301, '/command-center/platform');
 }

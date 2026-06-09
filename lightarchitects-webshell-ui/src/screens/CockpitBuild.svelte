@@ -25,7 +25,7 @@
   import type { DecisionEntry } from '$lib/types';
   import type { Polytope4DType } from '$lib/polytopes4d-canvas2d';
 
-  // d2 — /cockpit/build/:codename
+  // d2 — /command-center/build/:codename
   const currentScope = $derived($scope as Extract<RouteScope, { kind: 'build' }> | null);
 
   // ── PR target ─────────────────────────────────────────────────────────────
