@@ -8,7 +8,7 @@ set -euo pipefail
 CYCLES="${1:-1000}"
 BASE="${2:-http://localhost:8733}"
 TOKEN="${TOKEN:-local}"
-BINARY_NAME="lightarchitects-webshell"
+BINARY_NAME="lightspace"
 
 PID=$(pgrep -x "$BINARY_NAME" 2>/dev/null | head -1 || echo "")
 if [ -z "$PID" ]; then

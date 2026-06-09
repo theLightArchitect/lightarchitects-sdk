@@ -5,16 +5,16 @@
 
 .DEFAULT_GOAL := help
 
-BINARY         := lightarchitects-webshell
+BINARY         := lightspace
 DEPLOY_DIR     := $(HOME)/.lightarchitects/bin
 UI_DIR         := ../lightarchitects-webshell-ui
-SYMLINK        := $(HOME)/.local/bin/webshell
+SYMLINK        := $(HOME)/.local/bin/lightspace
 # Cargo workspace root is one level up; binary is placed there by cargo.
 CARGO_TARGET   := ../target/release/$(BINARY)
 
 help: ## Show available targets
 	@echo ""
-	@echo "lightarchitects-webshell"
+	@echo "lightspace"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-15s %s\n", $$1, $$2}'
 	@echo ""
 
