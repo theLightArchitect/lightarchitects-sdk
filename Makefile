@@ -3,8 +3,8 @@
 
 .PHONY: help quality test test-gateway-smoke test-features test-claude-fixture-refresh build deploy deploy-fast rollback doc fix push clean lint-ask
 
-GATEWAY_BIN      := $(HOME)/.lightarchitects/bin/lightarchitects
-GATEWAY_PREV_BIN := $(HOME)/.lightarchitects/bin/lightarchitects.prev
+GATEWAY_BIN      := $(HOME)/.lightarchitects/bin/lightshell
+GATEWAY_PREV_BIN := $(HOME)/.lightarchitects/bin/lightshell.prev
 GATEWAY_MIGRATIONS_SRC := lightarchitects-gateway/migrations/platform
 GATEWAY_MIGRATIONS_DST := $(HOME)/.lightarchitects/migrations/platform
 
@@ -87,19 +87,19 @@ deploy: quality ## Quality gates + build + deploy gateway to ~/.lightarchitects/
 	cargo build --release -p lightarchitects-gateway
 	mkdir -p "$(dir $(GATEWAY_BIN))" "$(GATEWAY_MIGRATIONS_DST)"
 	@[ -f "$(GATEWAY_BIN)" ] && cp "$(GATEWAY_BIN)" "$(GATEWAY_PREV_BIN)" || true
-	cp target/release/lightarchitects "$(GATEWAY_BIN)"
+	cp target/release/lightshell "$(GATEWAY_BIN)"
 	cp -r "$(GATEWAY_MIGRATIONS_SRC)/." "$(GATEWAY_MIGRATIONS_DST)/"
 	codesign --force --sign - "$(GATEWAY_BIN)"
 	@printf '{\n  "mcpServers": {\n    "lightarchitects": {\n      "command": "%s"\n    }\n  }\n}\n' \
-		"$(HOME)/.lightarchitects/bin/lightarchitects" \
-		> "$(HOME)/.lightarchitects/lightarchitects.mcp.json"
+		"$(HOME)/.lightarchitects/bin/lightshell" \
+		> "$(HOME)/.lightarchitects/lightshell.mcp.json"
 	@sha="$$(git rev-parse HEAD 2>/dev/null || echo unknown)" && \
 	 ts="$$(date -u '+%Y-%m-%dT%H:%M:%SZ')" && \
 	 printf '{"version":"0.3.0","sha":"%s","deployed_at":"%s"}\n' "$$sha" "$$ts" \
 	     > "$(HOME)/.lightarchitects/deploy-manifest.json"
 	@echo "Deployed → $(GATEWAY_BIN)"
 	@echo "Migrations → $(GATEWAY_MIGRATIONS_DST)"
-	@echo "MCP config → $(HOME)/.lightarchitects/lightarchitects.mcp.json"
+	@echo "MCP config → $(HOME)/.lightarchitects/lightshell.mcp.json"
 	@echo "Manifest  → $(HOME)/.lightarchitects/deploy-manifest.json"
 	@echo ""
 	@echo "⚠  Running gateway processes have the OLD code mapped in memory."
@@ -111,25 +111,28 @@ deploy-fast: ## Build + deploy gateway without quality gates
 	cargo build --release -p lightarchitects-gateway
 	mkdir -p "$(dir $(GATEWAY_BIN))" "$(GATEWAY_MIGRATIONS_DST)"
 	@[ -f "$(GATEWAY_BIN)" ] && cp "$(GATEWAY_BIN)" "$(GATEWAY_PREV_BIN)" || true
-	cp target/release/lightarchitects "$(GATEWAY_BIN)"
+	cp target/release/lightshell "$(GATEWAY_BIN)"
 	cp -r "$(GATEWAY_MIGRATIONS_SRC)/." "$(GATEWAY_MIGRATIONS_DST)/"
 	codesign --force --sign - "$(GATEWAY_BIN)"
 	@printf '{\n  "mcpServers": {\n    "lightarchitects": {\n      "command": "%s"\n    }\n  }\n}\n' \
-		"$(HOME)/.lightarchitects/bin/lightarchitects" \
-		> "$(HOME)/.lightarchitects/lightarchitects.mcp.json"
+		"$(HOME)/.lightarchitects/bin/lightshell" \
+		> "$(HOME)/.lightarchitects/lightshell.mcp.json"
 	@sha="$$(git rev-parse HEAD 2>/dev/null || echo unknown)" && \
 	 ts="$$(date -u '+%Y-%m-%dT%H:%M:%SZ')" && \
 	 printf '{"version":"0.3.0","sha":"%s","deployed_at":"%s"}\n' "$$sha" "$$ts" \
 	     > "$(HOME)/.lightarchitects/deploy-manifest.json"
 	@echo "Deployed → $(GATEWAY_BIN)"
 	@echo "Migrations → $(GATEWAY_MIGRATIONS_DST)"
-	@echo "MCP config → $(HOME)/.lightarchitects/lightarchitects.mcp.json"
+	@echo "MCP config → $(HOME)/.lightarchitects/lightshell.mcp.json"
 	@echo "Manifest  → $(HOME)/.lightarchitects/deploy-manifest.json"
 	@echo ""
 	@echo "⚠  Running gateway processes have the OLD code mapped in memory."
 	@echo "   In Claude Code: /mcp → select 'lightarchitects' → Reconnect"
 	@echo "   (Unix doesn't auto-reload binaries on file change — the running"
 	@echo "    subprocess must be restarted for the new code to take effect.)"
+
+serve-webshell: ## Start webshell HTTP server (cross-platform, idempotent; delegates to lightshell serve-webshell)
+	@"$(HOME)/.lightarchitects/bin/lightshell" serve-webshell
 
 rollback: ## Restore the previous gateway binary (lightarchitects.prev → lightarchitects)
 	@test -f "$(GATEWAY_PREV_BIN)" || \

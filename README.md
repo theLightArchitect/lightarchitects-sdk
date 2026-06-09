@@ -39,11 +39,11 @@ cp .env.example .env
 
 # 2. Build and deploy the webshell binary
 cd lightarchitects-webshell
-make deploy          # builds + installs to ~/.lightarchitects/bin/
+make deploy          # builds + installs to ~/.lightarchitects/bin/lightspace
 
 # 3. Start the server
 LIGHTARCHITECTS_WEBSHELL_TOKEN=<your-token> \
-  ~/.lightarchitects/bin/lightarchitects-webshell
+  ~/.lightarchitects/bin/lightspace
 
 # 4. Open http://localhost:8733 — type your first intent in the lobby
 ```

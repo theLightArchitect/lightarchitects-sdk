@@ -83,7 +83,7 @@ proptest = "1"
 similar = "2"
 
 [[bin]]
-name = "lightarchitects"
+name = "lightshell"
 path = "src/main.rs"
 doc = false
 
