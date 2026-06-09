@@ -94,7 +94,7 @@ pub credential_store: Arc<DashMap<String, CredentialState>> // in-memory cache
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `LIGHTARCHITECTS_WEBSHELL_TOKEN` | *(generated at startup)* | Auth token for the webshell HTTP API. Set to a known value to make `curl` tests predictable: `LIGHTARCHITECTS_WEBSHELL_TOKEN=test-token ./target/release/lightarchitects-webshell` |
+| `LIGHTARCHITECTS_WEBSHELL_TOKEN` | *(generated at startup)* | Auth token for the webshell HTTP API. Set to a known value to make `curl` tests predictable: `LIGHTARCHITECTS_WEBSHELL_TOKEN=test-token ./target/release/lightspace` |
 | `LIGHTSQUAD_MOCK_WORKERS` | *(unset = real LLM)* | When set (any value), skip real Ollama calls. Workers write `<task_id>.txt` + commit. Use for orchestration tests that don't need LLM output. |
 | `LIGHTSQUAD_CODING_MODEL` | *(unset)* | Override the coding model and bypass `CLOUD_MODEL_REGISTRY` validation. Accepts any model name local Ollama knows (e.g. `llama3.2:3b`). Takes priority over `OLLAMA_MODEL`. |
 | `OLLAMA_MODEL` | *(unset)* | Ambient model fallback. If `LIGHTSQUAD_CODING_MODEL` is unset, this value is used and also bypasses registry validation. Useful when the shell already exports `OLLAMA_MODEL=qwen3.5:397b-cloud`. |
@@ -126,7 +126,7 @@ The lightsquad ContractSupervisor evaluates artifacts against a `TaskContract` a
 LIGHTARCHITECTS_WEBSHELL_TOKEN=dev-token \
 OLLAMA_HOST=http://localhost:11434 \
 OLLAMA_MODEL=qwen3.5:397b-cloud \
-./target/release/lightarchitects-webshell
+./target/release/lightspace
 ```
 
 Use `LIGHTSQUAD_MOCK_WORKERS=1` to test orchestration flow without burning LLM tokens.

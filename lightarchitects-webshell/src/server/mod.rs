@@ -77,6 +77,7 @@ pub mod question_routes;
 pub mod roadmap;
 pub mod spawn_reaper;
 pub mod squad_routes;
+pub mod sse_rate_limit;
 pub mod wave_routes;
 
 /// Snapshot of the browser UI state, periodically reported by the frontend.
@@ -447,6 +448,11 @@ pub struct AppState {
     /// Keyed by `SipHash` of the Bearer token; value is the last successful
     /// PATCH instant.  Enforces 1 PATCH/sec per token (429 on burst).
     pub patch_rate_limiter: Arc<DashMap<u64, Instant>>,
+    /// Per-IP SSE connection rate limiter (CWE-770).
+    ///
+    /// Keyed by client IP; value is `(attempts, window_start)`.
+    /// Resets after 60 s. Shared across all SSE endpoints.
+    pub sse_rate_limiter: sse_rate_limit::SseRateLimiter,
     /// Docker bridge CIDR guard — blocks policy mutation from container IPs.
     ///
     /// Probed at startup via `docker network ls` + `docker network inspect`.
@@ -838,6 +844,7 @@ impl AppState {
             active_containers: Arc::new(std::sync::RwLock::new(HashMap::new())),
             policy_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             patch_rate_limiter,
+            sse_rate_limiter: sse_rate_limit::new_sse_rate_limiter(),
             bridge_cidr_guard: Arc::clone(&bridge_cidr_guard),
             ironclaw_config: IronclawConfig::from_env(),
             attestation_log: Arc::new(DashMap::new()),
@@ -987,6 +994,7 @@ impl AppState {
             active_containers: Arc::new(std::sync::RwLock::new(HashMap::new())),
             policy_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             patch_rate_limiter: Arc::new(DashMap::new()),
+            sse_rate_limiter: sse_rate_limit::new_sse_rate_limiter(),
             bridge_cidr_guard: Arc::new(crate::container::cidr_guard::BridgeCidrGuard::default()),
             ironclaw_config: IronclawConfig {
                 budget_usd: 0.0,
@@ -1131,7 +1139,13 @@ pub fn build_app(state: AppState) -> Router {
             "/api/container/active",
             get(crate::container::active_routes::get_active_containers),
         )
-        .route("/api/events", get(events::sse_handler::sse_handler))
+        .route(
+            "/api/events",
+            get(events::sse_handler::sse_handler).layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                sse_rate_limit::sse_rate_limit_middleware,
+            )),
+        )
         .route("/api/control", post(events::control_handler))
         .route(
             "/api/pty/respawn",
@@ -1171,7 +1185,12 @@ pub fn build_app(state: AppState) -> Router {
         )
         .route(
             "/api/builds/{id}/events",
-            get(events::sse_handler::sse_build_handler),
+            get(events::sse_handler::sse_build_handler).layer(
+                axum::middleware::from_fn_with_state(
+                    state.clone(),
+                    sse_rate_limit::sse_rate_limit_middleware,
+                ),
+            ),
         )
         .route(
             "/api/builds/{id}/decisions",
@@ -1585,7 +1604,12 @@ pub fn build_app(state: AppState) -> Router {
         // ── Lightspace JIT-reactive canvas (lightarchitects-lightspace) ─────────
         .route(
             "/api/lightspace/{session_id}/events",
-            get(events::lightspace_sse::lightspace_sse_handler),
+            get(events::lightspace_sse::lightspace_sse_handler).layer(
+                axum::middleware::from_fn_with_state(
+                    state.clone(),
+                    sse_rate_limit::sse_rate_limit_middleware,
+                ),
+            ),
         )
         .route(
             "/api/lightspace/{session_id}/snapshot",
