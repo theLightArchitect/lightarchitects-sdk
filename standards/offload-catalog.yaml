@@ -1,0 +1,305 @@
+# offload-catalog.yaml — LightSquad Mesh-Aware Offload Catalog (v1.1)
+#
+# Authoritative pattern allowlist for OffloadAwareProvider.
+# Consumed by: lightarchitects/src/agent/offload/catalog.rs (OffloadCatalog::load_from_helix)
+# Schema reference: see catalog.rs:: OffloadCatalog, Pattern, ContextSource, Shape, Verifier.
+#
+# v1.1 additions vs v1.0:
+#   - context_sources: per-pattern + per-sibling overlay of canon/helix/industry-baseline sources
+#   - verifier:        LÆX supervisor hook (declares a second-pass verification pattern)
+#
+# v1-deferred (annotated # DEFERRED: v2):
+#   - context7 source kind (library-docs auto-resolve)
+#   - per-project catalog overrides
+#   - helix writeback of offload outcomes
+#
+# DO NOT edit anchor paths without verifying they exist under
+# $HELIX/user/standards/{canon,industry-baselines}/. The loaders fail closed
+# on missing files.
+
+version: "1.1"
+last_calibrated: "2026-06-08"
+default_model: "glm-5.1:cloud"
+
+patterns:
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # P1 — Explain a small code unit
+  # ───────────────────────────────────────────────────────────────────────────
+  - id: P1
+    name: "Explain a small code unit"
+    template: |
+      In one sentence, what does this {{lang}} function do?
+
+      ```{{lang}}
+      {{code}}
+      ```
+
+      Reply with ONLY the sentence, no preamble or commentary.
+    eligible:
+      siblings: ["claude", "corso", "quantum", "eva"]
+      tool_use_required: false
+      max_input_tokens: 4000
+    context_sources:
+      default:
+        - kind: "canon"
+          doc: "builders-cookbook"
+          anchor: "7. — Agentic Architecture Patterns"
+          token_budget: 500
+      overrides:
+        corso:
+          - kind: "industry-baseline"
+            category: "security"
+            path: "owasp/owasp-llm-top-10-v2.0-2026-05-05.md"
+            token_budget: 800
+          - kind: "canon"
+            doc: "security-guardrails"
+            anchor: "Part III — Code & Application Security"
+            token_budget: 500
+        quantum:
+          - kind: "canon"
+            doc: "architects-blueprint"
+            anchor: "Part XIV — Pre-Finalization Quality Gate"
+            token_budget: 600
+    shape:
+      kind: "sentence_no_fences"
+      max_words: 50
+      forbidden_substrings: ["```"]
+    refinement:
+      anchor: "respond starting with a single declarative sentence describing the function's behavior. No code fence."
+    verifier:
+      enabled: false
+    calibration:
+      last_dry_run: "2026-06-08"
+      sample_count: 3
+      success_rate: 1.0
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # P2 — Enumerate fields of a struct/interface
+  # ───────────────────────────────────────────────────────────────────────────
+  - id: P2
+    name: "Enumerate fields of a struct or interface"
+    template: |
+      List the fields of this {{kind}} ({{lang}}), one per line, as 'name: type'.
+
+      ```{{lang}}
+      {{definition}}
+      ```
+
+      Reply with ONLY the lines, no preamble.
+    eligible:
+      siblings: ["claude", "corso", "eva"]
+      tool_use_required: false
+      max_input_tokens: 4000
+    shape:
+      kind: "enumeration_lines"
+      forbidden_substrings: ["```", "<preamble>"]
+    refinement:
+      anchor: "respond with ONLY lines of the form `name: type`, one per line. No code fence, no commentary."
+    verifier:
+      enabled: false
+    calibration:
+      last_dry_run: "2026-06-08"
+      sample_count: 3
+      success_rate: 1.0
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # P3 — Generate a small function from a contract  (LÆX-verified)
+  # ───────────────────────────────────────────────────────────────────────────
+  - id: P3
+    name: "Generate a small function from a contract"
+    template: |
+      Write a {{lang}} function `{{name}}({{args}})` that {{spec}}.
+
+      IMPORTANT: respond starting with the literal characters `{{lang_kw}} {{name}}`
+      and ending with the closing `}` of the function. No backticks, no triple-backticks,
+      no markdown code fence.
+    eligible:
+      siblings: ["claude", "corso", "eva"]
+      tool_use_required: false
+      max_input_tokens: 4000
+    context_sources:
+      default:
+        - kind: "canon"
+          doc: "builders-cookbook"
+          anchor: "§63 — Untrusted-Input Operational Patterns"
+          token_budget: 800
+        - kind: "industry-baseline"
+          category: "quality"
+          path: "iso/iso-25010-2023-stub.md"
+          token_budget: 400
+        # DEFERRED: v2 — Context7 library-docs auto-resolve
+        # - kind: "context7"
+        #   library_id: "auto-resolve-from-prompt"
+        #   token_budget: 1200
+      overrides:
+        corso:
+          - kind: "canon"
+            doc: "builders-cookbook"
+            anchor: "§63 — Untrusted-Input Operational Patterns"
+            token_budget: 800
+          - kind: "industry-baseline"
+            category: "quality"
+            path: "iso/iso-25010-2023-stub.md"
+            token_budget: 400
+          - kind: "industry-baseline"
+            category: "security"
+            path: "owasp/owasp-secure-coding-playbook-2026-05-05.md"
+            token_budget: 600
+    shape:
+      kind: "function_no_fences"
+      starts_with_anchor: true
+      forbidden_substrings: ["```"]
+    refinement:
+      anchor: "RESPOND starting with the exact characters `{{lang_kw}} {{name}}(`. NO backticks. NO ``` fences."
+    verifier:
+      enabled: true
+      pattern: "PV_canon_compliance"
+      escalate_on_fail: "AUTO_RETRY"
+      max_auto_retries: 1
+    calibration:
+      last_dry_run: "2026-06-08"
+      sample_count: 3
+      success_rate: 0.83   # honest: one retry needed during lightsquad-perf-lab BUILD
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # P4 — Stats summary (p50/p95/p99/mean/min/max as JSON)
+  # ───────────────────────────────────────────────────────────────────────────
+  - id: P4
+    name: "Stats summary for a numeric array"
+    template: |
+      Given this array of durations in milliseconds: {{values}}, compute these statistics
+      and return as a single JSON object with keys p50, p95, p99, mean, min, max
+      (no other keys). Return ONLY the JSON, no markdown fences or commentary.
+    eligible:
+      siblings: ["claude", "ayin", "eva"]
+      tool_use_required: false
+      max_input_tokens: 4000
+    context_sources:
+      default:
+        - kind: "industry-baseline"
+          category: "operations"
+          path: "google/google-sre-golden-signals-2026-05-04.md"
+          token_budget: 500
+    shape:
+      kind: "json_object"
+      required_keys: ["p50", "p95", "p99", "mean", "min", "max"]
+      forbidden_substrings: ["```"]
+    refinement:
+      anchor: "RESPOND with ONLY a single JSON object. NO backticks. Keys p50,p95,p99,mean,min,max."
+    verifier:
+      enabled: false
+    calibration:
+      last_dry_run: "2026-06-08"
+      sample_count: 3
+      success_rate: 1.0
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # P5 — README/doc section
+  # ───────────────────────────────────────────────────────────────────────────
+  - id: P5
+    name: "Write a README/doc section"
+    template: |
+      Write a brief README section titled '{{title}}' covering: {{bullets}}.
+      Markdown only. No commentary outside the section. Under 200 words.
+    eligible:
+      siblings: ["claude", "eva", "soul"]
+      tool_use_required: false
+      max_input_tokens: 4000
+    context_sources:
+      default:
+        - kind: "canon"
+          doc: "builders-cookbook"
+          anchor: "16. — File & Code Documentation Standards"
+          token_budget: 500
+        - kind: "helix"
+          owner_scope: "owner"     # resolved to calling sibling at runtime
+          limit: 3
+          token_budget: 800
+      overrides:
+        soul:
+          - kind: "canon"
+            doc: "builders-cookbook"
+            anchor: "22. — Documentation Suite"
+            token_budget: 600
+          - kind: "helix"
+            owner_scope: "owner"
+            limit: 5
+            token_budget: 1000
+    shape:
+      kind: "markdown_section"
+      max_words: 200
+      forbidden_substrings: ["<commentary>"]
+    refinement:
+      anchor: "Output ONLY the markdown section. Start with `## {{title}}`. Under 200 words. No outside commentary."
+    verifier:
+      enabled: false
+    calibration:
+      last_dry_run: "2026-06-08"
+      sample_count: 3
+      success_rate: 1.0
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # PV_canon_compliance — LÆX verifier pattern
+  # ───────────────────────────────────────────────────────────────────────────
+  # role="verifier" excludes from classify() — only LaexSupervisor invokes it.
+  - id: PV_canon_compliance
+    name: "LÆX verify: output complies with canon + industry-baseline"
+    role: "verifier"
+    template: |
+      You are LAEX, the canon-keeper. Vet the primary output against the cited
+      canon anchors and industry baselines.
+
+      PRIMARY OUTPUT TO VET (between markers):
+      <<<BEGIN_OUTPUT>>>
+      {{primary_output}}
+      <<<END_OUTPUT>>>
+
+      APPLICABLE CANON ANCHORS:
+      {{canon_excerpts}}
+
+      APPLICABLE INDUSTRY BASELINES:
+      {{baseline_excerpts}}
+
+      DECISION RUBRIC (use this exact decision tree):
+      - PASS: Output satisfies every cited anchor. No fixable issue. Use this
+        when the code does what the anchors require even if you could imagine a
+        stylistically nicer version. Stylistic preferences are NOT defects.
+      - RETRY: Output has one or two fixable issues that a one-line amendment
+        can resolve. Always include a concrete amendment_hint when choosing
+        RETRY.
+      - HITL: Output has a STRUCTURAL canon violation — banned API (.unwrap(),
+        eval), fundamental architecture flaw, or security vulnerability — that
+        cannot be fixed by tweaking a line. Operator must intervene.
+
+      EXAMPLES:
+      - Function with explicit type check + NaN check + correct clamping
+        => PASS
+      - Function with correct clamping but no NaN guard
+        => RETRY (hint: "add isNaN() guard before arithmetic")
+      - Function that calls .unwrap() or eval() on untrusted input
+        => HITL (reason: "uses banned .unwrap()/eval — structural violation")
+
+      CRITICAL OUTPUT FORMAT:
+      - Respond with ONLY a single JSON object.
+      - Your FIRST character MUST be `{` and your LAST character MUST be `}`.
+      - NO backticks, NO triple-backticks, NO ```json fences, NO commentary
+        outside the JSON object.
+      - Schema:
+        {"verdict": "PASS" | "RETRY" | "HITL", "reason": "<=30 words", "amendment_hint": "<=50 words or null"}
+    eligible:
+      siblings: ["laex"]
+      tool_use_required: false
+      max_input_tokens: 6000
+    shape:
+      kind: "json_object"
+      required_keys: ["verdict", "reason", "amendment_hint"]
+      verdict_enum: ["PASS", "RETRY", "HITL"]
+      forbidden_substrings: ["```"]
+    refinement:
+      anchor: "RESPOND with ONLY a single JSON object. Keys: verdict (PASS|RETRY|HITL), reason, amendment_hint. NO backticks."
+    calibration:
+      last_dry_run: "2026-06-08"
+      sample_count: 3
+      success_rate: 1.0
+      notes: "Calibrated against glm-5.1:cloud via Ollama. Three scenarios: C1_PASS (clean clamp with type+NaN guards), C2_RETRY (clamp missing NaN guard), C3_HITL (eval+unwrap structural violation). Required one template strengthening iteration: explicit rubric + few-shot examples + JSON-only format anchor (removed embedded markdown fence delimiters that the model echoed). Report: ~/.lightarchitects/calibration/PV_canon_compliance-2026-06-08.json" 
