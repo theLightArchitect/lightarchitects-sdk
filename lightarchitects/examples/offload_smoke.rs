@@ -158,14 +158,24 @@ fn report_scenario(name: &str, resp: &AgentResponse) {
         .map(str::to_owned)
         .or_else(|| resp.output.as_null().map(|()| String::new()))
         .unwrap_or_else(|| resp.output.to_string());
-    let offloaded = resp.provider_attrs.contains_key("offload.path");
     let pattern = resp
         .provider_attrs
         .get("offload.pattern_id")
         .and_then(|v| v.as_str())
         .unwrap_or("?");
+    let verdict = resp
+        .provider_attrs
+        .get("offload.verifier_verdict")
+        .and_then(|v| v.as_str())
+        .unwrap_or("none");
+    let total_tok = resp
+        .provider_attrs
+        .get("offload.tokens.total_estimated")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
     eprintln!(
-        "[smoke] {name} PASS offloaded={offloaded} pattern={pattern} retries={} output={:.120}",
+        "[smoke] {name} PASS pattern={pattern} verdict={verdict} \
+        tokens_est={total_tok} retries={} output={:.120}",
         resp.retry_count,
         text.replace('\n', " ")
     );

@@ -193,11 +193,46 @@ impl<P: LlmAgentProvider> OffloadAwareProvider<P> {
         }
     }
 
-    fn build_response(output: String, pattern_id: &str, retries: u8) -> AgentResponse {
+    /// Build the final [`AgentResponse`], enriching `provider_attrs` with
+    /// AYIN-observable offload telemetry (pattern, retry count, per-component
+    /// token breakdown, verifier verdict).
+    fn build_response(
+        output: String,
+        pattern_id: &str,
+        retries: u8,
+        component_tokens: Option<&prompt_builder::ComponentTokenUsage>,
+        verifier_verdict: Option<&str>,
+    ) -> AgentResponse {
         let input_estimate = u32::try_from(output.len() / 4).unwrap_or(u32::MAX);
         let mut attrs = HashMap::new();
         attrs.insert("offload.pattern_id".to_owned(), Value::from(pattern_id));
         attrs.insert("offload.path".to_owned(), Value::from("primary"));
+        attrs.insert("offload.retry_count".to_owned(), Value::from(retries));
+        if let Some(ct) = component_tokens {
+            attrs.insert(
+                "offload.tokens.persona".to_owned(),
+                Value::from(ct.persona as u64),
+            );
+            attrs.insert(
+                "offload.tokens.charter".to_owned(),
+                Value::from(ct.charter as u64),
+            );
+            attrs.insert(
+                "offload.tokens.context".to_owned(),
+                Value::from(ct.context as u64),
+            );
+            attrs.insert(
+                "offload.tokens.user_prompt".to_owned(),
+                Value::from(ct.user_prompt as u64),
+            );
+            attrs.insert(
+                "offload.tokens.total_estimated".to_owned(),
+                Value::from((ct.persona + ct.charter + ct.context + ct.user_prompt) as u64),
+            );
+        }
+        if let Some(v) = verifier_verdict {
+            attrs.insert("offload.verifier_verdict".to_owned(), Value::from(v));
+        }
         AgentResponse {
             output: Value::String(output),
             turns_used: 1,
@@ -220,7 +255,7 @@ impl<P: LlmAgentProvider> OffloadAwareProvider<P> {
         charter: &super::charter::SiblingCharter,
         blocks: &[ResolvedContext],
         user_prompt: &str,
-    ) -> Option<String> {
+    ) -> Option<prompt_builder::AssembledPrompt> {
         let budgets = BudgetConfig::from_pattern(pattern);
         prompt_builder::assemble(
             charter.persona,
@@ -230,7 +265,28 @@ impl<P: LlmAgentProvider> OffloadAwareProvider<P> {
             &budgets,
         )
         .ok()
-        .map(|a| a.rendered)
+    }
+
+    /// Attempt HITL escalation; returns the approved response or `None` to fall
+    /// through on denial / escalator error.
+    async fn try_hitl_escalate(
+        &self,
+        escalation: EscalationRequest,
+        last_output: String,
+        pattern_id: &str,
+        retry_count: u8,
+        ct: &prompt_builder::ComponentTokenUsage,
+    ) -> Option<AgentResponse> {
+        match self.escalator.escalate(escalation).await {
+            Ok(EscalationResolution::Approved { .. }) => Some(Self::build_response(
+                last_output,
+                pattern_id,
+                retry_count,
+                Some(ct),
+                Some("HITL_APPROVED"),
+            )),
+            Ok(EscalationResolution::Denied { .. }) | Err(_) => None,
+        }
     }
 
     /// Run the offload pipeline. Returns `Ok(Some(response))` on success,
@@ -257,12 +313,14 @@ impl<P: LlmAgentProvider> OffloadAwareProvider<P> {
         if pattern.shape.starts_with_anchor == Some(true) && starts_with_anchor.is_none() {
             return Ok(None);
         }
-        let Some(rendered) = Self::render_prompt(pattern, charter, &blocks, user_prompt) else {
+        let Some(assembled) = Self::render_prompt(pattern, charter, &blocks, user_prompt) else {
             return Ok(None);
         };
+        let rendered = assembled.rendered.as_str();
+        let ct = &assembled.component_tokens;
 
         // First dispatch.
-        let Ok(primary_output) = self.dispatcher.dispatch(pattern, &rendered).await else {
+        let Ok(primary_output) = self.dispatcher.dispatch(pattern, rendered).await else {
             return Ok(None);
         };
 
@@ -278,7 +336,7 @@ impl<P: LlmAgentProvider> OffloadAwareProvider<P> {
                     return Ok(None);
                 };
                 let refined =
-                    PromptRefiner::refine_after_shape_failure(&rendered, refinement, &viol);
+                    PromptRefiner::refine_after_shape_failure(rendered, refinement, &viol);
                 let Ok(retried) = self.dispatcher.dispatch(pattern, &refined).await else {
                     return Ok(None);
                 };
@@ -301,6 +359,8 @@ impl<P: LlmAgentProvider> OffloadAwareProvider<P> {
                 final_output,
                 &pattern.id,
                 retry_count,
+                Some(ct),
+                None,
             )));
         }
 
@@ -308,12 +368,16 @@ impl<P: LlmAgentProvider> OffloadAwareProvider<P> {
         let ctx = Self::verifier_context_from_blocks(&blocks);
         match self
             .supervisor
-            .supervise(pattern, final_output.clone(), &rendered, &ctx)
+            .supervise(pattern, final_output.clone(), rendered, &ctx)
             .await
         {
-            Ok(SupervisorVerdict::Pass { output }) => {
-                Ok(Some(Self::build_response(output, &pattern.id, retry_count)))
-            }
+            Ok(SupervisorVerdict::Pass { output }) => Ok(Some(Self::build_response(
+                output,
+                &pattern.id,
+                retry_count,
+                Some(ct),
+                Some("PASS"),
+            ))),
             Ok(SupervisorVerdict::Hitl {
                 reason,
                 last_output,
@@ -324,22 +388,16 @@ impl<P: LlmAgentProvider> OffloadAwareProvider<P> {
                     .chain_origin
                     .clone()
                     .unwrap_or_else(|| pattern.id.clone());
-                let traceparent = req.request().parent_span_id.clone();
                 let escalation = EscalationRequest {
                     task_id,
                     reason,
                     last_output: last_output.clone(),
                     last_amendment_hint,
-                    traceparent,
+                    traceparent: req.request().parent_span_id.clone(),
                 };
-                match self.escalator.escalate(escalation).await {
-                    Ok(EscalationResolution::Approved { .. }) => Ok(Some(Self::build_response(
-                        last_output,
-                        &pattern.id,
-                        retry_count,
-                    ))),
-                    Ok(EscalationResolution::Denied { .. }) | Err(_) => Ok(None),
-                }
+                Ok(self
+                    .try_hitl_escalate(escalation, last_output, &pattern.id, retry_count, ct)
+                    .await)
             }
             Err(_) => Ok(None),
         }
