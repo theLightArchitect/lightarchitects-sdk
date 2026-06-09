@@ -168,6 +168,12 @@ fn resolve_binary_with_home(name: &str, home: &str) -> String {
             "/opt/homebrew/bin/codex".to_owned(),
             "/usr/local/bin/codex".to_owned(),
         ],
+        "lightshell" => vec![
+            format!("{home}/lightarchitects/lightshell/bin/lightshell"),
+            format!("{home}/.lightarchitects/bin/lightshell"),
+            format!("{home}/.local/bin/lightshell"),
+            "/usr/local/bin/lightshell".to_owned(),
+        ],
         "lightarchitects" => vec![
             // CLI binary (agent runner) takes priority over the gateway binary.
             // The CLI installs here via `make deploy-fast` in lightarchitects-cli.
@@ -768,11 +774,17 @@ fn extract_activity_summary(val: &serde_json::Value) -> Option<String> {
                 blocks.iter().find_map(|b| {
                     if b["type"].as_str() == Some("thinking") {
                         let t = b["thinking"].as_str().unwrap_or("");
-                        let end = t.floor_char_boundary(500);
+                        let end = (0..=500_usize.min(t.len()))
+                            .rev()
+                            .find(|&i| t.is_char_boundary(i))
+                            .unwrap_or(0);
                         Some(format!("Thinking: {}", &t[..end]))
                     } else if b["type"].as_str() == Some("text") {
                         let t = b["text"].as_str().unwrap_or("");
-                        let end = t.floor_char_boundary(500);
+                        let end = (0..=500_usize.min(t.len()))
+                            .rev()
+                            .find(|&i| t.is_char_boundary(i))
+                            .unwrap_or(0);
                         Some(format!("Text: {}", &t[..end]))
                     } else {
                         None
