@@ -297,6 +297,10 @@ impl<P: LlmAgentProvider> OffloadAwareProvider<P> {
         &self,
         req: &SanitizedAgentRequest,
     ) -> Result<Option<AgentResponse>, ProviderError> {
+        // S7: respect chain-depth limit before dispatching any outbound calls.
+        if req.request().chain_depth >= crate::agent::MAX_CHAIN_DEPTH {
+            return Ok(None);
+        }
         let Some(pattern) = self.try_classify(req) else {
             return Ok(None);
         };

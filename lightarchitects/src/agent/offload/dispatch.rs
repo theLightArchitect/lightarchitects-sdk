@@ -25,6 +25,50 @@ const DEFAULT_API_KEY: &str = "ollama";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
 const DEFAULT_TEMPERATURE: f64 = 0.1;
 
+/// WHY: allowlist applied before accepting any caller-supplied base URL.
+/// Only `http`/`https` accepted; only `localhost`/`127.0.0.1` allowed for
+/// private-range hosts to prevent SSRF against RFC 1918 infrastructure.
+fn validate_base_url(url: &str) -> Result<(), String> {
+    let parsed = reqwest::Url::parse(url).map_err(|e| format!("invalid base_url: {e}"))?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        s => {
+            return Err(format!(
+                "base_url scheme {s:?} not allowed (use http or https)"
+            ));
+        }
+    }
+    if let Some(host) = parsed.host_str() {
+        let is_explicit_loopback = host == "localhost" || host == "127.0.0.1" || host == "::1";
+        if !is_explicit_loopback {
+            if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+                if ip.is_loopback() || is_private_ip(ip) {
+                    return Err(format!(
+                        "base_url host {host:?} is a private/loopback address; \
+                         only explicit 'localhost' or '127.0.0.1' are permitted"
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn is_private_ip(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            let o = v4.octets();
+            // RFC 1918: 10.x, 172.16-31.x, 192.168.x
+            // Link-local: 169.254.x
+            o[0] == 10
+                || (o[0] == 172 && o[1] >= 16 && o[1] <= 31)
+                || (o[0] == 192 && o[1] == 168)
+                || (o[0] == 169 && o[1] == 254)
+        }
+        std::net::IpAddr::V6(_) => false, // not enforcing V6 private ranges — conservative
+    }
+}
+
 /// OpenAI-compatible chat completions dispatcher.
 pub struct LiteLLMHttpDispatcher {
     client: reqwest::Client,
@@ -59,7 +103,10 @@ impl LiteLLMHttpDispatcher {
     ///
     /// # Errors
     ///
-    /// Returns a string describing any `reqwest::Client` build failure.
+    /// - URL scheme not `http` or `https`.
+    /// - Host is a non-loopback private IP (RFC 1918 / link-local blocked; only
+    ///   `localhost` / `127.0.0.1` are allowed for local Ollama).
+    /// - `reqwest::Client` build failure.
     pub fn with_config(
         base_url: String,
         model: String,
@@ -67,8 +114,12 @@ impl LiteLLMHttpDispatcher {
         temperature: f64,
         per_call_timeout: Duration,
     ) -> Result<Self, String> {
+        validate_base_url(&base_url)?;
         let client = reqwest::Client::builder()
             .timeout(per_call_timeout)
+            // WHY: disable redirect following — an SSRF attacker may use a 302
+            // to steer requests to RFC 1918 addresses after the host allowlist check.
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| format!("reqwest client build: {e}"))?;
         Ok(Self {
@@ -178,5 +229,32 @@ mod tests {
         .unwrap();
         assert_eq!(d.base_url(), "https://api.openai.com/v1");
         assert_eq!(d.model(), "gpt-4o-mini");
+    }
+
+    // S1 security gate tests
+    #[test]
+    fn validate_base_url_accepts_localhost() {
+        assert!(validate_base_url("http://localhost:11434/v1").is_ok());
+        assert!(validate_base_url("http://127.0.0.1:11434/v1").is_ok());
+        assert!(validate_base_url("https://api.openai.com/v1").is_ok());
+    }
+
+    #[test]
+    fn validate_base_url_rejects_private_ips() {
+        assert!(validate_base_url("http://10.0.0.1/v1").is_err());
+        assert!(validate_base_url("http://192.168.1.1/api").is_err());
+        assert!(validate_base_url("http://172.16.0.1/meta").is_err());
+        assert!(validate_base_url("http://169.254.169.254/latest").is_err());
+    }
+
+    #[test]
+    fn validate_base_url_rejects_bad_scheme() {
+        assert!(validate_base_url("ftp://localhost/v1").is_err());
+        assert!(validate_base_url("file:///etc/passwd").is_err());
+    }
+
+    #[test]
+    fn validate_base_url_rejects_invalid_url() {
+        assert!(validate_base_url("not a url").is_err());
     }
 }

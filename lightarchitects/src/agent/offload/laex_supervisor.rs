@@ -221,10 +221,13 @@ impl LaexSupervisor {
                             "RETRY verdict but primary pattern has no refinement.anchor".to_owned(),
                         )
                     })?;
+                    // S2: cap amendment_hint before injecting into the retry
+                    // prompt — model output is untrusted (OWASP LLM05).
+                    let capped_hint = cap_amendment_hint(parsed.amendment_hint.as_deref());
                     let refined = PromptRefiner::refine_after_laex_retry(
                         &current_prompt,
                         refinement,
-                        parsed.amendment_hint.as_deref(),
+                        capped_hint.as_deref(),
                     );
                     let new_output = self
                         .dispatcher
@@ -287,6 +290,18 @@ impl LaexSupervisor {
             "PASS" | "RETRY" | "HITL" => Ok(parsed),
             other => Err(SupervisorError::UnknownVerdict(other.to_owned())),
         }
+    }
+}
+
+/// Truncate an `amendment_hint` from model output to ≤50 words before it is
+/// injected into a retry prompt (S2 — indirect prompt injection mitigation).
+fn cap_amendment_hint(hint: Option<&str>) -> Option<String> {
+    let h = hint?;
+    let words: Vec<&str> = h.split_whitespace().collect();
+    if words.len() <= 50 {
+        Some(h.to_owned())
+    } else {
+        Some(words[..50].join(" "))
     }
 }
 

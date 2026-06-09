@@ -103,6 +103,21 @@ pub struct Pattern {
     pub calibration: Calibration,
 }
 
+impl Pattern {
+    /// Iterate over all declared context sources (default + all overrides).
+    /// Used by `OffloadCatalog::validate` to apply the S4 path allowlist.
+    pub fn all_context_sources(&self) -> Vec<&ContextSource> {
+        let Some(overlay) = &self.context_sources else {
+            return Vec::new();
+        };
+        let mut out: Vec<&ContextSource> = overlay.default.iter().collect();
+        for sources in overlay.overrides.values() {
+            out.extend(sources.iter());
+        }
+        out
+    }
+}
+
 // ── Eligibility ────────────────────────────────────────────────────────────
 
 /// Eligibility gate for a pattern.
@@ -435,6 +450,31 @@ impl OffloadCatalog {
                 }
             }
         }
+        // S4: Allowlist all IndustryBaseline path fields at load time.
+        // The post-canonicalize containment in IndustryBaselineSource is the
+        // runtime enforcement gate; this is the load-time schema gate.
+        for p in &self.patterns {
+            let sources = p.all_context_sources();
+            for src in sources {
+                if let ContextSource::IndustryBaseline {
+                    ref category,
+                    ref path,
+                    ..
+                } = *src
+                {
+                    if !valid_baseline_category(category) {
+                        return Err(CatalogError::InvalidId {
+                            id: format!("{}/category:{category}", p.id),
+                        });
+                    }
+                    if !valid_baseline_path(path) {
+                        return Err(CatalogError::InvalidId {
+                            id: format!("{}/path:{path}", p.id),
+                        });
+                    }
+                }
+            }
+        }
         Ok(())
     }
 
@@ -509,6 +549,26 @@ pub struct ClassificationHint<'a> {
 }
 
 // ── Internal helpers ───────────────────────────────────────────────────────
+
+/// WHY: S4 security gate — allowlist `category` at catalog load time so
+/// `IndustryBaselineSource` never receives unsanitised user input.
+fn valid_baseline_category(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 32
+        && s.bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+}
+
+/// WHY: S4 security gate — allowlist `path` at catalog load time.
+/// Only ASCII alphanumeric, `.`, `_`, `-`, `/` permitted; no `..` segments;
+/// no leading `/`.
+fn valid_baseline_path(s: &str) -> bool {
+    !s.is_empty()
+        && !s.starts_with('/')
+        && !s.contains("..")
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'/'))
+}
 
 fn is_valid_pattern_id(id: &str) -> bool {
     if id.is_empty() || id.len() > 64 {
@@ -780,6 +840,37 @@ patterns:
         assert!(!is_valid_pattern_id("has/slash"));
         assert!(!is_valid_pattern_id("has.dot"));
         assert!(!is_valid_pattern_id(&"x".repeat(65)));
+    }
+
+    // S4 security gate tests
+    #[test]
+    fn valid_baseline_path_accepts_safe_paths() {
+        assert!(valid_baseline_path("owasp/owasp-llm-top-10-v2.md"));
+        assert!(valid_baseline_path("iso/iso-25010-2023-stub.md"));
+        assert!(valid_baseline_path("security/cwe-top-25.md"));
+    }
+
+    #[test]
+    fn valid_baseline_path_rejects_traversal() {
+        assert!(!valid_baseline_path("../../etc/passwd"));
+        assert!(!valid_baseline_path("/absolute/path"));
+        assert!(!valid_baseline_path(""));
+        assert!(!valid_baseline_path("path with spaces"));
+    }
+
+    #[test]
+    fn valid_baseline_category_accepts_safe() {
+        assert!(valid_baseline_category("security"));
+        assert!(valid_baseline_category("quality"));
+        assert!(valid_baseline_category("arch-ops"));
+    }
+
+    #[test]
+    fn valid_baseline_category_rejects_bad() {
+        assert!(!valid_baseline_category(""));
+        assert!(!valid_baseline_category("../"));
+        assert!(!valid_baseline_category("SECURITY"));
+        assert!(!valid_baseline_category(&"x".repeat(33)));
     }
 
     #[test]
