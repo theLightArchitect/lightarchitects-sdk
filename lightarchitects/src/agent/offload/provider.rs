@@ -165,9 +165,15 @@ impl<P: LlmAgentProvider> OffloadAwareProvider<P> {
             };
             match resolver.resolve(source, sibling).await {
                 Ok(rc) => out.push(rc),
-                Err(_e) => {
-                    // Resolver failures are non-fatal — partial context is
-                    // acceptable. Day 14 wires this into AYIN telemetry.
+                Err(e) => {
+                    // Non-fatal: partial context is acceptable. Warn so
+                    // degradation is observable before AYIN Day 14 wiring.
+                    tracing::warn!(
+                        source_kind = source.kind_str(),
+                        sibling,
+                        error = %e,
+                        "offload: context resolver failed — proceeding without this source"
+                    );
                 }
             }
         }
@@ -203,7 +209,14 @@ impl<P: LlmAgentProvider> OffloadAwareProvider<P> {
         component_tokens: Option<&prompt_builder::ComponentTokenUsage>,
         verifier_verdict: Option<&str>,
     ) -> AgentResponse {
-        let input_estimate = u32::try_from(output.len() / 4).unwrap_or(u32::MAX);
+        let output_estimate = u32::try_from(output.len() / 4).unwrap_or(u32::MAX);
+        // WHY: input tokens = assembled prompt length, not output length.
+        // Use component_tokens sum when available; fall back to output_estimate
+        // only when called without a component breakdown (HITL approved path).
+        let input_estimate = component_tokens.map_or(output_estimate, |ct| {
+            let total = ct.persona + ct.charter + ct.context + ct.user_prompt;
+            u32::try_from(total).unwrap_or(u32::MAX)
+        });
         let mut attrs = HashMap::new();
         attrs.insert("offload.pattern_id".to_owned(), Value::from(pattern_id));
         attrs.insert("offload.path".to_owned(), Value::from("primary"));
@@ -239,7 +252,7 @@ impl<P: LlmAgentProvider> OffloadAwareProvider<P> {
             cost_usd: 0.0,
             tokens: TokenUsage {
                 input: input_estimate,
-                output: input_estimate,
+                output: output_estimate,
             },
             provider_attrs: attrs,
             retry_count: retries,
@@ -1048,6 +1061,45 @@ mod tests {
         let _ = provider.spawn(req).await.unwrap();
         assert_eq!(inner.call_count(), 1);
         assert_eq!(disp.calls().len(), 0);
+    }
+
+    /// Regression for Finding 8: tokens.input must reflect assembled *prompt*
+    /// length, not the output length. tokens.output must reflect the model's
+    /// output length. They must differ when prompt ≠ output.
+    #[tokio::test]
+    async fn build_response_input_tokens_reflect_prompt_not_output() {
+        let short_output = "Yes.";
+        let (provider, _inner, _disp) = build_provider(
+            vec![],
+            vec![Ok(short_output.to_owned())],
+            vec![pattern_p1_no_verifier()],
+            Arc::new(super::super::hitl_bridge::NullEscalator),
+        );
+        // Use a longer user prompt than the short output — prompt >> output.
+        let req = sanitized_req(
+            "claude",
+            "Explain the entire history of computing in detail.",
+            Some("P1"),
+            false,
+        );
+        let resp = provider.spawn(req).await.unwrap();
+        // If Finding 8 regresses: tokens.input == tokens.output == output_len/4 == 1.
+        // With the fix: tokens.input reflects the assembled prompt (persona + charter +
+        // user_prompt), which is far larger than 1 token.
+        assert!(
+            resp.tokens.input > resp.tokens.output,
+            "tokens.input ({}) must exceed tokens.output ({}) — prompt is longer than output",
+            resp.tokens.input,
+            resp.tokens.output,
+        );
+        // output should be close to short_output.len() / 4 == 1
+        assert!(
+            resp.tokens.output <= 2,
+            "tokens.output ({}) should be near 1 (output = '{}', {} chars)",
+            resp.tokens.output,
+            short_output,
+            short_output.len(),
+        );
     }
 
     #[test]
