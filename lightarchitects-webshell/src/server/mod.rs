@@ -2177,7 +2177,12 @@ async fn auth_exchange(
     match HeaderValue::from_str(&cookie) {
         Ok(cookie_val) => {
             tracing::info!(target: "webshell", "Cookie session established via exchange");
-            (StatusCode::OK, [(header::SET_COOKIE, cookie_val)]).into_response()
+            (
+                StatusCode::OK,
+                [(header::SET_COOKIE, cookie_val)],
+                axum::Json(serde_json::json!({"ok": true})),
+            )
+                .into_response()
         }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
@@ -2235,7 +2240,12 @@ async fn auth_nonce_exchange(
     match HeaderValue::from_str(&cookie) {
         Ok(cookie_val) => {
             tracing::info!(target: "webshell", "Cookie session established via nonce exchange");
-            (StatusCode::OK, [(header::SET_COOKIE, cookie_val)]).into_response()
+            (
+                StatusCode::OK,
+                [(header::SET_COOKIE, cookie_val)],
+                axum::Json(serde_json::json!({"ok": true})),
+            )
+                .into_response()
         }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }

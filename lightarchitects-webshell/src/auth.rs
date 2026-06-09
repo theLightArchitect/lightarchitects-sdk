@@ -154,19 +154,17 @@ pub fn validate_session_cookie(cookie_header: &str, expected_token: &str) -> boo
 /// Builds a `Set-Cookie` header value for the session cookie.
 ///
 /// Attributes: `HttpOnly` (blocks JS access), `SameSite=Strict` (blocks CSRF),
-/// `Secure` (RFC 6265bis — allowed on `localhost` HTTP by modern browsers),
-/// `Path=/`, `Max-Age=28800` (8-hour TTL).
+/// `Path=/`, `Max-Age=2592000` (30-day TTL). No `Secure` flag — lightspace is
+/// localhost-only; Chrome/Firefox silently drop `Secure` cookies on plain http.
 #[must_use]
 pub fn session_cookie_header(token: &str) -> String {
-    format!(
-        "{SESSION_COOKIE_NAME}={token}; HttpOnly; SameSite=Strict; Secure; Path=/; Max-Age=28800"
-    )
+    format!("{SESSION_COOKIE_NAME}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000")
 }
 
 /// Builds a `Set-Cookie` header value that immediately expires the session cookie.
 #[must_use]
 pub fn clear_session_cookie_header() -> &'static str {
-    "la_session=; HttpOnly; SameSite=Strict; Secure; Path=/; Max-Age=0"
+    "la_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"
 }
 
 pub mod credential;
@@ -458,8 +456,8 @@ mod tests {
         assert!(h.starts_with("la_session=abc"));
         assert!(h.contains("HttpOnly"));
         assert!(h.contains("SameSite=Strict"));
-        assert!(h.contains("Secure"));
-        assert!(h.contains("Max-Age=28800"));
+        assert!(!h.contains("Secure")); // localhost — Secure flag drops cookies on plain http
+        assert!(h.contains("Max-Age=2592000"));
     }
 
     #[test]

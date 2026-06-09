@@ -4,6 +4,8 @@
   // Navigation: goto() via $lib/navigation or $app/navigation directly.
   // Current route: page.url.pathname from $app/state.
 
+  import '../styles/index.css';
+
   import { onMount } from 'svelte';
   import { page } from '$app/state';
   import { afterNavigate, goto } from '$app/navigation';
@@ -54,7 +56,7 @@
   import { setupComplete, step, loadSetupInfo, selectedBackend, selectedModel, selectedAgent, settingsOpen } from '$lib/setup';
   import SettingsOverlay from '../components/SettingsOverlay.svelte';
   import { connectGlobalSSE, disconnectGlobalSSE } from '$lib/sse';
-  import { authHeaders } from '$lib/auth';
+  import { authHeaders, resolveToken, initCookieSession } from '$lib/auth';
   import { saveSettingsDebounced } from '$lib/settings-persistence';
   import { registerHotkey, dispatchHotkey } from '$lib/hotkeyRegistry';
   import { scope, scopeFromParams } from '$lib/cockpit/stores/scope';
@@ -159,13 +161,18 @@
     // +page.svelte files set scope on mount but never clear it on unmount.
     // Without this, any non-cockpit consumer of `scope` (e.g. copilot snapshot)
     // sees stale build context after the user leaves the cockpit surface.
-    if (!path.startsWith('/cockpit')) scope.set(null);
+    if (!path.startsWith('/command-center')) scope.set(null);
   });
 
   onMount(() => {
     syncViewport();
     window.addEventListener('resize', syncViewport);
     currentRoute.set(window.location.pathname);
+
+    // Resolve token from hash fragment first — must happen before connectGlobalSSE()
+    // so authHeaders() has a token ready when the first SSE request fires.
+    const token = resolveToken();
+    if (token) void initCookieSession(token);
 
     loadSetupInfo();
 
@@ -249,10 +256,10 @@
         handler: () => goto('/dispatch'),
       }),
       registerHotkey({
-        id: 'global-tab-4', keys: ['4'], label: 'Dashboard: Cockpit',
+        id: 'global-tab-4', keys: ['4'], label: 'Command Center',
         group: 'Navigation', scope: 'global',
         matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '4' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
-        handler: () => goto('/activity'),
+        handler: () => goto('/command-center/platform'),
       }),
       registerHotkey({
         id: 'global-tab-5', keys: ['5'], label: 'Knowledge: Helix',
@@ -288,7 +295,7 @@
         id: 'global-chip-approval', keys: ['⌥', '5'], label: 'Jump to Approval Queue',
         group: 'Status Chips', scope: 'global',
         matches: e => e.altKey && !e.metaKey && !e.ctrlKey && e.key === '5' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
-        handler: () => goto('/run?tab=approval'),
+        handler: () => goto('/dispatch?tab=approval'),
       }),
       registerHotkey({
         id: 'global-chip-idle', keys: ['⌥', '6'], label: 'Jump to Idle/Stale View',

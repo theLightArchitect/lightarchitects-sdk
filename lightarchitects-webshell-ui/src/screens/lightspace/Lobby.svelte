@@ -9,12 +9,19 @@
   } from '$lib/lightspace/conversation.svelte';
   import { sessionAddConvMessage, sessionAppendLastConvMessage } from '$lib/lightspace-stores';
 
-  // Holds the active SSE cleanup function. Called in onDestroy to prevent a
-  // subscription leak when the parent unmounts this component mid-flight
-  // (e.g. Lightspace.svelte sets ls.inLobby = false via session restore).
+  // Holds the active SSE cleanup function.
+  // WHY: only cancel when NOT yet materialized — once the first SSE event fires
+  // and ls.exitLobby() is called, the lobby fades out (350ms) and is destroyed.
+  // If we cancel here unconditionally, we kill the in-flight stream mid-response.
+  // Cancelling only on pre-materialize ensures navigation-away cleanup without
+  // cutting off the copilot's reply.
   let activeCleanup: (() => void) | null = null;
+  let materialized = false;
 
-  onDestroy(() => { activeCleanup?.(); activeCleanup = null; });
+  onDestroy(() => {
+    if (!materialized) activeCleanup?.();
+    activeCleanup = null;
+  });
 
   const greeting = $derived(() => {
     const h = new Date().getHours();
@@ -34,6 +41,7 @@
 
     const message = ls.lobbyInput;
     ls.intentText = message;
+    ls.lobbyInput = '';  // clear so textarea is fresh if lobby is shown again
 
     try {
       // 1. Create the session — mints the UUID that identifies this conversation.
@@ -46,7 +54,8 @@
 
       // 2. Subscribe to the SSE stream BEFORE dispatching the turn so no
       //    events are missed between creation and dispatch.
-      let materialized = false;
+      // materialized is the module-level flag — onDestroy checks it to decide
+      // whether to cancel the subscription (cancel only if not yet materialized).
       let streamingId: string | null = null;
       const cleanup = activeCleanup = subscribeConversation(
         sessionId,
@@ -169,14 +178,10 @@
 
 <style>
 .la-lobby {
-  position: fixed; inset: 0;
+  width: 100%; height: 100%;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
   background: radial-gradient(ellipse at center top, #0e1426 0%, var(--la-bg-base) 70%);
-  z-index: 50;
-  opacity: 0;
-  transition: opacity var(--la-slow);
-  pointer-events: none;
 }
 
 .la-lobby-inner { max-width: 680px; width: 90vw; }

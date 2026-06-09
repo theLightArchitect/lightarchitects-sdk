@@ -88,8 +88,7 @@ export async function initNonceSession(nonce: string): Promise<void> {
       }))
     );
     if (!res.ok) return;
-    // Guard against Vite SPA fallback (text/html 200 is not a real session cookie).
-    if ((res.headers.get('content-type') ?? '').includes('text/html')) return;
+    if (!(res.headers.get('content-type') ?? '').includes('application/json')) return;
     cookieMode = true;
     sessionStorage.removeItem(SESSION_KEY);
     scheduleRefresh();

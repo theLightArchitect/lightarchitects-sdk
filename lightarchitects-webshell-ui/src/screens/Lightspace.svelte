@@ -61,6 +61,8 @@
   });
 
   import HitlModal from '$lib/../components/ironclaw/HitlModal.svelte';
+  import { fade } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
   import {
     createConversation, sendTurn, subscribeConversation,
   } from '$lib/lightspace/conversation.svelte';
@@ -262,15 +264,8 @@
   });
 
   onMount(() => {
-    // Restore session from localStorage — allows page refresh without losing session.
-    // Direct field assignment skips the materialize animation (no SSE events will fire it).
-    const savedSessionId = localStorage.getItem('la_ls_session_id');
-    if (savedSessionId) {
-      ls.sessionId = savedSessionId;
-      ls.inLobby = false;
-      ls.materializing = false;
-      ls.wsState = 'materialised';
-    }
+    // Restore the last session ID so resume works from the lobby's recent-sessions list,
+    // but always show the lobby — the user can dismiss it or click a session to resume.
 
     const handler = (e: Event) => { void handleLobbySubmit(e as CustomEvent<{ intent: string }>); };
     document.addEventListener('ls:lobby-submit', handler);
@@ -280,7 +275,7 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="ls-root" data-mode={$lightspaceSessionStore.mode}>
+<div class="ls-root" class:in-lobby={ls.inLobby} class:materializing={ls.materializing} data-mode={$lightspaceSessionStore.mode}>
 
   <!-- Header -->
   <LightspaceHeader />
@@ -298,7 +293,11 @@
 
   {#if $ironclawHitlEscalation}<HitlModal />{/if}
 
-  {#if ls.inLobby}<Lobby />{/if}
+  {#if ls.inLobby}
+    <div class="lobby-layer" transition:fade={{ duration: 350, easing: cubicOut }}>
+      <Lobby />
+    </div>
+  {/if}
 
 </div>
 
@@ -317,5 +316,21 @@
   display: flex;
   min-height: 0;
   overflow: hidden;
+  transition: opacity 0.6s ease 0.1s, filter 0.6s ease 0.1s;
+}
+
+/* Dim the canvas behind the lobby so it reads as background context */
+.ls-root.in-lobby .ls-workspace {
+  opacity: 0.07;
+  filter: blur(3px) saturate(0.2);
+  pointer-events: none;
+  transition: opacity 0.35s ease, filter 0.35s ease;
+}
+
+/* Wrapper that positions the lobby as a fixed full-screen overlay */
+.lobby-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
 }
 </style>

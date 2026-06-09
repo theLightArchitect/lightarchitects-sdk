@@ -26,7 +26,7 @@ import { MAX_CANVAS_CARDS, selectEvictionVictim } from './card-eviction';
 // ── 1. Session ───────────────────────────────────────────────────────────
 export const lightspaceSessionStore = writable<LightspaceSessionState>({
   buildId: null, runStatus: 'idle', intent: '', lobbyInput: '',
-  conv: [], mode: 'idle', northstarState: null, materializePhase: 'idle',
+  conv: [], mode: 'production', northstarState: null, materializePhase: 'idle',
 });
 
 // ── 2. Canvas ────────────────────────────────────────────────────────────
